@@ -1,0 +1,285 @@
+{
+  "date": "2026-10-20",
+  "cases": [
+    {
+      "name": "daily source outranks later dishes-only",
+      "records": [
+        {
+          "record_type": "day",
+          "record_key": "packed-daily",
+          "sequence": 2,
+          "version": 1,
+          "payload": {
+            "daily": [
+              {
+                "日期": "2026-10-20"
+              }
+            ],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 8斤 80"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "record_type": "day",
+          "record_key": "packed-dishes-only",
+          "sequence": 3,
+          "version": 1,
+          "payload": {
+            "daily": [],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 2斤 20"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expected": [
+        8
+      ]
+    },
+    {
+      "name": "selected daily with no dishes clears output",
+      "records": [
+        {
+          "record_type": "day",
+          "record_key": "2026-10-20",
+          "sequence": 2,
+          "version": 1,
+          "payload": {
+            "daily": [
+              {
+                "日期": "2026-10-20"
+              }
+            ],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 8斤 80"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "record_type": "day",
+          "record_key": "newer-daily-no-dishes",
+          "sequence": 3,
+          "version": 1,
+          "payload": {
+            "daily": [
+              {
+                "日期": "2026-10-20"
+              }
+            ]
+          }
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "no daily canonical outer key outranks later packed dishes",
+      "records": [
+        {
+          "record_type": "day",
+          "record_key": "2026-10-20",
+          "sequence": 2,
+          "version": 1,
+          "payload": {
+            "daily": [],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 8斤 80"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "record_type": "day",
+          "record_key": "packed-dishes",
+          "sequence": 3,
+          "version": 1,
+          "payload": {
+            "daily": [],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 2斤 20"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expected": [
+        8
+      ]
+    },
+    {
+      "name": "no daily and no canonical outer key uses last packed dishes",
+      "records": [
+        {
+          "record_type": "day",
+          "record_key": "packed-old",
+          "sequence": 2,
+          "version": 1,
+          "payload": {
+            "daily": [],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 8斤 80"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "record_type": "day",
+          "record_key": "packed-new",
+          "sequence": 3,
+          "version": 1,
+          "payload": {
+            "daily": [],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 2斤 20"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expected": [
+        2
+      ]
+    },
+    {
+      "name": "slash outer key alone is not a direct canonical key, fallback uses latest dishes",
+      "records": [
+        {
+          "record_type": "day",
+          "record_key": "2026/10/20",
+          "sequence": 2,
+          "version": 1,
+          "payload": {
+            "daily": [],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 8斤 80"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "record_type": "day",
+          "record_key": "packed-new",
+          "sequence": 3,
+          "version": 1,
+          "payload": {
+            "daily": [],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 2斤 20"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expected": [
+        2
+      ]
+    },
+    {
+      "name": "last matching dish row inside selected source wins",
+      "records": [
+        {
+          "record_type": "day",
+          "record_key": "selected-daily",
+          "sequence": 2,
+          "version": 1,
+          "payload": {
+            "daily": [
+              {
+                "日期": "2026-10-20"
+              }
+            ],
+            "dishes": [
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "菜品选源验证",
+                    "食材明细": "牛肉 8斤 80"
+                  }
+                ]
+              },
+              {
+                "日期": "2026-10-20",
+                "菜品数据": [
+                  {
+                    "菜品名称": "后行",
+                    "食材明细": "牛肉 2斤 20"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expected": [
+        2
+      ]
+    }
+  ]
+}

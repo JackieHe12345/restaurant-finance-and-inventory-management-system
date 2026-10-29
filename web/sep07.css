@@ -1,0 +1,25 @@
+/* Sep11V1: compact forecast rows, exact cost shares, and presentation-only mode. */
+#monthCard{container-type:inline-size}.forecast-row{align-items:center;gap:14px;padding:8px 0}.forecast-row .forecast-label{display:flex;min-width:0;flex-direction:column;gap:2px;color:#52677d;line-height:1.34}.forecast-row .forecast-title{font-weight:600;color:inherit;white-space:nowrap}.forecast-row .forecast-formula{color:#77899c;font-size:.7rem;font-weight:650;line-height:1.35;white-space:nowrap}.forecast-row strong{align-self:center;min-width:max-content;text-align:right;font-variant-numeric:tabular-nums}
+.expense-chart-total{display:grid;grid-template-columns:1fr auto;gap:3px 12px;align-items:baseline;margin:0 0 10px;padding:0 0 10px;border-bottom:1px solid var(--line);color:#52677d;font-size:.78rem}.expense-chart-total strong{font-size:.9rem;color:#244d72;text-align:right;font-variant-numeric:tabular-nums}.expense-chart-total small{grid-column:1/-1;text-align:right;color:#70869b;font-size:.7rem;font-weight:600}.horizontal-row strong{font-variant-numeric:tabular-nums}.horizontal-row strong small{display:block;color:#5f7891;font-size:.68rem;font-weight:600;line-height:1.25}
+
+/* Presentation-only mode leaves the source value in the DOM for safe page
+   refreshes, but replaces every data-entry field with plain readable text. */
+.readonly-value{display:none;min-width:0;color:#243d57;font-weight:600;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}.view-read-only .app-page:not(.hidden):not(#pageOverview) .readonly-source{display:none!important}.view-read-only .app-page:not(.hidden):not(#pageOverview) .readonly-value{display:inline-flex;align-items:center;min-height:2.25rem;padding:.38rem 0}.view-read-only .app-page:not(.hidden):not(#pageOverview) label>.readonly-value,.view-read-only .app-page:not(.hidden):not(#pageOverview) .full-field>.readonly-value{width:100%}.view-read-only .app-page:not(.hidden):not(#pageOverview) td>.readonly-value{display:flex;width:100%;min-height:1.9rem;padding:.22rem 0}.view-read-only .app-page:not(.hidden):not(#pageOverview) .edit-action,.view-read-only .app-page:not(.hidden):not(#pageOverview) .view-only-edit-action{display:none!important}.view-read-only .app-page:not(.hidden):not(#pageOverview) .table-toolbar:empty,.view-read-only .app-page:not(.hidden):not(#pageOverview) .pro-toolbar:empty{display:none}.audit-deleting{opacity:.55;pointer-events:none}
+
+/* A read-only phone/tablet view should stay dense.  Values are text, rather
+   than form controls, so they do not need input-sized hit areas. */
+@media(max-width:1180px){
+  .view-read-only .app-page:not(.hidden):not(#pageOverview) .section-heading{margin-bottom:10px;padding:12px}
+  .view-read-only .app-page:not(.hidden):not(#pageOverview) .editor-card,.view-read-only .app-page:not(.hidden):not(#pageOverview) .table-card{padding:10px}
+  .view-read-only .app-page:not(.hidden):not(#pageOverview) .form-grid{gap:7px}
+  .view-read-only .app-page:not(.hidden):not(#pageOverview) .form-grid label{gap:2px}
+  .view-read-only .app-page:not(.hidden):not(#pageOverview) .readonly-value{min-height:0;padding:.14rem 0;line-height:1.3}
+  .view-read-only .app-page:not(.hidden):not(#pageOverview) td>.readonly-value{min-height:0;padding:.1rem 0}
+
+  /* Keep pinch zoom available after \" 放大\".  The ordinary chart pan and
+     the browser's two-finger zoom are intentionally both permitted. */
+  .chart-card.chart-expanded,.chart-card.chart-expanded .interactive-chart-shell,.chart-card.chart-expanded .svg-chart,.chart-card.chart-expanded .chart-scroll-shell,.chart-card.chart-expanded .chart-scroll-frame,.chart-card.chart-expanded .chart-direct-scroll-shell,.chart-card.chart-expanded .donut-layout,.chart-card.chart-expanded .bar-chart,.chart-card.chart-expanded .horizontal-bars{touch-action:pan-x pan-y pinch-zoom}
+}
+
+@container (max-width:520px){#monthCard .forecast-row{grid-template-columns:minmax(0,1fr);gap:4px}#monthCard .forecast-row strong{justify-self:end;max-width:none}}
+@media(max-width:700px){.forecast-row{gap:8px}.forecast-row .forecast-label{overflow-wrap:normal}.forecast-row .forecast-formula{font-size:.67rem}.forecast-row strong{max-width:45vw}.expense-chart-total{font-size:.75rem}.horizontal-row strong small{font-size:.65rem}}

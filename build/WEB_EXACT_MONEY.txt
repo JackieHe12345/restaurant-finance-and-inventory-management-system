@@ -1,0 +1,15 @@
+Oct30LingChen 网页精确金额说明
+
+运行时：web/money.js。采用 BigInt 系数与十进制小数位数；金额计算不使用二进制浮点。未显式转换的 Decimal.valueOf 会抛错，避免遗漏运算悄悄退回 Number。显示金额保留两位，ROUND_HALF_UP；单价六位。原始金额输入/保存限制为 999999999999.99，原始单价限制为 999999999999.999999。累计余额和报表可超过该单笔上限。
+
+业务脚本：app、pro、v8、v28、sep04/05/07、oct29、inventory-workspace 和 inventory-fifo 通过显式 Exact 助手处理 Decimal 加减乘除、比较、真假值、排序、格式化。普通字符串、日期、DOM计数保持原JS语义。图表统计最后的sqrt、坐标与普通数值接口使用明确的toNumber边界。每笔金额进入账本前归一为两位字符串；有原渠道或非空采购明细支持的派生总额允许超过单笔上限，缺来源的手填总额仍限额；客数及数量保留原数值接口兼容。
+
+业务 JavaScript 源文件在 web-exact-source/，转换工具 compile_exact_web.cjs。共享十进制运行时 web/money.js 和所有样式表直接在仓库根目录的 web/ 中维护；转换工具引用该运行时，只重新生成业务 JavaScript，不复制运行时或样式表。构建依赖 acorn 固定8.15.0，js-transform/package-lock.json已锁定。成品网页不需要acorn、Node或任何新增CDN。
+重新构建（仓库根目录）：npm ci --prefix build/js-transform && node build/compile_exact_web.cjs
+回归：node build/test_exact_web.cjs
+
+FIFO：保留显式原始入库单价供显示；缺少原单价时才按总额/数量派生六位。每批保存原数量与原总额，按累计消耗的应分摊金额减此前已分摊金额计算每次成本，全部出清时恰好等于原总额。3件共10元分三次消耗为3.33/3.34/3.33；原价0.335000×3入库1.01元时分摊0.34/0.33/0.34，展示原价仍0.335000。多行同品项出库预览会带入前行累计消耗，不会重复报价。
+
+持久化：normalizePayload仅遍历已知财务表结构。未知extension/supplier_metadata等即使含price/amount键也不改类型和值；原JSON与纯文本采购明细字符串不因其他字段保存被前端重新序列化。新输入的钱在客户端验证，并由后端再次校验。库存品名更正仍由单一后端事务完成；成功后回到库存总览并搜索正确名称。
+
+兼容修复：手机/平板默认只读切到修改模式时重新计算新客/总客数字段权限，避免两框保持disabled。保留后台录入时限，不放宽角色权限。

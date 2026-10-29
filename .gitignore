@@ -1,0 +1,54 @@
+# Local configuration and secrets
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+apiclient_cert.*
+apiclient_key.*
+payment-secrets/
+payment_secrets/
+secrets/
+credentials.json
+credentials.*.json
+id_rsa*
+id_ed25519*
+
+# Python and test output
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Local databases and generated exports
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+*.sqlite-*
+*.sqlite3-*
+*.sql
+*.sql.gz
+*.dump
+backups/
+recovery/
+*.log
+media/uploads/
+
+# Node/build caches
+node_modules/
+dist/
+.DS_Store
+
+# Packaged applications and release archives
+*.app/
+*.zip
+*.tar.gz

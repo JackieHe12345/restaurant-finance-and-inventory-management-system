@@ -1,0 +1,32 @@
+{
+  "version": "Oct30LingChen",
+  "web_exact_checks": 232,
+  "web_regression_checks": [
+    "test_oct29_frontend.js",
+    "test_sep11v1_frontend.js",
+    "test_inventory_v2.js"
+  ],
+  "fifo": {
+    "fixtures": 77,
+    "movement_balance_checks": 1020,
+    "pork_example_cost": "50.00",
+    "pork_example_average_unit_cost": "16.67",
+    "desktop_web_api_parity": "passed"
+  },
+  "static_http": {
+    "index": 200,
+    "analytics_css": 200,
+    "analytics_js": 200,
+    "charts_js": 200,
+    "dashboard_js": 200,
+    "inventory_fifo_js": 200
+  },
+  "notes": [
+    "The local static preview serves every referenced asset successfully.",
+    "The data API is not started by the static preview, so the Test demo login is not used as a production data check."
+  ],
+  "api_tests": {
+    "passed": 120,
+    "subtests_passed": 13
+  }
+}

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN" data-build="Oct30LingChen">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=yes">
+  <meta name="theme-color" content="#102942">
+  <title>餐饮成本管家云端</title>
+  <link rel="stylesheet" href="styles.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="modules.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="modules-extra.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="pro.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="v8.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="responsive.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="sep04.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="sep05.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="sep07.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="oct29.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="inventory-workspace.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="workbench.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="adaptive.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="reporting-oct30.css?v=Oct30LingChen">
+  <link rel="stylesheet" href="analytics-oct30.css?v=Oct30LingChen">
+</head>
+<body class="booting">
+  <div id="bootView" class="boot-view" aria-live="polite">
+    <strong data-zh="餐饮成本管家" data-en="Restaurant Cost Manager">餐饮成本管家</strong>
+    <span data-zh="正在恢复工作台…" data-en="Restoring your workspace…">正在恢复工作台…</span>
+  </div>
+
+  <main id="loginView" class="login-shell hidden">
+    <section class="login-card">
+      
+      <h1 data-zh="餐饮成本管家云端" data-en="Restaurant Cost Manager">餐饮成本管家云端</h1>
+      <p class="login-copy" data-zh="随时查看餐厅的收入、成本与利润。" data-en="Review restaurant revenue, costs and profit anywhere.">随时查看餐厅的收入、成本与利润。</p>
+      <form id="loginForm" autocomplete="on">
+        <label><span data-zh="账号" data-en="Username">账号</span><input id="username" name="username" autocomplete="username" required></label>
+        <label><span data-zh="密码" data-en="Password">密码</span><input id="password" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary wide" type="submit" data-zh="登录" data-en="Sign in">登录</button>
+        <p id="loginError" class="form-error" role="alert"></p>
+      </form>
+      <div class="login-divider"><span data-zh="或" data-en="or">或</span></div>
+      <button id="testLoginButton" class="test-login-button" type="button" data-zh="直接进入 Test 演示账户" data-en="Enter the Test account">直接进入 Test 演示账户</button>
+      <button id="loginLanguageButton" class="language-link" type="button">English</button>
+    </section>
+  </main>
+
+  <div id="appView" class="app-shell hidden">
+    <aside id="appSidebar" class="app-sidebar" aria-label="工作台导航"><div class="sidebar-brand"><strong data-zh="餐饮成本管家" data-en="Restaurant Finance">餐饮成本管家</strong><span data-zh="财务工作台" data-en="Finance workspace">财务工作台</span></div><nav class="nav-tabs" aria-label="主导航"><div class="nav-group"><p data-zh="财务核算" data-en="Financial records">财务核算</p><button class="active" data-page="overview" data-zh="经营仪表盘" data-en="Dashboard">经营仪表盘</button><button id="cashNavButton" data-page="cash" class="hidden">现金余额表</button><button data-page="ledger" data-zh="记账本" data-en="Ledger">记账本</button><button data-page="stats" data-zh="更多统计" data-en="Analytics">更多统计</button></div><div class="nav-group"><p data-zh="采购与库存" data-en="Purchasing & inventory">采购与库存</p><button data-page="food" data-zh="食材明细" data-en="Ingredients">食材明细</button><button data-page="spice" data-zh="佐料明细" data-en="Seasonings">佐料明细</button><button data-page="inventory" data-zh="库存管理" data-en="Inventory">库存管理</button><button data-page="dishes" data-zh="当日做出的菜品" data-en="Dishes">当日做出的菜品</button></div><div class="nav-group"><p data-zh="系统管理" data-en="Administration">系统管理</p><button data-page="workbooks" data-zh="Excel 账本" data-en="Excel Books">Excel 账本</button><button data-page="stores" class="admin-only hidden" data-zh="店铺设置" data-en="Store Settings">店铺设置</button><button data-page="data" class="admin-only hidden" data-zh="数据管理" data-en="Data Management">数据管理</button><button id="userNavButton" data-page="users" class="hidden" data-zh="用户管理" data-en="Users">用户管理</button><button id="grantNavButton" data-page="grants" class="admin-only hidden">临时权限</button><button id="changeLogNavButton" data-page="changes" class="hidden" data-zh="修改记录" data-en="Change Log">修改记录</button></div></nav><footer class="sidebar-footer"><span>Oct30LingChen</span><span data-zh="云端账本" data-en="Cloud ledger">云端账本</span></footer></aside>
+    <button id="sidebarBackdrop" class="sidebar-backdrop" type="button" aria-label="关闭导航" hidden></button>
+    <header class="topbar"><button id="sidebarToggle" class="sidebar-toggle" type="button" aria-controls="appSidebar" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span data-zh="菜单" data-en="Menu">菜单</span></button><span id="workspaceBreadcrumb" class="workspace-breadcrumb">经营仪表盘</span>      <div class="top-actions">
+        <label id="datasetSelectWrap" class="dataset-switch hidden"><span data-zh="当前账本" data-en="Ledger">当前账本</span><select id="datasetSelect" aria-label="当前账本"></select></label>
+        <button id="languageButton" class="quiet">English</button>
+        <button id="viewModeButton" class="quiet" type="button" aria-pressed="true">可修改模式</button>
+        <span id="accountLabel" class="account-pill"></span>
+        <button id="logoutButton" class="quiet" data-zh="退出" data-en="Sign out">退出</button>
+      </div>
+</header>
+
+    <main id="pageOverview" class="content app-page">
+      <section class="page-title-row">
+        <div><h1 data-zh="经营仪表盘" data-en="Business Dashboard">经营仪表盘</h1></div>
+        <small id="lastUpdated"></small>
+      </section>
+
+      <section class="filter-bar" aria-label="日期筛选">
+        <div class="filter-group day-filter"><span data-zh="选择日" data-en="Date">选择日</span><button id="previousDay" class="icon-button" aria-label="前一天">‹</button><input id="selectedDate" type="date"><button id="nextDay" class="icon-button" aria-label="后一天">›</button><button id="todayButton" class="soft" data-zh="今天" data-en="Today">今天</button></div>
+        <div class="filter-group"><label><span data-zh="月份" data-en="Month">月份</span><select id="selectedMonth"></select></label><label><span data-zh="年份" data-en="Year">年份</span><select id="selectedYear"></select></label></div>
+        <span class="auto-refresh-note" data-zh="每 5 秒自动更新" data-en="Updates every 5 seconds">每 5 秒自动更新</span>
+      </section>
+
+      <section id="notice" class="notice hidden" role="status"></section>
+
+      <section class="summary-grid">
+        <article class="summary-card" id="dayCard"><header><span></span><div><small data-zh="当日快照" data-en="Daily Snapshot">当日快照</small><h2 id="dayTitle">—</h2></div></header><div class="metric-list"></div></article>
+        <article class="summary-card" id="weekCard"><header><span></span><div><small data-zh="本周概览" data-en="Weekly Overview">本周概览</small><h2 id="weekTitle">—</h2></div></header><div class="metric-list"></div></article>
+        <article class="summary-card accent" id="monthCard"><header><span></span><div><small data-zh="本月概览" data-en="Monthly Overview">本月概览</small><h2 id="monthTitle">—</h2></div></header><div class="metric-list"></div></article>
+        <article class="summary-card" id="yearCard"><header><span></span><div><small data-zh="本年概览" data-en="Yearly Overview">本年概览</small><h2 id="yearTitle">—</h2></div></header><div class="metric-list"></div></article>
+      </section>
+
+      <section class="chart-grid dashboard-charts">
+        <article class="chart-card"><header><div><small data-zh="当日成本" data-en="Daily Cost">当日成本</small><h2 data-zh="开销构成" data-en="Cost Breakdown">开销构成</h2></div><div class="chart-heading-actions"><span id="costTotal" class="chart-total">—</span><button class="chart-expand-button" type="button" data-expand-chart data-zh=" 放大" data-en=" Expand"> 放大</button></div></header><div class="donut-layout"><div id="costDonut" class="donut"><span></span></div><div id="costLegend" class="legend"></div></div></article>
+        <article class="chart-card span-wide"><header><div><small data-zh="本月趋势" data-en="Monthly Trend">本月趋势</small><h2 id="trendTitle">每日净利润</h2></div><div class="chart-heading-actions"><select id="trendMetric"><option value="net">净利润（净利率）</option><option value="gross">毛利润（毛利率）</option><option value="food">食材成本（包括佐料）</option><option value="revenue">收入（Revenue）</option></select><span id="trendSummary" class="chart-total">—</span><button class="chart-expand-button" type="button" data-expand-chart data-zh=" 放大" data-en=" Expand"> 放大</button></div></header><div class="interactive-chart-shell"><div id="trendChart" class="svg-chart interactive-chart"></div><div class="chart-hint" data-zh="不铺满数值；悬停或点按查看，左右拖动浏览" data-en="Values appear on hover or tap; drag horizontally to browse">不铺满数值；悬停或点按查看，左右拖动浏览</div></div></article>
+        <article class="chart-card"><header><div><small data-zh="经营节奏" data-en="Operating Rhythm">经营节奏</small><h2 data-zh="各星期平均净利润" data-en="Average Net Profit by Weekday">各星期平均净利润</h2></div><button class="chart-expand-button" type="button" data-expand-chart data-zh=" 放大" data-en=" Expand"> 放大</button></header><div id="weekdayChart" class="bar-chart"></div></article>
+        <article class="chart-card span-wide"><header><div><small data-zh="本月累计" data-en="Month to Date">本月累计</small><h2 data-zh="成本项目对比" data-en="Cost Comparison">成本项目对比</h2></div><button class="chart-expand-button" type="button" data-expand-chart data-zh=" 放大" data-en=" Expand"> 放大</button></header><div id="expenseChart" class="horizontal-bars"></div></article>
+      </section>
+    </main>
+
+    <main id="pageLedger" class="content app-page hidden">
+      <section class="section-heading"><div><h1 data-zh="记账本" data-en="Ledger">记账本</h1><p data-zh="按本地软件的日流水、固定成本与历史记录结构录入。" data-en="Enter daily records, fixed costs and history using the desktop structure.">按本地软件的日流水、固定成本与历史记录结构录入。</p></div><span id="ledgerPermission" class="permission-pill"></span></section>
+      <section class="editor-grid">
+        <article class="editor-card"><header><h2 data-zh="当日流水" data-en="Daily Record">当日流水</h2><input id="ledgerDate" type="date"></header><div class="form-grid"><label>收入（Revenue）<input id="ledgerRevenue" type="number" step="0.01"></label><label data-label-zh="新客人数量" data-label-en="New Customers">新客人数量<input id="ledgerNewCustomers" type="number" step="1"></label><label data-label-zh="总客人数" data-label-en="Total Customers">总客人数<input id="ledgerCustomers" type="number" step="1"></label><label data-label-zh="食材成本" data-label-en="Ingredient Cost">食材成本<input id="ledgerFoodCost" type="number" step="0.01"></label><label data-label-zh="佐料成本" data-label-en="Seasoning Cost">佐料成本<input id="ledgerSpiceCost" type="number" step="0.01"></label><label data-label-zh="水电" data-label-en="Utilities">水电<input id="ledgerUtilities" type="number" step="0.01"></label><label data-label-zh="其他" data-label-en="Other">其他<input id="ledgerOther" type="number" step="0.01"></label><label class="full" data-label-zh="食材明细" data-label-en="Ingredient Details">食材明细<textarea id="ledgerFoodDetail"></textarea></label><label class="full" data-label-zh="佐料明细" data-label-en="Seasoning Details">佐料明细<textarea id="ledgerSpiceDetail"></textarea></label><label class="full" data-label-zh="其他明细" data-label-en="Other Details">其他明细<textarea id="ledgerOtherDetail"></textarea></label><label class="full" data-label-zh="当日备注" data-label-en="Daily Notes">当日备注<textarea id="ledgerNote"></textarea></label></div><footer><button id="saveLedgerButton" class="primary edit-action" data-zh="覆盖当日记录" data-en="Save Daily Record">覆盖当日记录</button><span id="ledgerResult"></span></footer></article>
+        <article class="editor-card"><header><h2 data-zh="月度固定成本" data-en="Monthly Fixed Costs">月度固定成本</h2><input id="fixedMonth" type="month"></header><div class="form-grid"><label data-label-zh="人工总额" data-label-en="Labour">人工总额<input id="fixedLabour" type="number" step="0.01"></label><label data-label-zh="房租总额" data-label-en="Rent">房租总额<input id="fixedRent" type="number" step="0.01"></label><label data-label-zh="水费支出" data-label-en="Water Paid">水费支出<input id="fixedWaterSpent" type="number" step="0.01"></label><label data-label-zh="电费支出" data-label-en="Electricity Paid">电费支出<input id="fixedElectricSpent" type="number" step="0.01"></label><label data-label-zh="实际使用水费" data-label-en="Water Actually Used">实际使用水费<input id="fixedActualWater" type="number" step="0.01" placeholder="留空则按支出"></label><label data-label-zh="实际使用电费" data-label-en="Electricity Actually Used">实际使用电费<input id="fixedActualElectric" type="number" step="0.01" placeholder="留空则按支出"></label><label data-label-zh="煤气费" data-label-en="Gas">煤气费<input id="fixedGas" type="number" step="0.01"></label><label data-label-zh="其它固定成本" data-label-en="Other Fixed Cost">其它固定成本<input id="fixedOther" type="number" step="0.01"></label><label class="full" data-label-zh="月度备注" data-label-en="Monthly Notes">月度备注<textarea id="fixedNote"></textarea></label></div><footer><button id="saveFixedButton" class="primary edit-action" data-zh="保存实际使用水费、电费及固定成本" data-en="Save Fixed Costs">保存实际使用水费、电费及固定成本</button><span id="fixedResult"></span></footer></article>
+      </section>
+      <section class="table-card history-card"><header class="card-title"><div><h2 data-zh="历史记录" data-en="History">历史记录</h2><small data-zh="至少显示 25 行；选择月份查看" data-en="Shows at least 25 rows; choose a month">至少显示 25 行；选择月份查看</small></div><input id="historyMonth" type="month"></header><div class="table-scroll tall-table"><table><thead><tr><th data-zh="日期" data-en="Date">日期</th><th data-zh="收入" data-en="Revenue">收入</th><th data-zh="新客" data-en="New">新客</th><th data-zh="总客数" data-en="Customers">总客数</th><th data-zh="食材成本" data-en="Ingredient Cost">食材成本</th><th data-zh="佐料明细" data-en="Seasonings">佐料明细</th><th data-zh="固定成本" data-en="Fixed Cost">固定成本</th><th data-zh="其它明细" data-en="Other">其它明细</th><th data-zh="备注" data-en="Notes">备注</th><th data-zh="毛利润（毛利率）" data-en="Gross Profit (Margin)">毛利润（毛利率）</th><th data-zh="净利润（净利率）" data-en="Net Profit (Margin)">净利润（净利率）</th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
+    </main>
+
+    <main id="pageDishes" class="content app-page hidden"><section class="section-heading"><div><h1 data-zh="当日做出的菜品" data-en="Dishes Prepared Today">当日做出的菜品</h1><p data-zh="记录菜品名称、份数、使用食材、实际成本和备注。" data-en="Record dish name, portions, ingredients, actual cost and notes.">记录菜品名称、份数、使用食材、实际成本和备注。</p></div><input id="dishDate" type="date"></section><section class="table-card"><div class="table-toolbar"><button id="addDishButton" class="soft edit-action" data-zh="＋ 增加菜品" data-en="＋ Add Dish">＋ 增加菜品</button><button id="saveDishesButton" class="primary edit-action" data-zh="保存修改" data-en="Save Changes">保存修改</button></div><div class="table-scroll business-table"><table><thead><tr><th data-zh="菜品名称" data-en="Dish">菜品名称</th><th data-zh="菜品份数" data-en="Portions">菜品份数</th><th data-zh="使用食材明细" data-en="Ingredients Used">使用食材明细</th><th data-zh="食材成本（元）" data-en="Cost">食材成本（元）</th><th data-zh="备注" data-en="Notes">备注</th><th></th></tr></thead><tbody id="dishRows"></tbody></table></div><div class="table-total"><span id="dishTotal"></span><p id="dishResult"></p></div></section></main>
+
+    <main id="pageFood" class="content app-page hidden"><section class="section-heading"><div><h1 data-zh="食材明细" data-en="Ingredient Details">食材明细</h1><p data-zh="以本地软件的表格形式编辑数量、单位、单价、总价和备注。" data-en="Edit quantity, unit, unit price, total and notes in a desktop-style table.">以本地软件的表格形式编辑数量、单位、单价、总价和备注。</p></div><input id="foodDate" type="date"></section><section class="table-card"><div class="table-toolbar"><button id="addFoodRowButton" class="soft edit-action">＋ 新增空行</button><button id="saveFoodButton" class="primary edit-action" data-zh="保存修改" data-en="Save Changes">保存修改</button></div><div class="table-scroll business-table"><table><thead><tr><th data-zh="食材名称" data-en="Ingredient">食材名称</th><th data-zh="数量" data-en="Quantity">数量</th><th data-zh="单位" data-en="Unit">单位</th><th data-zh="单价（元）" data-en="Unit Price">单价（元）</th><th data-zh="总价（元）" data-en="Total">总价（元）</th><th data-zh="备注" data-en="Notes">备注</th><th></th></tr></thead><tbody id="foodRows"></tbody></table></div><div class="table-total"><strong id="foodTotal"></strong><span id="foodResult"></span></div></section><textarea id="foodDetailEdit" class="hidden"></textarea><input id="foodCostEdit" class="hidden"></main>
+
+    <main id="pageSpice" class="content app-page hidden"><section class="section-heading"><div><h1 data-zh="佐料明细" data-en="Seasoning Details">佐料明细</h1><p data-zh="以本地软件的表格形式编辑数量、单位、单价、总价和备注。" data-en="Edit quantity, unit, unit price, total and notes in a desktop-style table.">以本地软件的表格形式编辑数量、单位、单价、总价和备注。</p></div><input id="spiceDate" type="date"></section><section class="table-card"><div class="table-toolbar"><button id="addSpiceRowButton" class="soft edit-action">＋ 新增空行</button><button id="saveSpiceButton" class="primary edit-action" data-zh="保存修改" data-en="Save Changes">保存修改</button></div><div class="table-scroll business-table"><table><thead><tr><th data-zh="佐料名称" data-en="Seasoning">佐料名称</th><th data-zh="数量" data-en="Quantity">数量</th><th data-zh="单位" data-en="Unit">单位</th><th data-zh="单价（元）" data-en="Unit Price">单价（元）</th><th data-zh="总价（元）" data-en="Total">总价（元）</th><th data-zh="备注" data-en="Notes">备注</th><th></th></tr></thead><tbody id="spiceRows"></tbody></table></div><div class="table-total"><strong id="spiceTotal"></strong><span id="spiceResult"></span></div></section><textarea id="spiceDetailEdit" class="hidden"></textarea><input id="spiceCostEdit" class="hidden"></main>
+
+    <main id="pageInventory" class="content app-page hidden inventory-workspace"><span id="inventoryPermission" class="hidden"></span></main>
+
+    <main id="pageStats" class="content app-page hidden">
+      <section class="analytics-controls">
+        <div class="control-row"><strong data-zh="统计方式" data-en="Mode">统计方式</strong><label><input id="statsDetail" type="checkbox" checked> <span data-zh="明细" data-en="Detail">明细</span></label><label><input id="statsAverage" type="checkbox"> <span data-zh="平均" data-en="Average">平均</span></label><label><span data-zh="年份" data-en="Year">年份</span> <select id="statsYear"></select></label><button id="statsPreviousYear" class="soft" data-zh="上一年" data-en="Previous">上一年</button><button id="statsThisYear" class="soft" data-zh="今年" data-en="This Year">今年</button><button id="statsNextYear" class="soft" data-zh="下一年" data-en="Next">下一年</button></div>
+        <div class="control-row wrap" id="statsMonthChecks"><strong data-zh="月份" data-en="Months">月份</strong></div>
+        <div class="control-row wrap" id="statsWeekdayChecks"><strong data-zh="星期" data-en="Weekdays">星期</strong></div>
+        <fieldset class="metric-picker"><legend data-zh="经营指标" data-en="Business Metrics">经营指标</legend><div id="statsMetricChecks"></div></fieldset>
+        <div class="control-row wrap"><strong data-zh="显示内容" data-en="Show">显示内容</strong><label><input class="stats-view-check" type="checkbox" value="trend" checked> <span data-zh="趋势图" data-en="Trend">趋势图</span></label><label><input class="stats-view-check" type="checkbox" value="monthly" checked> <span data-zh="月度对比图" data-en="Monthly Comparison">月度对比图</span></label><label><input class="stats-view-check" type="checkbox" value="weekday" checked> <span data-zh="星期图" data-en="Weekday Chart">星期图</span></label><label><input class="stats-view-check" type="checkbox" value="table" checked> <span data-zh="数据表" data-en="Data Table">数据表</span></label></div>
+      </section>
+      <section class="analytics-grid">
+        <article id="statsTrendCard" class="chart-card analytics-card"><header><h2 id="statsTrendTitle">所选日期明细趋势</h2></header><div class="interactive-chart-shell"><div id="statsChart" class="svg-chart interactive-chart analytics-chart"></div><div class="chart-hint" data-zh="鼠标悬停或手指点按查看；拖动浏览日期" data-en="Hover or tap for details; drag to browse dates">鼠标悬停或手指点按查看；拖动浏览日期</div></div></article>
+        <article id="statsMonthlyCard" class="chart-card analytics-card"><header><h2 data-zh="月度对比" data-en="Monthly Comparison">月度对比</h2></header><div id="statsMonthlyChart" class="interactive-bars"></div></article>
+        <article id="statsWeekdayCard" class="chart-card analytics-card span-all"><header><h2 data-zh="星期分布" data-en="Weekday Distribution">星期分布</h2></header><div id="statsWeekdayChart" class="bar-chart wide-bars"></div></article>
+      </section>
+      <section id="statsTableCard" class="table-card"><div class="table-scroll tall-table"><table><thead id="statsHead"></thead><tbody id="statsRows"></tbody></table></div></section>
+    </main>
+
+    <main id="pageStores" class="content app-page hidden">
+      <section class="section-heading"><div><h1>店铺设置</h1><p>两家店分别统计收入；食材、人工、房租、水电、库存等成本仍共用一套。店名改动会同步用于仪表盘、记账本、历史和统计显示。</p></div><span id="storeSettingsDataset" class="permission-pill">—</span></section>
+      <section class="editor-card admin-only"><header><div><h2>店铺名称</h2><p>内部历史字段继续使用稳定的 A/B 槽位，因此改店名不会破坏历史数据。微信支付 API 暂停使用，历史账单字段仍会保留。</p></div></header>
+        <div class="form-grid"><label>A 店显示名称<input id="storeAName" maxlength="80" placeholder="例如：老店"></label><label>B 店显示名称<input id="storeBName" maxlength="80" placeholder="例如：新店"></label></div>
+        <footer><button id="saveStoreNames" class="primary edit-action" type="button">保存店名</button><span id="storeNameResult"></span></footer>
+      </section>
+    </main>
+
+    <main id="pageData" class="content app-page hidden">
+      <section class="section-heading"><div><h1>数据管理</h1><p>高风险操作集中在这里，避免和日常记账混在一起。删除与整账覆盖均要求二次确认。</p></div><span class="permission-pill">管理员</span></section>
+      <section id="v28DataTools" class="workbook-grid admin-only">
+        <article class="editor-card workbook-card"><header><div><h2>批量删除经营数据</h2><p>可删除连续多天，或删除一整个月。日流水、菜品、食材/佐料明细、日固定支出会一起删除；整月删除同时删除该月月度固定成本。</p></div></header>
+          <div class="data-operation-row"><label>开始日期<input id="bulkDeleteStart" type="date"></label><label>结束日期<input id="bulkDeleteEnd" type="date"></label><button id="bulkDeleteRange" class="danger-button edit-action" type="button">删除日期范围全部数据</button></div><div class="data-operation-row"><label>整月删除<input id="bulkDeleteMonth" type="month"></label><button id="bulkDeleteWholeMonth" class="danger-button edit-action" type="button">删除整月全部数据</button></div><p id="bulkDeleteResult" class="operation-result"></p>
+        </article>
+        <article class="editor-card workbook-card"><header><div><h2>整套内部 Excel 覆盖另一个账本</h2><p>选择目标账本并上传完整内部 Excel。服务器会先备份目标账本，然后连续确认两次才执行覆盖。</p></div></header>
+          <div class="data-operation-row"><label>目标账本<select id="overwriteTargetDataset"></select></label><label>内部 Excel<input id="overwriteInternalFile" type="file" accept=".xlsx"></label><button id="overwriteAnotherLedger" class="danger-button edit-action" type="button">两次确认后整体覆盖</button></div><p id="overwriteLedgerResult" class="operation-result"></p>
+        </article>
+        <article class="editor-card workbook-card"><header><div><h2>当前账本整套复制到另一个账本</h2><p>不需要先下载 Excel；服务器先备份目标账本，再把当前账本的全部记录完整覆盖过去，同样要求两次确认。</p></div></header>
+          <div class="data-operation-row"><label>目标账本<select id="copyTargetDataset"></select></label><button id="copyWholeLedger" class="danger-button edit-action" type="button">两次确认后复制并覆盖</button></div><p id="copyLedgerResult" class="operation-result"></p>
+        </article>
+      </section>
+    </main>
+
+    <main id="pageGrants" class="content app-page hidden"><section class="section-heading"><div><h1>临时权限</h1><p>为某个账号在指定时段开放某一天或连续几天的录入／修改权限。</p></div></section><section class="editor-card"><div class="form-grid"><label>账号<select id="grantUser"></select></label><label>账本<select id="grantDataset"></select></label><label>权限<select id="grantRole"><option value="entry">录入权限</option><option value="editor">修改权限</option></select></label><label>业务开始日期<input id="grantBusinessStart" type="date"></label><label>业务结束日期<input id="grantBusinessEnd" type="date"></label><label>生效时间<input id="grantStartsAt" type="datetime-local"></label><label>结束时间<input id="grantEndsAt" type="datetime-local"></label><button id="createGrantButton" class="primary" type="button">开放权限</button></div><p id="grantResult"></p></section><section class="table-card"><div class="table-scroll"><table><thead><tr><th>账号</th><th>账本</th><th>权限</th><th>业务日期</th><th>生效时段</th><th>管理</th></tr></thead><tbody id="grantRows"></tbody></table></div></section></main>
+
+    <main id="pageCash" class="content app-page hidden">
+      <section class="section-heading"><div><h1>现金余额表</h1><p>营业收入自动增加，经营支出自动扣减；股东借款以独立现金项目逐笔记录。</p></div><span id="cashCurrentBalance" class="cash-hero" hidden>0.00 元</span></section>
+      <section class="cash-summary-grid"><article><small>现金余额</small><strong id="cashBalanceSummary">0.00 元</strong></article><article><small>上月结余</small><strong id="cashPreviousMonthBalance">0.00 元</strong></article><article><small>本月向股东借款</small><strong id="cashLoanMonth">0.00 元</strong></article><article><small>本年向股东借款</small><strong id="cashLoanYear">0.00 元</strong></article><article><small>累计向股东借款</small><strong id="cashLoanTotal">0.00 元</strong></article></section>
+      <section class="cash-controls"><div class="cash-list-toolbar filter-bar"><label>明细月份<input id="cashMonthFilter" type="month"></label><span class="grow"></span><button id="addCashItemV4" class="primary" type="button">新增现金项目</button></div><details class="cash-adjustment"><summary>余额校正<span>按核对后的实际余额调整</span></summary><div class="form-grid"><label>修正后余额<input id="cashOpeningBalanceV4" type="number" min="0" step="0.01" placeholder="请输入实际余额"></label><label>修正日期<input id="cashOpeningDateV4" type="date"></label><button id="saveCashBaselineV4" class="soft" type="button">保存余额校正</button></div><p id="cashResultV4" class="operation-result"></p></details></section>
+      <section class="table-card"><div class="table-scroll tall-table"><table><thead><tr><th>日期</th><th>类型</th><th>说明</th><th>收入</th><th>支出</th><th>余额</th><th>管理</th></tr></thead><tbody id="cashLedgerRows"></tbody></table></div></section>
+    </main>
+
+    <main id="pageChanges" class="content app-page hidden"><section class="section-heading"><div><h1 data-zh="修改记录" data-en="Change Log">修改记录</h1><p>记录非管理员具体把什么改成了什么；可查看全部、某月或某一天。</p></div><div class="audit-filters"><select id="auditFilterMode"><option value="all">全部</option><option value="month">按月</option><option value="day">按日</option></select><input id="auditFilterMonth" type="month" class="hidden"><input id="auditFilterDay" type="date" class="hidden"><button id="auditFilterButton" class="soft" type="button">筛选</button></div></section><section class="table-card"><div class="table-scroll tall-table"><table><thead><tr><th>时间</th><th>操作人</th><th>操作</th><th>数据集</th><th>位置</th><th>具体变更</th><th class="admin-only audit-admin-column">管理</th></tr></thead><tbody id="changeLogRows"><tr><td colspan="7">正在加载……</td></tr></tbody></table></div></section></main>
+
+    <main id="pageWorkbooks" class="content app-page hidden">
+      <section class="section-heading"><div><h1 data-zh="Excel 账本导入与导出" data-en="Excel Workbook Import & Export">Excel 账本导入与导出</h1><p data-zh="所有操作只针对顶部显示的当前账本；上传前会校验工作表结构。" data-en="Every action applies only to the ledger selected above; workbook structure is validated before import.">所有操作只针对顶部显示的当前账本；上传前会校验工作表结构。</p></div><span id="workbookDatasetName" class="permission-pill">—</span></section>
+      <section class="workbook-grid">
+        <article class="editor-card workbook-card"><header><div><h2 data-zh="用户 Excel" data-en="User Excel">用户 Excel</h2><p data-zh="所有账号都可以按年份下载桌面软件可打开的用户账本；只有管理员可以上传替换或合并。合并会累加金额、数量和明细，单价保留账本原值。" data-en="Every account can download a desktop-compatible workbook by year; only administrators can replace or merge. Merge adds amounts, quantities and details while keeping the ledger unit price.">所有账号都可以按年份下载桌面软件可打开的用户账本；只有管理员可以上传替换或合并。合并会累加金额、数量和明细，单价保留账本原值。</p></div></header><div class="workbook-actions"><label><span data-zh="年份" data-en="Year">年份</span><input id="userWorkbookYear" type="number" min="2000" max="2200" step="1"></label><button id="downloadUserWorkbook" class="soft" type="button" data-zh="下载用户 Excel" data-en="Download User Excel">下载用户 Excel</button><label id="uploadUserWorkbookLabel" class="upload-button danger-upload admin-only"><span data-zh="上传并替换该年用户 Excel" data-en="Upload and Replace This Year">上传并替换该年用户 Excel</span><input id="uploadUserWorkbook" type="file" accept=".xlsx" hidden></label><label id="mergeUserWorkbookLabel" class="upload-button merge-upload admin-only"><span data-zh="上传并合并用户 Excel" data-en="Upload and Merge User Excel">上传并合并用户 Excel</span><input id="mergeUserWorkbook" type="file" accept=".xlsx" hidden></label></div><p id="userWorkbookResult" class="operation-result" role="status"></p></article>
+        <article id="internalWorkbookCard" class="editor-card workbook-card admin-only"><header><div><h2 data-zh="内部 Excel（仅管理员）" data-en="Internal Excel (Administrators only)">内部 Excel（仅管理员）</h2><p data-zh="下载完整云端底稿，或上传并整体替换当前账本。此操作不会改变用户与账本的绑定。" data-en="Download the complete cloud source or import one to replace the selected ledger. User-to-ledger assignments remain unchanged.">下载完整云端底稿，或上传并整体替换当前账本。此操作不会改变用户与账本的绑定。</p></div></header><div class="workbook-actions"><button id="downloadInternalWorkbook" class="soft" type="button" data-zh="下载内部 Excel" data-en="Download Internal Excel">下载内部 Excel</button><label class="upload-button danger-upload"><span data-zh="上传并替换内部 Excel" data-en="Import and Replace Internal Excel">上传并替换内部 Excel</span><input id="uploadInternalWorkbook" type="file" accept=".xlsx" hidden></label></div><p id="internalWorkbookResult" class="operation-result" role="status"></p></article>
+      </section>
+      <section id="currentDatasetAdminCard" class="editor-card admin-only dataset-admin-card current-dataset-admin-card"><header><div><h2 data-zh="管理当前账本" data-en="Manage Current Ledger">管理当前账本</h2><p data-zh="可以修改当前账本的显示名称，账本 ID 不会改变。删除前请先在用户管理中解除所有用户绑定；删除的数据无法恢复。" data-en="You can change the current ledger's display name without changing its ID. Before deletion, remove every user assignment in User Management. Deleted data cannot be recovered.">可以修改当前账本的显示名称，账本 ID 不会改变。删除前请先在用户管理中解除所有用户绑定；删除的数据无法恢复。</p></div></header><div class="dataset-management-grid"><label data-label-zh="当前账本名称" data-label-en="Current Ledger Name">当前账本名称<input id="currentDatasetName" maxlength="200"></label><div class="dataset-id-readout"><span data-zh="账本 ID（固定）" data-en="Ledger ID (fixed)">账本 ID（固定）</span><code id="currentDatasetId">—</code></div><button id="renameDatasetButton" class="soft" type="button" data-zh="保存新名称" data-en="Save New Name">保存新名称</button></div><div class="dataset-danger-zone"><div><strong data-zh="永久删除当前账本" data-en="Permanently Delete Current Ledger">永久删除当前账本</strong><p id="deleteDatasetHint" data-zh="点击后必须完整输入当前账本名称确认。Test 独立演示账本不可删除。" data-en="You must type the current ledger name exactly to confirm. The Test demonstration ledger cannot be deleted.">点击后必须完整输入当前账本名称确认。Test 独立演示账本不可删除。</p></div><button id="deleteDatasetButton" class="danger-button" type="button" data-zh="删除当前账本" data-en="Delete Current Ledger">删除当前账本</button></div><p id="currentDatasetAdminResult" class="operation-result" role="status"></p></section>
+      <section id="datasetAdminCard" class="editor-card admin-only dataset-admin-card"><header><div><h2 data-zh="新增独立账本" data-en="Create an Independent Ledger">新增独立账本</h2><p data-zh="新账本彼此完全独立；建立后可在用户管理中分配给需要使用该账本的账号。" data-en="Ledgers are independent. Assign the new ledger to user accounts from User Management.">新账本彼此完全独立；建立后可在用户管理中分配给需要使用该账本的账号。</p></div></header><div class="form-grid"><label data-label-zh="账本名称" data-label-en="Ledger Name">账本名称<input id="newDatasetName" placeholder="例如：第二家门店"></label><label data-label-zh="账本 ID（可留空）" data-label-en="Ledger ID (optional)">账本 ID（可留空）<input id="newDatasetId" placeholder="例如：store-2"></label></div><footer><button id="createDatasetButton" class="primary" type="button" data-zh="建立独立账本" data-en="Create Ledger">建立独立账本</button><span id="datasetAdminResult"></span></footer></section>
+    </main>
+
+    <main id="pageUsers" class="content app-page hidden"><section class="section-heading"><div><h1 data-zh="用户管理" data-en="User Management">用户管理</h1><p data-zh="管理员可创建账号、分配独立账本、调整权限、停用账号和重设密码。" data-en="Administrators can create accounts, assign independent ledgers, change roles, disable accounts and reset passwords.">管理员可创建账号、分配独立账本、调整权限、停用账号和重设密码。</p></div></section><section class="editor-card"><h2 data-zh="增加用户" data-en="Add User">增加用户</h2><div class="form-grid user-create"><label data-label-zh="登录账号" data-label-en="Username">登录账号<input id="newUsername"></label><label data-label-zh="显示名称" data-label-en="Display Name">显示名称<input id="newDisplayName"></label><label data-label-zh="初始密码" data-label-en="Initial Password">初始密码<input id="newPassword" type="password"></label><label data-label-zh="权限" data-label-en="Role">权限<select id="newRole"><option value="viewer">只读</option><option value="entry">录入（收入独立30分钟／明细新增12小时）</option><option value="editor">修改权限</option><option value="admin">管理员</option></select></label><label class="full" data-label-zh="允许使用的账本（可多选）" data-label-en="Allowed Ledgers (multiple)">允许使用的账本（可多选）<select id="newUserDatasets" multiple size="3"></select></label><label data-label-zh="默认账本" data-label-en="Default Ledger">默认账本<select id="newUserDefaultDataset"></select></label></div><footer><button id="createUserButton" class="primary" data-zh="创建用户" data-en="Create User">创建用户</button><span id="userResult"></span></footer></section><section class="table-card"><div class="table-scroll"><table class="user-access-table"><thead><tr><th data-zh="账号" data-en="Username">账号</th><th data-zh="显示名称" data-en="Display Name">显示名称</th><th data-zh="权限" data-en="Role">权限</th><th data-zh="允许账本" data-en="Allowed Ledgers">允许账本</th><th data-zh="默认账本" data-en="Default Ledger">默认账本</th><th data-zh="状态" data-en="Status">状态</th><th data-zh="重设密码" data-en="Reset Password">重设密码</th><th data-zh="操作" data-en="Actions">操作</th></tr></thead><tbody id="userRows"></tbody></table></div></section></main>
+  </div>
+  <div id="chartTooltip" class="chart-tooltip hidden"></div>
+  <script src="jszip.min.js?v=Oct30LingChen"></script>
+  <script src="money.js?v=Oct30LingChen"></script>
+  <script src="app.js?v=Oct30LingChen"></script>
+  <script src="pro.js?v=Oct30LingChen"></script>
+  <script src="v8.js?v=Oct30LingChen"></script>
+  <script src="v28.js?v=Oct30LingChen"></script>
+  <script src="sep04.js?v=Oct30LingChen"></script>
+  <script src="sep05.js?v=Oct30LingChen"></script>
+  <script src="sep07.js?v=Oct30LingChen"></script>
+  <script src="inventory-fifo.js?v=Oct30LingChen"></script>
+  <script src="oct29.js?v=Oct30LingChen"></script>
+  <script src="inventory-workspace.js?v=Oct30LingChen"></script>
+  <script src="workbench.js?v=Oct30LingChen"></script>
+  <script src="charts-oct30.js?v=Oct30LingChen"></script>
+  <script src="dashboard-oct30.js?v=Oct30LingChen"></script>
+  <script src="analytics-oct30.js?v=Oct30LingChen"></script>
+</body>
+</html>

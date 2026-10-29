@@ -1,0 +1,9 @@
+/* Sep05V2 dashboard: crisp SVG axes, a soft filled trend and readable points. */
+
+.version-pill{border:1px solid #ffffff38;border-radius:6px;padding:7px 10px;color:#d7e3ee;font-size:.75rem;font-weight:600;white-space:nowrap}
+@media(max-width:700px){.version-pill{display:grid;place-items:center;min-height:44px;padding:6px;font-size:.72rem}.top-actions .version-pill{width:100%;box-sizing:border-box}}
+.dashboard-charts .chart-card{box-shadow:none}
+.sep05-dashboard-svg{display:block;height:100%;max-width:none;background:#f5f6f8;border-radius:6px;overflow:visible}
+.sep05-grid{stroke:#dce8f1;stroke-width:1}.sep05-zero{stroke:#71879a;stroke-width:1.2;stroke-dasharray:5 4}.sep05-area{fill:url(#sep05TrendFill)}
+.sep05-line{fill:none;stroke:#08a9c4;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}.sep05-point{cursor:pointer}.sep05-point-halo{fill:#0cb0ca;opacity:.12}.sep05-point-dot{fill:#0aa9c4;stroke:#fff;stroke-width:2}.sep05-point:hover .sep05-point-dot,.sep05-point:focus .sep05-point-dot{fill:#1679e8;stroke-width:3}.sep05-value{font-size:11px;font-weight:600;fill:#314b63;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round}.sep05-x-label,.sep05-y-label{font-size:11px;fill:#61758a}.sep05-chart-ready{overflow-x:auto;overflow-y:hidden;padding-bottom:5px}
+@media(max-width:700px){.sep05-dashboard-svg{height:320px}.sep05-value{font-size:10px}.sep05-x-label,.sep05-y-label{font-size:10px}}

@@ -1,0 +1,11 @@
+{
+  "description": "Web canonical purchase adapter: rank comparison in input order, nonempty current detail replaces, empty current detail preserves old value; no same-day double receipt.",
+  "records": [
+    {"record_type":"day","record_key":"packed-old","sequence":1,"version":1,"payload":{"daily":[{"日期":"2026/10/10","食材明细":"牛肉 2斤 20"},{"日期":"2026/10/12","食材明细":"牛肉 2斤 20"},{"日期":"2026/10/13","食材明细":"牛肉 2斤 20"},{"日期":"2026/10/14","食材明细":"牛肉 2斤 20"}]}},
+    {"record_type":"day","record_key":"2026-10-11","sequence":5,"version":1,"payload":{"daily":[{"日期":"2026-10-11","食材明细":"牛肉 4斤 40"}]}},
+    {"record_type":"day","record_key":"packed-new","sequence":2,"version":1,"payload":{"daily":[{"日期":"2026-10-10","食材明细":"牛肉 3斤 30"},{"日期":"2026-10-12","食材明细":"","食材成本":0},{"日期":"2026-10-13","食材明细":"[]"},{"日期":"2026-10-14","食材明细":[]}]}},
+    {"record_type":"day","record_key":"lower-rank","sequence":4,"version":99,"payload":{"daily":[{"日期":"2026-10-11","食材明细":"牛肉 99斤 990"}]}},
+    {"record_type":"day","record_key":"2026-10-15","sequence":6,"version":1,"payload":{"daily":[{"日期":"2026-10-15","食材明细":"牛肉 2斤 20"},{"日期":"2026-10-15","食材明细":"牛肉 3斤 30"}]}}
+  ],
+  "expected": [{"date":"2026-10-10","quantity":3,"total":30},{"date":"2026-10-11","quantity":4,"total":40},{"date":"2026-10-12","quantity":2,"total":20},{"date":"2026-10-14","quantity":2,"total":20},{"date":"2026-10-15","quantity":3,"total":30}]
+}
