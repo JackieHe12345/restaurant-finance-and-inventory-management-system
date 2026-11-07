@@ -1,4 +1,4 @@
-/* Oct30LingChen: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 /* Oct29V1: explicit customer counts, derived purchase receipts and FIFO costs. */
 function validateCustomerCounts(){

@@ -35,6 +35,7 @@ INTERNAL_SHEETS = {
     "__meta": ("dataset_id", "schema_version", "last_synced_at"),
 }
 INTERNAL_AUDIT_SHEET = "__audit_records"
+INTERNAL_SOURCE_ORDER_COLUMN = "source_order"
 INTERNAL_AUDIT_COLUMNS = (
     "dataset_id", "audit_id", "created_at", "payload_json", "sha256"
 )
@@ -97,6 +98,8 @@ class WorkbookRecord:
     record_key: str
     payload: dict[str, Any]
     checksum: str
+    # Relative business-source precedence, never a reusable sync cursor.
+    source_order: int | None = None
 
 
 @dataclass
@@ -735,10 +738,20 @@ def parse_internal_workbook(content: bytes) -> ParsedWorkbook:
                     mismatch_count += 1
                     if len(warnings) < 20:
                         warnings.append(f"{location} 的 SHA-256 已按实际内容重算。")
-                records.append(WorkbookRecord(record_type, key, payload, checksum))
+                source_order = row.get(INTERNAL_SOURCE_ORDER_COLUMN)
+                if source_order not in (None, ""):
+                    if isinstance(source_order, bool) or not re.fullmatch(r"[1-9][0-9]*", str(source_order)):
+                        raise WorkbookFormatError(f"{location} 的 source_order 必须为正整数。")
+                    source_order = int(source_order)
+                else:
+                    source_order = None
+                records.append(WorkbookRecord(record_type, key, payload, checksum, source_order))
                 if len(records) > MAX_RECORDS:
                     raise WorkbookFormatError("内部 Excel 的记录数超过安全上限。")
 
+        orders = [item.source_order for item in records if item.source_order is not None]
+        if orders and (len(orders) != len(records) or len(set(orders)) != len(orders)):
+            raise WorkbookFormatError("内部 Excel 的 source_order 必须为全体记录提供不重复的来源顺序。")
         if len(record_dataset_ids) > 1:
             raise WorkbookFormatError("内部 Excel 同时包含多套 dataset_id，不能自动合并。")
         if records:
@@ -1077,13 +1090,22 @@ def build_internal_workbook(
     sheets = {}
     for name, columns in INTERNAL_SHEETS.items():
         sheet = workbook.create_sheet(name)
+        if name != "__meta":
+            columns = (*columns, INTERNAL_SOURCE_ORDER_COLUMN)
         _append_safe(sheet, columns, row_label=name)
         sheets[name] = sheet
     audit_sheet = workbook.create_sheet(INTERNAL_AUDIT_SHEET)
     _append_safe(audit_sheet, INTERNAL_AUDIT_COLUMNS, row_label=INTERNAL_AUDIT_SHEET)
 
-    ordered = sorted((_record_parts(item) for item in records), key=lambda item: (item[0], item[1]))
-    for record_type, record_key, payload, _ in ordered:
+    def source_rank(indexed):
+        index, item = indexed
+        def value(key, default=0):
+            result = item.get(key, default) if isinstance(item, dict) else getattr(item, key, default)
+            return result if result is not None else default
+        return (value("source_order", value("sequence")), value("version"), index)
+    ordered = sorted(enumerate(records), key=source_rank)
+    for source_order, (_, item) in enumerate(ordered, 1):
+        record_type, record_key, payload, _ = _record_parts(item)
         payload = normalize_fixed_expense_cash_flags(payload)
         payload_text = storage_json_dumps(payload, sort_keys=True)
         if len(payload_text) > MAX_JSON_CELL_CHARS:
@@ -1099,7 +1121,7 @@ def build_internal_workbook(
             target, key = sheets["__global_records"], _valid_global_key(record_key, location="云端记录")
         else:
             continue
-        _append_safe(target, (dataset_id, key, payload_text, checksum), row_label=target.title)
+        _append_safe(target, (dataset_id, key, payload_text, checksum, source_order), row_label=target.title)
 
     # Modification history is cached only in the internal workbook.  It is not
     # a synchronised business record: imports intentionally ignore this

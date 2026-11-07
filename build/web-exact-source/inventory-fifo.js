@@ -1,4 +1,4 @@
-/* Oct30LingChen: exact decimal FIFO; cumulative cent allocation conserves every receipt's booked total. */
+/* v1.0.1: exact decimal FIFO; cumulative cent allocation conserves every receipt's booked total. */
 (function(root){
   'use strict';
   const EPS=Exact.decimal('0.000000001'),number=value=>Exact.decimal(value);

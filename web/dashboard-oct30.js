@@ -1,6 +1,6 @@
-/* Oct30LingChen: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
-/* Oct30LingChen reporting workbench; preserves the original detailed reports. */
+/* v1.0.1 reporting workbench; preserves the original detailed reports. */
 (() => {
   const en=()=>Exact.seq(state.language, 'en'),t=(zh,english)=>(Exact.truth(en()) ? english : zh);
   function setup(){const page=$('pageOverview');if(Exact.truth(Exact.or(()=>(Exact.not(page)), ()=>($('o30Overview')))))return;

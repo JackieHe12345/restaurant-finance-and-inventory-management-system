@@ -122,6 +122,36 @@ def canonical_daily_rows(records: list[dict]) -> dict[str, dict]:
     return _canonical_daily_selection(records)[0]
 
 
+def canonical_dish_rows(records: list[dict]) -> dict[str, dict]:
+    """Resolve the same dish source used by stock replay and date permissions."""
+    daily, day_sources = _canonical_daily_selection(records)
+    dishes, records_by_key = {}, {}
+    for record in records:
+        records_by_key[str(record.get('record_key') or '').strip()] = record
+        payload = record.get('payload', record)
+        if not isinstance(payload, dict):
+            continue
+        for row in rows(payload, 'dishes'):
+            if isinstance(row, dict):
+                day = _day(row.get('日期') or record.get('record_key'))
+                if day:
+                    dishes[day] = row
+    # Prefer the winning daily source, then exact record key. Only dates with
+    # neither source use the last packed dish row. An empty selected source
+    # deliberately suppresses dishes in older records.
+    for day in set(daily) | set(dishes):
+        selected = day_sources.get(day)
+        if selected is None:
+            selected = records_by_key.get(day)
+        if selected is None:
+            continue
+        payload = selected.get('payload', selected)
+        matched = [row for row in rows(payload, 'dishes') if isinstance(row, dict)
+                   and _day(row.get('日期') or selected.get('record_key')) == day]
+        dishes[day] = matched[-1] if matched else {'菜品数据': []}
+    return dishes
+
+
 def ledger_events(inventory: dict, days: list[dict], ingredients: list[dict] = (), units: list[str] = ()) -> dict:
     """days = [{record_key: YYYY-MM-DD, payload: {daily:[], dishes:[]}}]."""
     def stock_rows(table):
@@ -137,32 +167,8 @@ def ledger_events(inventory: dict, days: list[dict], ingredients: list[dict] = (
         return normalized
     receipts = stock_rows('entries')
     units = list(units) + [identity(row)[2] for table in TABLES for row in rows(inventory, table) if isinstance(row, dict)]
-    daily, day_sources = _canonical_daily_selection(days)
-    dishes, warnings, records_by_key = {}, [], {}
-    for record in days:
-        records_by_key[str(record.get('record_key') or '').strip()] = record
-        payload = record.get('payload', record)
-        if not isinstance(payload, dict):
-            continue
-        for row in rows(payload, 'dishes'):
-            if isinstance(row, dict):
-                day = _day(row.get('日期') or record.get('record_key'))
-                if day:
-                    dishes[day] = row
-    # Web currentRecord(day,date) uses the canonical daily source first, then
-    # an exact-key record. Only dates without either use the last packed dish
-    # row. A selected source with no dishes means empty, not a fallback to an
-    # older/different record's usage.
-    for day in set(daily) | set(dishes):
-        selected = day_sources.get(day)
-        if selected is None:
-            selected = records_by_key.get(day)
-        if selected is None:
-            continue
-        payload = selected.get('payload', selected)
-        matched = [row for row in rows(payload, 'dishes') if isinstance(row, dict)
-                   and _day(row.get('日期') or selected.get('record_key')) == day]
-        dishes[day] = matched[-1] if matched else {'菜品数据': []}
+    daily, dishes = canonical_daily_rows(days), canonical_dish_rows(days)
+    warnings = []
     for day, row in sorted(daily.items()):
         for index, item in enumerate(detail_items(row.get('食材明细'), units)):
             if item['name'] and item['unit'] and item['quantity'] > 0:

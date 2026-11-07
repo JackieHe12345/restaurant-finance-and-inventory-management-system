@@ -30,6 +30,7 @@ function functionSource(source, name) {
 
 const context = vm.createContext({
   Date: TestDate,
+  state: {dataset: {id:"test-cash"}, cashPosition: null, cashPositionDatasetId:"test-cash"},
   Exact,
   Number,
   Math,
@@ -83,13 +84,13 @@ assert.equal(currency(Exact.sum(Array.from(loanHistory, row=>row.amount))),"155.
 assert.equal(currency(Exact.sum(Array.from(loanHistory).filter(row=>row.date.startsWith("2026-")).map(row=>row.amount))),"125.00","year fallback includes pre-opening loans");
 assert.equal(currency(Exact.sum(Array.from(loanHistory).filter(row=>row.date.startsWith("2026-09")).map(row=>row.amount))),"60.00","month fallback uses payload transaction dates");
 
-assert.match(html, /data-build="Oct30LingChen"/);
+assert.match(html, /data-build="v1.0.1"/);
 // Asset count may grow; every current local stylesheet/script must exist and
 // use the current version, including the decimal runtime and adaptive layout.
 const assets = [...html.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))(?:\?v=([^" ]+))?"/g)];
 assert.ok(assets.length > 0);
 for (const [, asset, version] of assets) {
-  assert.equal(version, "Oct30LingChen", `cache key for ${asset}`);
+  assert.equal(version, "v1.0.1", `cache key for ${asset}`);
   assert.ok(fs.existsSync(path.join(root, asset)), `missing asset ${asset}`);
 }
 assert.ok(html.indexOf("money.js") < html.indexOf("app.js"));
@@ -108,9 +109,10 @@ for (const line of [
   "平本需要 日均收入（“收入”指“Revenue”）增加",
   "( (预计月底盈亏/本月毛利率) / 本月天数 )",
 ]) assert.ok(appJs.includes(line), `missing exact forecast line: ${line}`);
-assert.match(css, /\.forecast-row \.forecast-title\{[^}]*white-space:nowrap/);
-assert.match(css, /\.forecast-row \.forecast-formula\{[^}]*white-space:nowrap/);
-assert.match(css, /\.forecast-row strong\{[^}]*text-align:right/);
+// Long translated labels/formulas must wrap within a report card.
+assert.match(css, /\.forecast-row \.forecast-title\{[^}]*white-space:normal/);
+assert.match(css, /\.forecast-row \.forecast-formula\{[^}]*white-space:normal/);
+assert.match(css, /\.metric-row\.forecast-row>strong\{[^}]*min-width:0[^}]*text-align:right/);
 
 async function checkCashEditingAndRendering() {
   const fields = Object.create(null);
@@ -119,7 +121,7 @@ async function checkCashEditingAndRendering() {
   const modalFields = Object.create(null);
   const modal = {querySelector: selector => modalFields[selector] ||= {value:""}, remove(){this.removed=true;}};
   Object.assign(context, {
-    $: field, cashPayloadV4:()=>payload, cashServerV4:null,
+    $: field, cashPayloadV4:()=>payload,
     money:currency, escapeHtml: value=>String(value), uuid:()=>"new-cash-row",
     safely: fn=>fn(), confirm:()=>true,
     saveCashPayloadV4:async value=>{saved=value;},
@@ -160,9 +162,10 @@ async function checkCashEditingAndRendering() {
   assert.match(rendered, /class="cash-force-entry"[^]*?<td>—<\/td><td>—<\/td><td>11\.11<\/td>/, "correction is not income or expense");
   assert.match(rendered, /class="cash-locked-entry">不可删除<\/span>/);
   assert.equal(field("cashCurrentBalance").textContent,"11.11");
-  context.cashServerV4={entries:[],summary_month:"2026-10",current_balance:"0.30",previous_month_balance:"0.10",shareholder_loan_this_month:"0.01",shareholder_loan_this_year:"0.02",shareholder_loan_total:"0.03"};
+  context.state.dataset={id:"test-cash"};context.state.cashPositionDatasetId="test-cash";
+  context.state.cashPosition={entries:[],summary_month:"2026-10",current_balance:"0.30",previous_month_balance:"0.10",shareholder_loan_this_month:"0.01",shareholder_loan_this_year:"0.02",shareholder_loan_total:"0.03"};
   context.renderCashLedgerV4();
   for(const [id,value] of [["cashCurrentBalance","0.30"],["cashPreviousMonthBalance","0.10"],["cashLoanMonth","0.01"],["cashLoanYear","0.02"],["cashLoanTotal","0.03"]])assert.equal(field(id).textContent,value,`server-authoritative ${id}`);
   assert.throws(()=>Exact.decimal("0.1")+Exact.decimal("0.2"),/禁止/);
 }
-checkCashEditingAndRendering().then(()=>console.log("Oct30LingChen cash/history/cache/forecast regression checks passed.")).catch(error=>{console.error(error);process.exitCode=1;});
+checkCashEditingAndRendering().then(()=>console.log("v1.0.1 cash/history/cache/forecast regression checks passed.")).catch(error=>{console.error(error);process.exitCode=1;});

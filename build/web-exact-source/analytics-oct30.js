@@ -1,4 +1,4 @@
-/* Oct30LingChen — task-oriented analytics. All amounts remain Exact decimals. */
+/* v1.0.1 — task-oriented analytics. All amounts remain Exact decimals. */
 (function(root){
   'use strict';
   const E=root.Exact, ZERO=()=>E.decimal(0);

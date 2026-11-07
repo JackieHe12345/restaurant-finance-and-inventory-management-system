@@ -1,5 +1,5 @@
 "use strict";
-/* Oct30LingChen reporting workbench; preserves the original detailed reports. */
+/* v1.0.1 reporting workbench; preserves the original detailed reports. */
 (() => {
   const en=()=>state.language==='en',t=(zh,english)=>en()?english:zh;
   function setup(){const page=$('pageOverview');if(!page||$('o30Overview'))return;

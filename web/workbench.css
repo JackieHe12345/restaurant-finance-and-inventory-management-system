@@ -1,4 +1,4 @@
-/* Oct30LingChen application shell and accounting layout. */
+/* v1.0.1 application shell and accounting layout. */
 :root{--navy:#242b35;--navy2:#364152;--blue:#285ba4;--cyan:#285ba4;--green:#3a7255;--red:#a83d40;--orange:#926823;--ink:#27313d;--muted:#737d89;--line:#dde1e6;--canvas:#f5f6f8;--card:#fff;--shadow:none;font-size:14px;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
 [hidden]{display:none!important}
 body{background:var(--canvas);font-size:13px;line-height:1.5}button,input,select,textarea{font:inherit}button{font-weight:500;letter-spacing:0}input,select,textarea{border:1px solid #cfd5dd;border-radius:4px;background:#fff;color:var(--ink);padding:6px 9px;min-height:32px;line-height:1.4}input[type=number]{font-variant-numeric:tabular-nums;text-align:right}input[readonly]{background:#f7f8fa;color:#5c6673}input:focus,select:focus,textarea:focus{outline:2px solid #c7d8f0;outline-offset:0;border-color:#6c91c3}button:focus-visible{outline:2px solid #6c91c3;outline-offset:2px}input[type=checkbox],input[type=radio]{accent-color:var(--blue);min-height:0;vertical-align:middle}

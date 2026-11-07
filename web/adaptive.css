@@ -1,4 +1,4 @@
-/* Oct30LingChen — responsive accounting workspace. */
+/* v1.0.1 — responsive accounting workspace. */
 :root{--touch-size:44px}
 @media(max-width:1100px){
  .app-shell{padding-top:58px;overflow-x:clip}

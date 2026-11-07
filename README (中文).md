@@ -1,10 +1,12 @@
 # restaurant-finance-and-inventory-management-system
 
+> v1.0.1 源码保存在本仓库及 `Nov07.zip` 的 `Nov07/source/` 中。从 ZIP 接手时直接使用该目录，无须再次克隆；先读 ZIP 内 `00_交接必读.md`。2026 Nov 07 的详细改动见[中文版修改日志](CHANGELOG%20(%E4%B8%AD%E6%96%87).md)。
+
 [English README](README.md) · [English deployment guide](docs/DEPLOYMENT.md) · [中文部署指南](docs/DEPLOYMENT.zh-CN.md)
 
 `restaurant-finance-and-inventory-management-system` 将餐饮日常记账、采购、库存出入库、固定支出、现金余额和经营统计放在同一个系统中。一套账本可以分别记录 A/B 店的收入渠道；多套独立账本各自保存记录，并通过账号与账本的绑定关系控制访问。网页端和 Python 桌面端通过云端 API 交换记录，也支持 Excel 工作簿导入导出。
 
-本仓库源码版本为 `Oct30LingChen`，包含网页、FastAPI 后端、桌面端源码、构建工具和测试。使用这些文件可以搭建一套独立实例，数据库和凭据由安装者自己创建。仓库不包含生产账本、商户私钥或打包后的 macOS 应用。
+本仓库源码版本为 `v1.0.1`，包含网页、FastAPI 后端、桌面端源码、构建工具和测试。使用这些文件可以搭建一套独立实例，数据库和凭据由安装者自己创建。仓库不包含生产账本、商户私钥或打包后的 macOS 应用。
 
 ## 主要实现
 
@@ -17,7 +19,7 @@
 | 同一天的 JSON 记录里，每个字段和明细有不同的可修改期限 | 服务端单独记录收入、客数和明细项目的首次保存时间，不依赖整张记录的更新时间 | `backend/app/models.py`、`backend/app/main.py`、`backend/tests/test_dataset_api.py` |
 | 月度固定费用和逐笔付款容易重复加总 | 统计界面将月度保存值与逐笔固定支出分为两种口径，同时提供分类和来源明细 | `build/web-exact-source/analytics-oct30.js`、`web/analytics-oct30.css` |
 
-当前 API 回归测试通过 120 项测试和 13 个子测试；网页金额与业务检查通过 232 项断言。FIFO 契约包含 77 组 fixture、1,020 个流水/余额检查：**成本和批次分摊在网页与桌面端之间逐项比较，数量余额再与 API 比较**。API 没有第三套 FIFO 成本引擎。
+当前 API 回归测试通过 148 项测试和 15 个子测试；网页金额与业务检查通过 232 项断言。FIFO 契约包含 77 组 fixture、1,020 个流水/余额检查：**成本和批次分摊在网页与桌面端之间逐项比较，数量余额再与 API 比较**。API 没有第三套 FIFO 成本引擎。
 
 ## 系统的使用范围
 
@@ -223,7 +225,7 @@ python -m pip install -r desktop/requirements.txt
 python build/test_fifo_contract.py
 ```
 
-`node` 需在 `PATH` 中，也可通过 `NODE_BINARY` 指定绝对路径。契约测试使用 Qt offscreen 模式。桌面依赖按 Python 3.12 验证，当前选用的 macOS wheel 要求 macOS 14 或更新版本。源码导入了 `fcntl`，本仓库不声称支持 Windows。在有图形会话的电脑上，可用 `python desktop/restaurant_cost_manager.py` 启动原生界面。
+`node` 需在 `PATH` 中，也可通过 `NODE_BINARY` 指定绝对路径。契约测试使用 Qt offscreen 模式。源码测试使用 macOS 上的 Python 3.12。完整v1.0.1包内的App要求macOS 15或更高版本；源码依赖wheel有各自的系统要求。源码导入了 `fcntl`，本仓库不声称支持 Windows。在有图形会话的电脑上，可用 `python desktop/restaurant_cost_manager.py` 启动原生界面。
 
 ## 搭建独立实例
 
@@ -249,19 +251,22 @@ curl --fail http://127.0.0.1:8080/api/v1/health
 检查通过后，从仓库生成服务器发布包：
 
 ```bash
-python build/make_release.py --output dist/restaurant-cloud-Oct30LingChen-deploy.tar.gz
+python build/make_release.py --output dist/restaurant-cloud-v1.0.1-deploy.tar.gz
 ```
 
-压缩包根目录为 `restaurant-cloud-Oct30LingChen/`，包含 `api/`、`web_frontend/`、`VERSION`、Nginx 资料和部署/核验脚本，不包含数据库和运行密钥。打包器拒绝覆盖已有输出，再次构建时应另选路径。
+压缩包根目录为 `restaurant-cloud-v1.0.1/`，包含 `api/`、`web_frontend/`、`VERSION`、Nginx 资料和部署/核验脚本，不包含数据库和运行密钥。打包器拒绝覆盖已有输出，再次构建时应另选路径。
 
 `deploy/verify_release_files.py` 比较已安装 API/静态文件与指定发布目录，并检查 API 健康、版本和必要路由。`deploy/verify_deployment.py` 在 PostgreSQL 只读事务中生成业务记录摘要，对比升级前后证据，不打印账本内容。后者检查的是升级是否保留数据，不能代替完整交互验收。文档中的命令为两者显式指定私有证据目录。
 
 | 检查 | 当前结果 | 覆盖范围 |
 | --- | --- | --- |
-| API pytest | 120 项通过，13 个子测试通过 | 账本访问、金额、库存校验、品名更正、Excel 和微信相关回归 |
+| API pytest | 148 项通过，15 个子测试通过 | 账本访问、金额、库存校验、品名更正、Excel 和微信相关回归 |
 | 网页精确金额检查 | 232 项通过 | 十进制计算、字段规范化、编辑器合计、旧明细和 FIFO 金额守恒 |
 | FIFO 契约 | 77 组 fixture、1,020 个流水/余额检查通过 | 网页/桌面成本和批次精确一致，API 数量余额一致 |
 | 既有网页回归脚本 | 通过 | 库存单据、客数字段、现金/历史记录和资源版本 |
+| v1.0.1 网页回归 | 25组通过 | 原网页缺陷及迟到响应覆盖缓存 |
+| 桌面回归 | 12个方法及10个Qt测试通过 | 现金别名、同步、结构化明细及真实Excel读写 |
+| 报表布局 | 20种组合通过 | 中英文、5种宽度、普通及放大文字 |
 
 以上是当前源码的本地自动化结果，不代表已验证每一种浏览器或实机，也不等于原生安装包和生产部署已经验收。
 
@@ -286,7 +291,7 @@ docs/DEPLOYMENT.md         内容对应的英文部署指南
 compose.yaml              独立本地 PostgreSQL/API/Nginx 实例
 README.md                 英文文档
 README (中文).md          中文文档
-VERSION                   Oct30LingChen
+VERSION                   v1.0.1
 ```
 
 ## 当前边界
@@ -298,3 +303,12 @@ VERSION                   Oct30LingChen
 ## 许可证
 
 MIT，见 [LICENSE](LICENSE)。
+
+
+## v1.0.1 完整交付包
+
+完整ZIP另外包含重新构建的双架构macOS App、服务器部署tar.gz、逐项修复说明、测试构建证据和修复前审查底稿。打包App要求macOS 15或更新版本，使用本地ad-hoc签名，未经Apple公证。保留的运行库实际版本为Python 3.12.10、PySide6 6.11.2、pandas 2.3.3、Matplotlib 3.11.1、openpyxl 3.1.5，与新安装的源码测试环境有区别。
+
+新增回归入口：`python build/test_v1_0_1_desktop.py`、`QT_QPA_PLATFORM=offscreen python build/test_v1_0_1_desktop_qt.py`、`node web/test_v1_0_1_regressions.js`以及`(cd backend && PYTHONPATH=.:tests python -m pytest -q tests)`。桌面构建/核验工具是`build/rebuild_macos_app.py`、`build/verify_macos_app.py`及单独离线测试用的`build/qa_packaged_desktop.py`；完整命令见ZIP内版本说明。重新构建桌面可直接用本包v1.0.1 App作为运行库，配合macOS Python3.12，无须另找Oct30附件；命令及独立输出目录见ZIP构建说明。`build/OCT30_ACCEPTANCE_RESULT.json`是历史验收文件，本版结果另见v1.0.1核验文件。
+
+ZIP源码目录不含`.git`、已安装依赖及凭据。解压后若要运行`build/make_release.py`，先在源码目录执行`git init`和`git add .`建立本地跟踪；此打包器有意只接受已跟踪的运行源码。再按上文安装锁定的构建/测试依赖。不要把密钥或用户账本放进源码树。

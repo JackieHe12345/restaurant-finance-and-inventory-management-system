@@ -60,11 +60,11 @@ from .wechat_pay import WeChatPayClient
 from .inventory_validation import (
     validate_inventory, has_documents, guard_entry_inventory, inventory_clock_times, is_voided,
 )
-from .inventory_balance import guard_inventory_balance
+from .inventory_balance import guard_inventory_balance, canonical_daily_rows, canonical_dish_rows
 from .name_corrections import router as name_correction_router
 
 
-app = FastAPI(title="餐饮成本管家云端 API", version="Oct30LingChen")
+app = FastAPI(title="餐饮成本管家云端 API", version="v1.0.1")
 app.router.route_class = ExactMoneyRoute
 app.include_router(name_correction_router)
 
@@ -86,6 +86,7 @@ app.add_middleware(
 ENTRY_EDIT_WINDOW = timedelta(minutes=30)
 ENTRY_DETAIL_WINDOW = timedelta(hours=12)
 AUDIT_RETENTION_DAYS = 366
+CASH_RECORD_KEYS = frozenset({"cash_position", "cash_balance", "base_balance"})
 ENTRY_REVENUE_CUTOFF_HOUR = 11
 ENTRY_DETAIL_FIELDS = ("食材明细", "佐料明细", "其他明细", "其它明细")
 ENTRY_DETAIL_CATEGORIES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
@@ -105,11 +106,10 @@ STORE_FIELD_GROUPS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# These are the nine user-facing income inputs.  The calculated store totals,
-# grand total, total cash and total online values deliberately do not receive
-# clocks of their own.  The legacy add/automatic payment columns remain data
-# inputs for revenue calculation, but the visible manual fields below are the
-# authoritative entry-role slots.
+# These are the nine user-facing income inputs, each with its own clock.
+# Derived totals must agree with their inputs; historical amount-only totals
+# retain their original aggregate clocks when converted to payment channels.
+# Legacy add/automatic columns are also timed so they cannot bypass these slots.
 ENTRY_INCOME_SLOTS: dict[str, tuple[str, str]] = {
     "a_wechat": ("A店微信", "A店微信覆盖"),
     "a_alipay": ("A店支付宝", "A店支付宝覆盖"),
@@ -120,6 +120,13 @@ ENTRY_INCOME_SLOTS: dict[str, tuple[str, str]] = {
     "student_takeout": ("学生外卖", "学生外卖"),
     "a_takeout": ("A店外卖", "A店外卖"),
     "b_takeout": ("B店外卖", "B店外卖"),
+}
+# Older clients can still write these raw channels. They are not additional
+# visible inputs, but cannot be an unclocked route around the nine slot locks.
+ENTRY_LEGACY_INCOME_SLOTS = {
+    f"{slot.lower()}_{key}": (f"{slot}店{label}", f"{slot}店{label}")
+    for slot in ("A", "B")
+    for key, label in (("wechat_added", "微信增加"), ("wechat_auto", "微信自动"), ("alipay_added", "支付宝增加"))
 }
 ENTRY_CUSTOMER_SLOTS = {"new": ("新客", "新客人数量"), "total": ("总客数", "总客人数")}
 ENTRY_CUSTOMER_FIELDS = ("新客人数量", "总客人数")
@@ -670,6 +677,49 @@ def _detail_snapshots(payload: Any, record_key: str = "") -> dict[str, str]:
     }
 
 
+def _detail_format_signature(serialized: str) -> tuple | None:
+    """Compare legacy text and new JSON without reopening an item's clock."""
+    import json
+    item = json.loads(serialized)
+    if isinstance(item, dict):
+        # Only the documented six-field interchange can match legacy text.
+        # Unknown IDs/metadata must still be treated as actual changes.
+        if set(item) - {"name", "quantity", "unit", "price", "total", "note"}:
+            return None
+        name, quantity, unit = str(item.get("name") or "").strip(), item.get("quantity"), str(item.get("unit") or "")
+        price, total, note = item.get("price"), item.get("total"), str(item.get("note") or "").strip()
+    elif isinstance(item, str):
+        parts = re.split(r"\s+备注[:：]", item.strip(), maxsplit=1)
+        text, note = parts[0], parts[1].strip() if len(parts) > 1 else ""
+        number = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
+        full = re.match(rf"^(.*?)\s+({number})\s*([^\d\s,，;；]*)\s+({number})$", text)
+        unpriced = re.match(rf"^(.*?)\s+({number})\s*([^\d\s,，;；]+)$", text)
+        amount = re.match(rf"^(.+?)\s*({number})$", text)
+        price = ""
+        if full:
+            name, quantity, unit, total = full.groups()
+        elif unpriced:
+            name, quantity, unit = unpriced.groups()
+            total = ""
+        elif amount:
+            name, total = amount.groups()
+            quantity, unit = "", ""
+        else:
+            name, quantity, unit, total = text, "", "", ""
+        name = name.strip()
+    else:
+        return None
+    try:
+        qty = decimal_value(quantity, limit=None) if quantity not in (None, "") else None
+        amount = money(total, limit=None) if total not in (None, "") else None
+        unit_price = price_text(price) if price not in (None, "") else None
+        if unit_price is None and qty and amount is not None:
+            unit_price = price_text(amount / qty)
+        return (name, qty, unit, unit_price, amount, note)
+    except (ValueError, TypeError):
+        return None
+
+
 def _entry_value_present(value: Any) -> bool:
     """Blank means unrecorded; numeric zero is a successfully saved value."""
 
@@ -691,7 +741,7 @@ def _income_field_snapshots(payload: Any, record_key: str = "") -> dict[str, dic
     result: dict[str, dict[str, Any]] = {}
     for row in _daily_payload_rows(payload, record_key):
         day = str(row.get("日期") or record_key or "").strip()
-        for key, (label, field) in ENTRY_INCOME_SLOTS.items():
+        for key, (label, field) in {**ENTRY_INCOME_SLOTS, **ENTRY_LEGACY_INCOME_SLOTS}.items():
             value = row.get(field)
             present = field in row and _entry_value_present(value)
             result[f"{day}|{key}"] = {
@@ -999,25 +1049,79 @@ def _effective_record_role(
     payload: Any = None,
     *,
     now: datetime | None = None,
+    previous_payload: Any = None,
 ) -> str:
-    """Return permanent or scheduled permission for this exact business date."""
+    """Use the least privilege covering every business date actually changed.
+
+    Legacy records can pack several dates into one key. An unchanged row does
+    not need a grant, but deleting, moving or inserting a row affects both its
+    old and new dates. Undated metadata belongs to the server record identity.
+    """
 
     if user.role in {"admin", "editor"}:
         return user.role
-    business_day = _record_day(record_key, payload) if record_type == "day" else None
     rank = {"viewer": 0, "entry": 1, "editor": 2, "admin": 3}
     best = user.role if user.role in rank else "viewer"
-    if business_day is None:
+    if record_type != "day":
         return best
-    day_text = business_day.isoformat()
-    for grant in active_temporary_permissions(db, user.id, now=now):
-        if grant.dataset_id != dataset_id:
-            continue
-        if not (grant.business_start_date <= day_text <= grant.business_end_date):
-            continue
-        if grant.permission_role in {"entry", "editor"} and rank[grant.permission_role] > rank[best]:
-            best = grant.permission_role
-    return best
+    grants = [grant for grant in active_temporary_permissions(db, user.id, now=now)
+              if grant.dataset_id == dataset_id and rank.get(grant.permission_role, 0) > rank[best]]
+    if not grants:
+        return best
+    def projections(value):
+        value = value if isinstance(value, dict) else {}
+        grouped = {}
+        for table in ("daily", "fixed_expenses", "dishes"):
+            rows = _daily_payload_rows(value, record_key) if table == "daily" else value.get(table, [])
+            for row in rows if isinstance(rows, list) else []:
+                if not isinstance(row, dict):
+                    grouped.setdefault(None, []).append((table, row))
+                    continue
+                raw = row.get("日期") or row.get("date") or record_key
+                day = _record_day(str(raw))
+                grouped.setdefault(day, []).append((table, row))
+        if not isinstance(value.get("daily"), list) and _daily_payload_rows(value, record_key):
+            extra = {k: v for k, v in value.items() if k in {"fixed_expenses", "dishes"}}
+        else:
+            extra = {k: v for k, v in value.items() if k not in {"daily", "fixed_expenses", "dishes"}}
+        if extra:
+            grouped.setdefault(_record_day(record_key), []).append(("metadata", extra))
+        return grouped
+    old, new = projections(previous_payload), projections(payload)
+    days = {day for day in old.keys() | new.keys() if old.get(day) != new.get(day)}
+    # Updating a packed legacy source advances its sequence. Even an unchanged
+    # row can then replace another record's winning value on an ungranted day.
+    if previous_payload != payload:
+        records = db.scalars(select(SyncRecord).where(
+            SyncRecord.dataset_id == dataset_id, SyncRecord.record_type == "day",
+            SyncRecord.is_deleted.is_(False),
+        ).order_by(SyncRecord.sequence, SyncRecord.id)).all()
+        before_records = [{"record_key": item.record_key, "payload": item.payload,
+                           "sequence": item.sequence, "version": item.version} for item in records]
+        after_records = [item for item in before_records if item["record_key"] != record_key]
+        if payload is not None:
+            after_records.append({"record_key": record_key, "payload": payload,
+                                  "sequence": max((item.sequence for item in records), default=0) + 1})
+        before_days, after_days = canonical_daily_rows(before_records), canonical_daily_rows(after_records)
+        days.update(_record_day(day) for day in before_days.keys() | after_days.keys()
+                    if before_days.get(day) != after_days.get(day))
+        before_dishes, after_dishes = canonical_dish_rows(before_records), canonical_dish_rows(after_records)
+        days.update(_record_day(day) for day in before_dishes.keys() | after_dishes.keys()
+                    if before_dishes.get(day) != after_dishes.get(day))
+    if not days:
+        days = {_record_day(record_key)}
+    roles = []
+    for day in days:
+        role = best
+        if day is not None:
+            for grant in grants:
+                if (grant.dataset_id == dataset_id
+                    and grant.business_start_date <= day.isoformat() <= grant.business_end_date
+                    and grant.permission_role in {"entry", "editor"}
+                    and rank[grant.permission_role] > rank[role]):
+                    role = grant.permission_role
+        roles.append(role)
+    return min(roles, key=rank.get)
 
 
 def _entry_revenue_deadline(record_key: str, payload: Any, now: datetime) -> datetime | None:
@@ -1081,6 +1185,116 @@ def _protected_entry_path(path: str) -> bool:
     )
 
 
+def _entry_detail_total(value: Any) -> Decimal:
+    """Sum explicit detail amounts; an unpriced quantity remains unpriced."""
+    total = ZERO
+    for item in _detail_value_items(value):
+        if isinstance(item, dict):
+            amount = next((item[key] for key in ("total", "总价", "金额", "amount", "cost", "成本")
+                           if item.get(key) not in (None, "")), None)
+            if amount is not None:
+                total += money(amount, limit=None)
+            else:
+                quantity = next((item[key] for key in ("quantity", "数量", "qty") if item.get(key) not in (None, "")), None)
+                price = next((item[key] for key in ("price", "unit_price", "unitPrice", "单价") if item.get(key) not in (None, "")), None)
+                if quantity is not None and price is not None:
+                    total += product(quantity, price)
+        else:
+            text = re.split(r"\s+备注[:：]", str(item), maxsplit=1)[0].strip()
+            text = re.sub(r"\s*[（(][^）)]*[）)]\s*$", "", text).strip()
+            match = re.search(r"(?:^|\s)([-+]?(?:\d+(?:\.\d*)?|\.\d+))$", text)
+            if not match:
+                # Legacy amount-only text permits no separating space, e.g.
+                # 水15.80. A quantity ending in its unit (米 2斤) is unpriced.
+                match = re.match(r"^.+?([-+]?(?:\d+(?:\.\d*)?|\.\d+))$", text)
+            if match:
+                total += money(match.group(1), limit=None)
+    return total
+
+
+def _validate_entry_totals(old_payload, new_payload, record_key, field_times, fallback, now):
+    """Validate only touched totals and keep legacy amount-only slots locked.
+
+    Unchanged historical inconsistencies are not silently rewritten. Current
+    totals follow the existing payment formula, including manual zero overrides.
+    """
+    old_rows = {}
+    for row in _daily_payload_rows(old_payload, record_key):
+        old_rows.setdefault(str(row.get("日期") or record_key), []).append(row)
+    positions = {}
+    payment_sources = {slot: tuple(field for field in STORE_FIELD_GROUPS[slot]
+                                   if field != f"{slot}店收入") for slot in ("A", "B")}
+    def source_value(row, key):
+        value = row.get(key)
+        if key in ENTRY_DETAIL_FIELDS:
+            return _json_value([detail_for_comparison(item) for item in _detail_value_items(value)])
+        return (_entry_value_present(value), _entry_income_value(value))
+    for row in _daily_payload_rows(new_payload, record_key):
+        day = str(row.get("日期") or record_key)
+        index = positions.get(day, 0)
+        positions[day] = index + 1
+        old = old_rows.get(day, [])
+        old = old[index] if index < len(old) else {}
+        checks = []
+        for fields, costs in ENTRY_DETAIL_CATEGORIES.values():
+            detail = next((row.get(key) for key in fields if row.get(key) not in (None, "")), "")
+            old_detail = next((old.get(key) for key in fields if old.get(key) not in (None, "")), "")
+            if _detail_value_items(detail) or _detail_value_items(old_detail):
+                checks.extend((key, _entry_detail_total(detail), fields) for key in costs if key in row or key in old)
+        calculated = recalc_revenue_breakdown(dict(row))
+        all_sources = (*payment_sources["A"], *payment_sources["B"], "学生外卖")
+        for field in (*ENTRY_DERIVED_REVENUE_FIELDS, "总金额", "收入", "总收入"):
+            sources = (payment_sources[field[0]] if field in {"A店收入", "B店收入"}
+                       else ("A店现金", "B店现金") if field == "总现金"
+                       else tuple(key for key in all_sources if key not in {"A店现金", "B店现金"}) if field == "总线上"
+                       else all_sources)
+            has_sources = any(_entry_value_present(row.get(key)) for key in sources)
+            expected = calculated.get(field, calculated["收益"]) if has_sources else None
+            if field in row or field in old:
+                checks.append((field, expected, sources if has_sources else ()))
+        for field, expected, sources in checks:
+            old_value, new_value = old.get(field), row.get(field)
+            changed = (_entry_value_present(old_value) != _entry_value_present(new_value)
+                       or money(old_value or 0, limit=None) != money(new_value or 0, limit=None))
+            source_changed = any(source_value(old, key) != source_value(row, key) for key in sources)
+            clock = f"total:{day}:{field}"
+            saved_at = _as_utc(field_times.get(clock))
+            if saved_at is None and _entry_value_present(old_value):
+                saved_at = fallback
+                field_times[clock] = saved_at.isoformat()
+            # A saved amount-only income is already a recorded value. Adding
+            # its first payment breakdown must not turn that value into a new
+            # input with a fresh edit window. An equal-value representation
+            # change is allowed, but its channels inherit the original clock.
+            legacy_income_conversion = (
+                bool(sources) and field not in {"食材成本", "佐料成本", "其他", "其它"}
+                and _entry_value_present(old_value)
+                and not any(_entry_value_present(old.get(key)) for key in sources)
+                and any(_entry_value_present(row.get(key)) for key in sources)
+            )
+            if legacy_income_conversion and saved_at is not None:
+                if changed and now >= saved_at + ENTRY_EDIT_WINDOW:
+                    raise HTTPException(status_code=403, detail=f"{field}只能在首次保存后 30 分钟内修改；补录收款渠道不能重新开始修改期限。")
+                for key, (_, source_field) in {**ENTRY_INCOME_SLOTS, **ENTRY_LEGACY_INCOME_SLOTS}.items():
+                    if source_field in sources and _entry_value_present(row.get(source_field)):
+                        income_clock = f"income:{key}"
+                        anchor = min(_as_utc(field_times.get(income_clock)) or saved_at, saved_at)
+                        field_times[income_clock] = anchor.isoformat()
+            if not changed and not source_changed:
+                continue
+            if changed and not source_changed:
+                if saved_at is not None and now >= saved_at + ENTRY_EDIT_WINDOW:
+                    raise HTTPException(status_code=403, detail=f"{field}只能在首次保存后 30 分钟内修改；合计必须与对应明细或收款输入一致。")
+                if saved_at is None and _entry_value_present(new_value):
+                    deadline = _entry_revenue_deadline(day, {}, now)
+                    if field not in {"食材成本", "佐料成本", "其他", "其它"} and deadline is not None and now >= deadline:
+                        raise HTTPException(status_code=403, detail=f"{field}未录入时最晚须在第二天 11:00 前首次保存。")
+            if expected is not None and money(new_value or 0, limit=None) != money(expected, limit=None):
+                raise HTTPException(status_code=422, detail=f"{field}与对应明细或收款输入合计不一致，请重新计算后保存。")
+            if saved_at is None and _entry_value_present(new_value):
+                field_times[clock] = now.isoformat()
+
+
 def _entry_timing_updates(
     db: Session,
     *,
@@ -1116,6 +1330,27 @@ def _entry_timing_updates(
     for identity in old_details:
         detail_times.setdefault(identity, fallback.isoformat())
     new_details = _detail_snapshots(new_payload, record_key)
+    # An unchanged text item may be serialized as JSON when the new picker
+    # appends another item. Carry both identities' original timestamp and use
+    # the old projection for this validation; later JSON edits keep that clock.
+    unmatched_new = set(new_details) - set(old_details)
+    for old_key in sorted(set(old_details) - set(new_details)):
+        if "|__cost__|" in old_key:
+            continue  # A legacy amount-only slot is not a serialized detail item.
+        signature = _detail_format_signature(old_details[old_key])
+        if signature is None:
+            continue
+        prefix = old_key.split("|", 2)[:2]
+        equivalent = next((key for key in sorted(unmatched_new)
+                           if key.split("|", 2)[:2] == prefix
+                           and _detail_format_signature(new_details[key]) == signature), None)
+        if equivalent is not None:
+            anchor = min(_as_utc(detail_times[old_key]) or fallback,
+                         _as_utc(detail_times.get(equivalent)) or fallback)
+            detail_times[equivalent] = anchor.isoformat()
+            new_details[old_key] = old_details[old_key]
+            new_details.pop(equivalent)
+            unmatched_new.remove(equivalent)
     category_names = {"food": "食材", "spice": "佐料", "other": "其它"}
     fresh_detail_additions: dict[str, list[str]] = {}
     old_category_has_items: dict[str, bool] = {}
@@ -1234,21 +1469,6 @@ def _entry_timing_updates(
         field_times, old_payload, new_payload, record_key, fallback, now, enforce=True
     )
 
-    a_income_times = [
-        _as_utc(field_times.get(f"income:{key}"))
-        for key in ("a_wechat", "a_alipay", "a_cash", "a_takeout")
-    ]
-    b_income_times = [
-        _as_utc(field_times.get(f"income:{key}"))
-        for key in ("b_wechat", "b_alipay", "b_cash", "b_takeout")
-    ]
-    a_income_times = [value for value in a_income_times if value is not None]
-    b_income_times = [value for value in b_income_times if value is not None]
-    if a_income_times:
-        store_a_at = min(a_income_times)
-    if b_income_times:
-        store_b_at = min(b_income_times)
-
     # Older clients can submit only 收益/总金额.  Apply the same next-day
     # cutoff and fixed 30-minute window to that representation, while avoiding
     # a second clock for a derived total sent alongside any of the nine inputs.
@@ -1281,6 +1501,16 @@ def _entry_timing_updates(
             if revenue_at is None:
                 revenue_at = now
 
+    _validate_entry_totals(old_payload, new_payload, record_key, field_times, fallback, now)
+    for slot in ("a", "b"):
+        times = [_as_utc(field_times.get(f"income:{slot}_{key}"))
+                 for key in ("wechat", "alipay", "cash", "takeout")]
+        times = [value for value in times if value is not None]
+        if times:
+            if slot == "a":
+                store_a_at = min(times)
+            else:
+                store_b_at = min(times)
     write_payload: dict[str, Any] = copy.deepcopy(new_payload or {})
 
     # Keep the historical entry-role behaviour for non-detail fields after the
@@ -1616,7 +1846,59 @@ def apply_workbook_records(
     event_id = f"workbook-{uuid4()}"
     counts = {"created": 0, "updated": 0, "deleted": 0, "unchanged": 0}
 
-    for identity in sorted(incoming):
+    ordered_identities = sorted(incoming, key=lambda identity: (
+        incoming[identity].source_order if incoming[identity].source_order is not None else 0,
+        identity,
+    ))
+    # Restoring only one member of an overlapping legacy day group would
+    # otherwise put it after unchanged members, reversing the saved winner.
+    # Include the whole affected group in the write set, keeping no-op imports
+    # genuinely unchanged and leaving unrelated days' clocks/sequences alone.
+    reorder = set()
+    if not merge and any(item.source_order is not None for item in incoming.values()):
+        parent, day_owner = {}, {}
+        def root(key):
+            while parent[key] != key:
+                parent[key] = parent[parent[key]]
+                key = parent[key]
+            return key
+        for identity in ordered_identities:
+            if identity[0] != "day":
+                continue
+            parent[identity] = identity
+            source_records = [{"record_key": identity[1], "payload": incoming[identity].payload}]
+            days = set(canonical_daily_rows(source_records)) | set(canonical_dish_rows(source_records))
+            for day in days:
+                if day in day_owner:
+                    parent[root(identity)] = root(day_owner[day])
+                else:
+                    day_owner[day] = identity
+        groups = {}
+        for identity in ordered_identities:
+            if identity in parent:
+                groups.setdefault(root(identity), []).append(identity)
+        existing_positions = {(item.record_type, item.record_key): index for index, item in enumerate(existing_rows)}
+        for expected in groups.values():
+            if len(expected) < 2:
+                continue
+            actual = sorted(expected, key=lambda key: (
+                existing[key].sequence if key in existing and not existing[key].is_deleted else -1,
+                existing[key].version if key in existing else 0,
+                existing_positions.get(key, -1),
+            ))
+            changed = False
+            for key in expected:
+                if key not in existing or existing[key].is_deleted:
+                    changed = True
+                    break
+                normalized = normalize_payload(normalize_fixed_expense_cash_flags(incoming[key].payload), existing[key].payload)
+                if normalized != existing[key].payload or payload_checksum(normalized) != existing[key].checksum:
+                    changed = True
+                    break
+            if changed or actual != expected:
+                reorder.update(expected)
+
+    for identity in ordered_identities:
         item = incoming[identity]
         record = existing.get(identity)
         payload = (
@@ -1642,7 +1924,7 @@ def apply_workbook_records(
             validate_inventory(payload, record.payload if record else None,
                                today=utcnow().astimezone(_business_timezone()).date().isoformat(),
                                restoration=True)
-        if item.record_type == "global" and item.record_key in {"cash_position", "cash_balance"}:
+        if item.record_type == "global" and item.record_key in CASH_RECORD_KEYS:
             payload = _canonical_cash_payload(
                 payload,
                 previous_payload=(
@@ -1660,6 +1942,7 @@ def apply_workbook_records(
             and not record.is_deleted
             and record.payload == payload
             and record.checksum == checksum
+            and identity not in reorder
         ):
             counts["unchanged"] += 1
             continue
@@ -1735,7 +2018,7 @@ def apply_workbook_records(
                 continue
             if (
                 record.record_type == "global"
-                and record.record_key in {"cash_position", "cash_balance"}
+                and record.record_key in CASH_RECORD_KEYS
             ):
                 _protect_locked_cash_forces(record.payload, None)
             before_payload = record.payload
@@ -2142,30 +2425,34 @@ def _cash_flow_summary_db(
             SyncRecord.dataset_id == dataset_id,
             SyncRecord.record_type == "day",
             SyncRecord.is_deleted.is_(False),
-        )
+        ).order_by(SyncRecord.sequence, SyncRecord.id)
     ).all()
+    # Use the same sequence/version and nonempty-field precedence as the
+    # ledger and inventory; duplicate logical dates are replacement sources.
+    daily = canonical_daily_rows([
+        {"record_key": item.record_key, "payload": item.payload,
+         "sequence": item.sequence, "version": item.version}
+        for item in day_records
+    ])
+    for day_text, row in daily.items():
+        day = _cash_date(day_text)
+        if day <= opening_date or day > today:
+            continue
+        revenue = _effective_day_revenue(row)
+        income += revenue
+        if revenue:
+            cash_entries.append({"date": day.isoformat(), "type": "营业收入", "description": "当日收入", "amount": revenue})
+        for key, label in (
+            ("食材成本", "食材"), ("佐料成本", "佐料"), ("水电", "水电"),
+            ("其他", "其它"), ("手续费", "手续费／抽成"),
+        ):
+            amount = _money_value(row.get(key))
+            if not amount and key == "其他":
+                amount = _money_value(row.get("其它"))
+            if amount:
+                daily_expenses += amount
+                cash_entries.append({"date": day.isoformat(), "type": "经营支出", "description": label, "amount": -amount})
     for record in day_records:
-        rows = _daily_payload_rows(record.payload or {}, record.record_key)
-        if not rows:
-            rows = [{"日期": record.record_key}]
-        for row in rows:
-            day = _cash_date(row.get("日期"), default=_cash_date(record.record_key))
-            if day <= opening_date or day > today:
-                continue
-            revenue = _effective_day_revenue(row)
-            income += revenue
-            if revenue:
-                cash_entries.append({"date": day.isoformat(), "type": "营业收入", "description": "当日收入", "amount": revenue})
-            for key, label in (
-                ("食材成本", "食材"), ("佐料成本", "佐料"), ("水电", "水电"),
-                ("其他", "其它"), ("手续费", "手续费／抽成"),
-            ):
-                amount = _money_value(row.get(key))
-                if not amount and key == "其他":
-                    amount = _money_value(row.get("其它"))
-                if amount:
-                    daily_expenses += amount
-                    cash_entries.append({"date": day.isoformat(), "type": "经营支出", "description": label, "amount": -amount})
         expenses = (record.payload or {}).get("fixed_expenses", []) if isinstance(record.payload, dict) else []
         if isinstance(expenses, list):
             for expense in expenses:
@@ -2358,22 +2645,40 @@ def _cash_flow_summary_db(
         ), limit=None),
         "entries": display_entries,
         "days": sum(
-            1 for record in day_records
-            for row in _daily_payload_rows(record.payload or {}, record.record_key)
-            if opening_date < _cash_date(row.get("日期"), default=_cash_date(record.record_key)) <= today
+            1 for day in daily if opening_date < _cash_date(day) <= today
         ),
     })
 
 
-def _cash_position_response(db: Session, dataset_id: str) -> dict[str, Any]:
-    record = db.scalar(
+def _cash_record_candidates(
+    db: Session, dataset_id: str, *, for_update: bool = False,
+) -> list[SyncRecord]:
+    """Use one stable precedence for the displayed and writable cash record.
+
+    A live canonical record wins. Otherwise the most recently updated alias
+    wins, with sequence/version and record identity breaking timestamp ties.
+    Deleted records stay in the result so writes can reuse the canonical
+    identity without colliding with its unique key.
+    """
+    statement = (
         select(SyncRecord).where(
             SyncRecord.dataset_id == dataset_id,
             SyncRecord.record_type == "global",
-            SyncRecord.record_key.in_(["cash_position", "cash_balance"]),
-            SyncRecord.is_deleted.is_(False),
-        ).order_by((SyncRecord.record_key == "cash_position").desc())
+            SyncRecord.record_key.in_(CASH_RECORD_KEYS),
+        ).order_by(
+            (SyncRecord.record_key == "cash_position").desc(),
+            SyncRecord.updated_at.desc(), SyncRecord.sequence.desc(),
+            SyncRecord.version.desc(), SyncRecord.record_key, SyncRecord.id,
+        )
     )
+    if for_update:
+        statement = statement.with_for_update()
+    return list(db.scalars(statement).all())
+
+
+def _cash_position_response(db: Session, dataset_id: str) -> dict[str, Any]:
+    record = next((item for item in _cash_record_candidates(db, dataset_id)
+                   if not item.is_deleted), None)
     payload = _cash_payload_from_record(record)
     flow = _cash_flow_summary_db(db, dataset_id, payload)
     return {
@@ -2422,35 +2727,26 @@ def _save_cash_position_record(
     user: AppUser,
 ) -> dict[str, Any]:
     authorized_dataset(db, user, dataset_id, write=True, for_update=True)
-    # Lock both aliases before choosing one.  Installations upgraded from the
-    # early web build can briefly contain an active ``cash_balance`` alongside
-    # the canonical ``cash_position``; renaming the former blindly would hit
-    # the unique record-identity constraint.
-    candidates = db.scalars(
-        select(SyncRecord)
-        .where(
-            SyncRecord.dataset_id == dataset_id,
-            SyncRecord.record_type == "global",
-            SyncRecord.record_key.in_(["cash_position", "cash_balance"]),
-        )
-        .order_by((SyncRecord.record_key == "cash_position").desc(), SyncRecord.updated_at.desc())
-        .with_for_update()
-    ).all()
-    record = next((item for item in candidates if not item.is_deleted), None)
-    if record is None:
-        # Prefer restoring the canonical identity when only deleted aliases
-        # remain; otherwise any deleted row can be reused without inserting a
-        # duplicate identity.
-        record = next((item for item in candidates if item.record_key == "cash_position"), None)
-        record = record or (candidates[0] if candidates else None)
-    if record and body.expected_version not in {0, record.version}:
+    # Read and write must select the same alias, including timestamp ties.
+    # Lock every identity because a deleted canonical row still owns its key.
+    candidates = _cash_record_candidates(db, dataset_id, for_update=True)
+    active = next((item for item in candidates if not item.is_deleted), None)
+    # The version seen by GET belongs to the active alias, but the canonical
+    # database identity must be reused even when it currently is a tombstone.
+    record = next((item for item in candidates if item.record_key == "cash_position"), None)
+    record = record or active or (candidates[0] if candidates else None)
+    visible = active or record
+    if visible and body.expected_version not in {0, visible.version}:
         raise HTTPException(status_code=409, detail="现金余额表记录版本冲突。")
     before_payload = record.payload if record and not record.is_deleted else None
     before_version = int(record.version if record else 0)
-    payload = _cash_payload_from_record(record)
+    payload = _cash_payload_from_record(active)
     payload.update(_normalise_cash_body(body, previous_payload=payload))
     payload = normalize_payload(payload, before_payload)
     _protect_locked_cash_forces(before_payload, payload)
+    for candidate in candidates:
+        if candidate is not record and not candidate.is_deleted:
+            _protect_locked_cash_forces(candidate.payload, payload)
     checksum = payload_checksum(payload)
     sequence = next_sequence(db, dataset_id)
     if record is None:
@@ -2470,7 +2766,10 @@ def _save_cash_position_record(
         record.record_key = "cash_position"
         record.payload = payload
         record.checksum = checksum
-        record.version += 1
+        # Retiring an alias changes the identity returned by GET. Its old
+        # version must not accidentally equal the restored canonical version,
+        # or a stale request could pass the next optimistic-lock check.
+        record.version = max(item.version for item in candidates) + 1
         record.sequence = sequence
         record.is_deleted = False
         action = "restore" if before_payload is None else "update"
@@ -2492,6 +2791,22 @@ def _save_cash_position_record(
         checksum=checksum,
         occurred_at=utcnow(),
     )
+    for alias in candidates:
+        if alias is record or alias.is_deleted:
+            continue
+        sequence += 1
+        alias_version = alias.version
+        alias.is_deleted = True
+        alias.version += 1
+        alias.sequence = sequence
+        add_audit(
+            db, user=user, dataset_id=dataset_id, record_type="global",
+            record_key=alias.record_key, action="delete", source="cash_position",
+            event_id=f"cash-alias-{uuid4()}", device_id="",
+            from_version=alias_version, to_version=alias.version, sequence=sequence,
+            before_payload=alias.payload, after_payload=None, checksum=alias.checksum,
+            occurred_at=utcnow(),
+        )
     db.commit()
     return _cash_position_response(db, dataset_id)
 
@@ -3720,6 +4035,12 @@ def copy_entire_ledger(
     }
 
 
+def _record_visible(user: AppUser, record_type: str, record_key: str) -> bool:
+    return user.role in {"admin", "editor"} or not (
+        record_type == "global" and record_key in CASH_RECORD_KEYS
+    )
+
+
 @app.get("/api/v1/datasets/{dataset_id}/records")
 def list_records(
     dataset_id: str,
@@ -3731,6 +4052,8 @@ def list_records(
 ) -> list[dict[str, Any]]:
     authorized_dataset(db, user, dataset_id)
     stmt = select(SyncRecord).where(SyncRecord.dataset_id == dataset_id)
+    if user.role not in {"admin", "editor"}:
+        stmt = stmt.where(~((SyncRecord.record_type == "global") & SyncRecord.record_key.in_(CASH_RECORD_KEYS)))
     if not include_deleted:
         stmt = stmt.where(SyncRecord.is_deleted.is_(False))
     rows = db.scalars(stmt.order_by(SyncRecord.sequence, SyncRecord.id).offset(offset).limit(limit)).all()
@@ -3740,6 +4063,8 @@ def list_records(
 @app.get("/api/v1/datasets/{dataset_id}/records/{record_type}/{record_key:path}")
 def read_record(dataset_id: str, record_type: str, record_key: str, user: AppUser = Depends(current_user), db: Session = Depends(get_db)) -> dict[str, Any]:
     authorized_dataset(db, user, dataset_id)
+    if not _record_visible(user, record_type, record_key):
+        raise HTTPException(status_code=403, detail="现金余额表只对修改权限和管理员开放。")
     record = get_record(db, dataset_id, record_type, record_key)
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在。")
@@ -3779,23 +4104,24 @@ def write_record(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     authorized_dataset(db, user, dataset_id, for_update=True)
+    record = get_record(db, dataset_id, record_type, record_key)
+    before_payload = record.payload if record else None
+    before_version = record.version if record else 0
+    write_payload = normalize_payload(normalize_fixed_expense_cash_flags(body.payload), before_payload)
     effective_role = _effective_record_role(
-        db, user, dataset_id, record_type, record_key, body.payload, now=utcnow()
+        db, user, dataset_id, record_type, record_key, write_payload, now=utcnow(),
+        previous_payload=before_payload if record and not record.is_deleted else None,
     )
     if effective_role not in {"admin", "editor", "entry"}:
         raise HTTPException(status_code=403, detail="当前账号在所选日期没有录入或修改权限。")
     if (
         effective_role == "entry"
         and record_type == "global"
-        and record_key in {"cash_position", "cash_balance"}
+        and record_key in CASH_RECORD_KEYS
     ):
         raise HTTPException(status_code=403, detail="现金余额表只对修改权限和管理员开放。")
-    record = get_record(db, dataset_id, record_type, record_key)
-    before_payload = record.payload if record else None
-    before_version = record.version if record else 0
     is_inventory = record_type == "global" and record_key == "inventory"
     document_inventory = is_inventory and (has_documents(body.payload) or has_documents(before_payload))
-    write_payload = normalize_payload(normalize_fixed_expense_cash_flags(body.payload), before_payload)
 
     if record and (body.expected_version not in {0, record.version}
                    or (document_inventory and body.expected_version != record.version)):
@@ -3822,7 +4148,7 @@ def write_record(
             write_payload, record_key
         )
     is_cash_record = (
-        record_type == "global" and record_key in {"cash_position", "cash_balance"}
+        record_type == "global" and record_key in CASH_RECORD_KEYS
     )
     if is_cash_record:
         write_payload = _canonical_cash_payload(
@@ -3964,18 +4290,19 @@ def delete_record(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     authorized_dataset(db, user, dataset_id, for_update=True)
+    record = get_record(db, dataset_id, record_type, record_key)
     effective_role = _effective_record_role(
-        db, user, dataset_id, record_type, record_key, None, now=utcnow()
+        db, user, dataset_id, record_type, record_key, None, now=utcnow(),
+        previous_payload=record.payload if record else None,
     )
     if effective_role not in {"admin", "editor", "entry"}:
         raise HTTPException(status_code=403, detail="当前账号在所选日期没有录入或修改权限。")
     if (
         effective_role == "entry"
         and record_type == "global"
-        and record_key in {"cash_position", "cash_balance"}
+        and record_key in CASH_RECORD_KEYS
     ):
         raise HTTPException(status_code=403, detail="现金余额表只对修改权限和管理员开放。")
-    record = get_record(db, dataset_id, record_type, record_key)
     if not record:
         raise HTTPException(status_code=404, detail="记录不存在。")
     if body.expected_version not in {0, record.version}:
@@ -3986,7 +4313,7 @@ def delete_record(
         raise HTTPException(status_code=403, detail="库存单据需保留记录，不能删除整表；请作废入／出库单或新增盘点单纠正。")
     if (
         record_type == "global"
-        and record_key in {"cash_position", "cash_balance"}
+        and record_key in CASH_RECORD_KEYS
         and _locked_cash_forces(record.payload)
     ):
         raise HTTPException(
@@ -4043,7 +4370,9 @@ def changes(dataset_id: str, after_sequence: int = 0, limit: int = Query(default
     has_more = len(rows) > limit
     items = rows[:limit]
     next_value = max([after_sequence] + [item.sequence for item in items])
-    return {"items": [record_out(item) for item in items], "next_sequence": next_value, "has_more": has_more}
+    # Advance over hidden records too: otherwise a cash-only page strands a
+    # low-privilege device at the same cursor forever. Absence is not a delete.
+    return {"items": [record_out(item) for item in items if _record_visible(user, item.record_type, item.record_key)], "next_sequence": next_value, "has_more": has_more}
 
 
 @app.get("/api/v1/audit")
@@ -4188,7 +4517,7 @@ def resolve_conflict(
             validate_inventory(chosen_payload, before_payload,
                                today=utcnow().astimezone(_business_timezone()).date().isoformat())
             _guard_inventory_db(db, conflict.dataset_id, before_payload, chosen_payload)
-        if record.record_type == "global" and record.record_key in {"cash_position", "cash_balance"}:
+        if record.record_type == "global" and record.record_key in CASH_RECORD_KEYS:
             chosen_payload = _canonical_cash_payload(
                 chosen_payload, previous_payload=before_payload, strict_types=False
             )
@@ -4203,7 +4532,7 @@ def resolve_conflict(
             validate_inventory(chosen_payload, before_payload,
                                today=utcnow().astimezone(_business_timezone()).date().isoformat())
             _guard_inventory_db(db, conflict.dataset_id, before_payload, chosen_payload)
-        if record.record_type == "global" and record.record_key in {"cash_position", "cash_balance"}:
+        if record.record_type == "global" and record.record_key in CASH_RECORD_KEYS:
             chosen_payload = _canonical_cash_payload(
                 chosen_payload, previous_payload=before_payload, strict_types=False
             )

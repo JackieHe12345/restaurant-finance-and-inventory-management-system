@@ -1,9 +1,9 @@
-/* Oct30LingChen: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 
 const API = "/api/v1";
 const SESSION_TTL = Exact.mul(Exact.mul(Exact.mul(2, 60), 60), 1000);
-const state = { token: "", user: null, datasets: [], dataset: null, records: [], days: [], dayRowsByDate: new Map(), dayRecordMap: new Map(), months: new Map(), recordMap: new Map(), entryWindows: [], cashPosition: null, language: Exact.or(()=>(localStorage.getItem("restaurant_language")), ()=>("zh")), activePage: "overview", autoRefresh: null, refreshBusy: false, pendingDatasetId: "", editorDirty: false, editorDrafts: Object.create(null), editorBaselines: Object.create(null) };
+const state = { contextGeneration: 0, recordWriteRevision: 0, cashPositionDatasetId: "", cashPositionRevision: 0, token: "", user: null, datasets: [], dataset: null, records: [], days: [], dayRowsByDate: new Map(), dayRecordMap: new Map(), months: new Map(), recordMap: new Map(), entryWindows: [], cashPosition: null, language: Exact.or(()=>(localStorage.getItem("restaurant_language")), ()=>("zh")), activePage: "overview", autoRefresh: null, refreshBusy: false, pendingDatasetId: "", editorDirty: false, editorDrafts: Object.create(null), editorBaselines: Object.create(null) };
 const $ = (id) => document.getElementById(id);
 const colors = ["#365f96", "#7994b8", "#586d84", "#a5b5ca", "#84909d", "#bcc7d5", "#526b8b", "#ced5df"];
 
@@ -12,7 +12,7 @@ const metricText = {
 };
 function trPair(pair){ return pair[(Exact.truth(Exact.seq(state.language, "en")) ? 1 : 0)]; }
 function mt(key){ return trPair(Exact.or(()=>(metricText[key]), ()=>([key,key]))); }
-function setSession(token, user) { const payload={token,user,expiresAt:Exact.add(Date.now(), SESSION_TTL)}; localStorage.setItem("restaurant_session",JSON.stringify(payload)); state.token=token; state.user=Exact.or(()=>(user), ()=>(null)); }
+function setSession(token, user) { state.contextGeneration=Exact.add(Exact.or(()=>(state.contextGeneration), ()=>(0)), 1); const payload={token,user,expiresAt:Exact.add(Date.now(), SESSION_TTL)}; localStorage.setItem("restaurant_session",JSON.stringify(payload)); state.token=token; state.user=Exact.or(()=>(user), ()=>(null)); }
 function restoreSession() { try { const value=JSON.parse(Exact.or(()=>(localStorage.getItem("restaurant_session")), ()=>("null"))); if(Exact.truth(Exact.and(()=>(value?.token), ()=>(Exact.gt(Exact.toNumber(value.expiresAt), Date.now()))))){state.token=value.token;state.user=Exact.or(()=>(value.user), ()=>(null));return true;} } catch(_){} localStorage.removeItem("restaurant_session"); return false; }
 function touchSession(){
   /* Only actual user input calls this function.  Background polling must not
@@ -38,14 +38,15 @@ function daysInMonth(year, month) { return new Date(year, month, 0).getDate(); }
 
 async function api(path, options = {}) {
   if (Exact.truth(Exact.seq(location.protocol, "file:"))) return mockApi(path,options);
+  const requestToken=state.token;
   const headers = {Accept:"application/json", ...(Exact.or(()=>(options.headers), ()=>({})))};
   if (Exact.truth(Exact.and(()=>(Exact.and(()=>(options.body), ()=>(Exact.not(options.body instanceof FormData)))), ()=>(Exact.not(headers["Content-Type"]))))) headers["Content-Type"] = "application/json";
-  if (Exact.truth(state.token)) headers.Authorization = `Bearer ${state.token}`;
+  if (Exact.truth(requestToken)) headers.Authorization = `Bearer ${requestToken}`;
   const response = await fetch(`${API}${path}`, {...options, headers});
   let payload = null;
   try { payload = await response.json(); } catch (_) {}
   if (Exact.truth(Exact.not(response.ok))) {
-    if (Exact.truth(Exact.and(()=>(Exact.seq(response.status, 401)), ()=>(Exact.not(["/auth/login","/auth/test-login"].includes(path)))))) logout(true);
+    if (Exact.truth(Exact.and(()=>(Exact.and(()=>(Exact.seq(response.status, 401)), ()=>(Exact.seq(state.token, requestToken)))), ()=>(Exact.not(["/auth/login","/auth/test-login"].includes(path)))))) logout(true);
     const detail = payload?.detail;
     const detailMessage = (Exact.truth(Exact.seq(typeof detail, "string")) ? detail : Exact.or(()=>(detail?.message), ()=>("")));
     const error = new Error(Exact.or(()=>(detailMessage), ()=>(`请求失败（${response.status}）`)));error.status=response.status;error.detail=detail;throw error;
@@ -160,6 +161,7 @@ async function loginAsTest() {
 function logout(expired=false) {
   if(Exact.truth(Exact.and(()=>(Exact.not(expired)), ()=>(state.editorDirty)))){allowEditorNavigation(()=>logout(false));return;}
   if(Exact.truth(Exact.seq(typeof stopEntryTimingTicker, "function")))stopEntryTimingTicker();
+  state.contextGeneration=Exact.add(Exact.or(()=>(state.contextGeneration), ()=>(0)), 1);state.cashPositionDatasetId="";state.cashPositionRevision=Exact.add(Exact.or(()=>(state.cashPositionRevision), ()=>(0)), 1);
   state.token=""; state.user=null; state.datasets=[]; state.dataset=null; state.records=[]; state.days=[]; state.dayRowsByDate=new Map(); state.dayRecordMap=new Map(); state.months=new Map();state.recordMap=new Map();state.entryWindows=[];state.cashPosition=null;state.pendingDatasetId="";
   clearEditorDrafts();
   localStorage.removeItem("restaurant_session");
@@ -443,18 +445,36 @@ function renderDatasetSwitcher() {
 async function loadCloudData({silent=false,datasetId=""}={}) {
   if(Exact.truth(state.refreshBusy)){if(Exact.truth(datasetId))state.pendingDatasetId=datasetId;return;}
   state.refreshBusy=true;
+  const loadToken=state.token,loadGeneration=Exact.or(()=>(state.contextGeneration), ()=>(0));
+  const sameSession=()=>Exact.and(()=>(Exact.seq(state.token, loadToken)), ()=>(Exact.seq(Exact.or(()=>(state.contextGeneration), ()=>(0)), loadGeneration)));
   try {
     // Scheduled permissions can start/end while the page remains open.
-    state.user = await api("/auth/me");
-    const datasetsResponse = await api("/datasets");
+    const loadedUser = await api("/auth/me");if(Exact.truth(Exact.not(sameSession())))return;
+    const datasetsResponse = await api("/datasets");if(Exact.truth(Exact.not(sameSession())))return;
+    state.user=loadedUser;
     const datasets = (Exact.truth(Array.isArray(datasetsResponse)) ? datasetsResponse : Exact.or(()=>(datasetsResponse?.items), ()=>([])));
     const active = datasets.filter(item => Exact.sneq(item.is_active, false));
     if (Exact.truth(Exact.not(active.length))) throw new Error("当前账号没有可用的数据集。请先让云同步助手上传数据。");
     const previousDatasetId=Exact.or(()=>(state.dataset?.id), ()=>(""));
     state.datasets=active; state.dataset=selectDatasetFrom(active,datasetId);
-    if(Exact.truth(Exact.and(()=>(previousDatasetId), ()=>(Exact.sneq(previousDatasetId, state.dataset?.id))))){clearEditorDrafts();}
+    if(Exact.truth(Exact.sneq(previousDatasetId, state.dataset?.id))){
+      state.contextGeneration=Exact.add(Exact.or(()=>(state.contextGeneration), ()=>(0)), 1);
+      clearEditorDrafts();state.records=[];normalizeRecords([]);state.cashPosition=null;state.cashPositionDatasetId="";state.cashPositionRevision=Exact.add(Exact.or(()=>(state.cashPositionRevision), ()=>(0)), 1);
+      if(Exact.truth(Exact.seq(typeof refreshCashLedgerView, "function")))refreshCashLedgerView();
+      if(Exact.truth(Exact.seq(typeof resetStoreSettingsContext, "function")))resetStoreSettingsContext();
+    }
+    const selectedId=state.dataset.id,selectedGeneration=Exact.or(()=>(state.contextGeneration), ()=>(0)),writeRevision=Exact.or(()=>(state.recordWriteRevision), ()=>(0));
+    // A refresh started before a successful local save must not restore its older snapshot.
+    const sameLedger=()=>Exact.and(()=>(Exact.and(()=>(Exact.and(()=>(Exact.seq(state.token, loadToken)), ()=>(Exact.seq(state.dataset?.id, selectedId)))), ()=>(Exact.seq(Exact.or(()=>(state.contextGeneration), ()=>(0)), selectedGeneration)))), ()=>(Exact.seq(Exact.or(()=>(state.recordWriteRevision), ()=>(0)), writeRevision)));
     localStorage.setItem(datasetStorageKey(),state.dataset.id); renderDatasetSwitcher();
-    const cloudRecords = await fetchAllRecords(state.dataset.id);
+    const cloudRecords = await fetchAllRecords(selectedId);if(Exact.truth(Exact.not(sameLedger())))return;
+    let cashResponse=null;const cashRevision=Exact.or(()=>(state.cashPositionRevision), ()=>(0));
+    if (Exact.truth(Exact.and(()=>(["admin", "editor"].includes(currentRole())), ()=>(Exact.not(isTestAccount()))))) {
+      try { cashResponse=await api(`/datasets/${encodeURIComponent(selectedId)}/cash-position`); } catch (_) {}
+      if(Exact.truth(Exact.not(sameLedger())))return;
+    }
+    // A dedicated cash read may already have applied a newer response during this request.
+    if(Exact.truth(Exact.seq(Exact.or(()=>(state.cashPositionRevision), ()=>(0)), cashRevision))){state.cashPosition=cashResponse;state.cashPositionDatasetId=selectedId;state.cashPositionRevision=Exact.add(cashRevision, 1);}
     if(Exact.truth(Exact.and(()=>(Exact.and(()=>(silent), ()=>(Exact.seq(previousDatasetId, state.dataset.id)))), ()=>(Exact.seq(canonical(cloudRecords), canonical(state.records)))))){
       $("lastUpdated").textContent=Exact.add((Exact.truth(Exact.seq(state.language, "en")) ? "Updated " : "最近更新："), new Date().toLocaleTimeString((Exact.truth(Exact.seq(state.language, "en")) ? "en-US" : "zh-CN"),{hour:"2-digit",minute:"2-digit",second:"2-digit"}));
       $("notice").classList.add("hidden");
@@ -469,18 +489,10 @@ async function loadCloudData({silent=false,datasetId=""}={}) {
     if (Exact.truth(Exact.seq(currentRole(), "entry"))) {
       try {
         const windows = await api(`/datasets/${encodeURIComponent(state.dataset.id)}/entry-windows`);
+        if(Exact.truth(Exact.not(sameLedger())))return;
         state.entryWindows = (Exact.truth(Array.isArray(windows)) ? windows : Exact.or(()=>(windows?.items), ()=>([])));
       } catch (_) {
         state.entryWindows = [];
-      }
-    }
-    state.cashPosition = null;
-    if (Exact.truth(Exact.and(()=>(["admin", "editor"].includes(currentRole())), ()=>(Exact.not(isTestAccount()))))) {
-      try {
-        state.cashPosition = await api(`/datasets/${encodeURIComponent(state.dataset.id)}/cash-position`);
-      } catch (_) {
-        /* Older deployments have no dedicated route; local record fallback
-           keeps the module usable while the server is upgraded. */
       }
     }
     initializeFilters(); renderDashboard();
@@ -820,11 +832,11 @@ function currentRecord(type,key) {
 }
 function recordVersion(record) { return Exact.or(()=>(Exact.toNumber(record?.version ?? record?.current_version ?? 0)), ()=>(0)); }
 
-async function ensureWebDevice() {
-  const storageKey = `restaurant_web_device_${state.dataset.id}`;
+async function ensureWebDevice(datasetId=state.dataset?.id) {
+  const storageKey = `restaurant_web_device_${datasetId}`;
   const saved = localStorage.getItem(storageKey);
   if (Exact.truth(saved)) return saved;
-  const result = await api("/devices/register", {method:"POST", body:JSON.stringify({dataset_id:state.dataset.id,name:`网页版 · ${Exact.or(()=>(navigator.platform), ()=>("浏览器"))}`,platform:"web"})});
+  const result = await api("/devices/register", {method:"POST", body:JSON.stringify({dataset_id:datasetId,name:`网页版 · ${Exact.or(()=>(navigator.platform), ()=>("浏览器"))}`,platform:"web"})});
   const id = Exact.or(()=>(result?.id), ()=>(result?.device_id));
   if (Exact.truth(Exact.not(id))) throw new Error("服务器没有返回网页设备编号。");
   localStorage.setItem(storageKey, id);
@@ -834,43 +846,48 @@ async function ensureWebDevice() {
 async function saveRecord(type,key,payload,resultId) {
   payload=Exact.normalizePayload(payload);
   if (Exact.truth(Exact.not(canEdit()))) throw new Error("当前账号为只读权限，不能修改数据。");
-  const record = currentRecord(type,key);
-  /* Keep legacy slash-formatted day keys addressable. If such a record is
-     edited from the ISO date picker, update it in place instead of creating a
-     second record for the same calendar day. */
-  const writeKey = Exact.or(()=>(record?.record_key), ()=>(key));
+  // Bind every await in this write to the ledger/session that owns the editor.
+  const datasetId=state.dataset?.id,token=state.token,generation=Exact.or(()=>(state.contextGeneration), ()=>(0));
+  if(Exact.truth(Exact.not(datasetId)))throw new Error("尚未选择账本。");
+  const sameContext=()=>Exact.and(()=>(Exact.and(()=>(Exact.seq(state.dataset?.id, datasetId)), ()=>(Exact.seq(state.token, token)))), ()=>(Exact.seq(Exact.or(()=>(state.contextGeneration), ()=>(0)), generation)));
+  const assertContext=(saved=false)=>{if(Exact.truth(Exact.not(sameContext())))throw new Error((Exact.truth(saved) ? "原账本已保存；当前账本已切换，请返回原账本查看。" : "保存已取消：账本或登录状态已改变，请在原账本重新确认后保存。"));};
+  const record = currentRecord(type,key),writeKey = Exact.or(()=>(record?.record_key), ()=>(key));
   const oldPayload = (Exact.truth(record) ? unpackPayload(record) : {});
   let writePayload = payload;
-  /* Preserve sibling dates when an old record packed multiple daily rows
-     under one non-date key.  Editor save functions intentionally submit one
-     selected row; merge that row back into the original payload before PUT. */
+  // Legacy compound records contain independent dates in all three sections.
+  // Replace only the editor's date, retaining every other row (including undated legacy rows).
   if (Exact.truth(Exact.and(()=>(Exact.seq(type, "day")), ()=>(record)))) {
-    const sourceRows = dayRowsFromPayload(oldPayload,record.record_key);
-    const incomingRows = (Exact.truth(Array.isArray(payload?.daily)) ? payload.daily : []);
-    if (Exact.truth(Exact.and(()=>(Exact.gt(sourceRows.length, 1)), ()=>(Exact.seq(incomingRows.length, 1))))) {
-      const target = normalizeDateKey(key), incoming = clone(incomingRows[0]);
-      let replaced = false;
-      const mergedRows = sourceRows.map(source => {
-        const sourceDate = normalizeDateKey(Exact.or(()=>(source?.日期), ()=>(record.record_key)));
-        if (Exact.truth(Exact.and(()=>(Exact.not(replaced)), ()=>(Exact.seq(sourceDate, target))))) { replaced = true; return {...source,...incoming,日期:Exact.or(()=>(Exact.or(()=>(incoming.日期), ()=>(source.日期))), ()=>(target))}; }
-        return clone(source);
-      });
-      if (Exact.truth(Exact.not(replaced))) mergedRows.push({...incoming,日期:Exact.or(()=>(incoming.日期), ()=>(target))});
-      writePayload = {...oldPayload,...payload,daily:mergedRows};
-    } else if (Exact.truth(Exact.and(()=>(Exact.not(Array.isArray(payload?.daily))), ()=>(sourceRows.length)))) {
-      writePayload = {...oldPayload,...payload,daily:sourceRows};
+    writePayload={...oldPayload,...payload};
+    const target=normalizeDateKey(key),sourceDaily=dayRowsFromPayload(oldPayload,record.record_key);
+    const sourceDates=new Set(sourceDaily.map(row=>normalizeDateKey(Exact.or(()=>(Exact.or(()=>(row?.日期), ()=>(row?.date))), ()=>(record.record_key)))));
+    const fallbackDate=(Exact.truth(Exact.seq(sourceDates.size, 1)) ? [...sourceDates][0] : record.record_key);
+    const rowDate=row=>normalizeDateKey(Exact.or(()=>(Exact.or(()=>(row?.日期), ()=>(row?.date))), ()=>(fallbackDate)));
+    for(const field of ["daily","dishes","fixed_expenses"]){
+      const source=(Exact.truth(Exact.seq(field, "daily")) ? sourceDaily : (Exact.truth(Array.isArray(oldPayload[field])) ? oldPayload[field] : []));
+      if(Exact.truth(Exact.not(Array.isArray(payload?.[field])))){if(Exact.truth(source.length))writePayload[field]=clone(source);continue;}
+      const incoming=payload[field].filter(row=>Exact.seq(rowDate(row), target));
+      const replacement=incoming.map(row=>({...clone(row),日期:Exact.or(()=>(row.日期), ()=>(target))}));
+      const merged=[];let inserted=false;
+      for(const row of source){if(Exact.truth(Exact.seq(rowDate(row), target))){if(Exact.truth(Exact.not(inserted))){merged.push(...replacement);inserted=true;}}else merged.push(clone(row));}
+      if(Exact.truth(Exact.not(inserted)))merged.push(...replacement);
+      writePayload[field]=merged;
     }
   }
   if (Exact.truth(Exact.seq(canonical(oldPayload), canonical(writePayload)))) {
     if (Exact.truth(resultId)) $(resultId).textContent = (Exact.truth(Exact.seq(state.language, "en")) ? "Nothing changed, so no change log was created." : "内容没有变化，不会写入修改记录。");
     return false;
   }
-  const deviceId = await ensureWebDevice();
-  const body = {event_id:uuid(),expected_version:recordVersion(record),occurred_at:new Date().toISOString(),source:"cloud",device_id:deviceId,payload:writePayload,checksum:await sha256(canonical(writePayload))};
-  const saved=await api(`/datasets/${encodeURIComponent(state.dataset.id)}/records/${encodeURIComponent(type)}/${encodeURIComponent(writeKey)}`, {method:"PUT",body:JSON.stringify(body)});
+  const deviceId = await ensureWebDevice(datasetId);assertContext();
+  const checksum=await sha256(canonical(writePayload));assertContext();
+  const body = {event_id:uuid(),expected_version:recordVersion(record),occurred_at:new Date().toISOString(),source:"cloud",device_id:deviceId,payload:writePayload,checksum};
+  const saved=await api(`/datasets/${encodeURIComponent(datasetId)}/records/${encodeURIComponent(type)}/${encodeURIComponent(writeKey)}`, {method:"PUT",body:JSON.stringify(body)});
+  // Throw before editor wrappers forget drafts or redraw another ledger.
+  assertContext(true);
   const identity=`${type}/${writeKey}`,normalized={...saved,record_type:type,record_key:writeKey,payload:clone(saved?.payload??writePayload)};
   const index=state.records.findIndex(item=>Exact.seq(`${item.record_type}/${item.record_key}`, identity));
   if(Exact.truth(Exact.gte(index, 0)))state.records[index]=normalized;else state.records.push(normalized);
+  state.recordWriteRevision=Exact.add(Exact.or(()=>(state.recordWriteRevision), ()=>(0)), 1);
+  state.cashPositionRevision=Exact.add(Exact.or(()=>(state.cashPositionRevision), ()=>(0)), 1);
   normalizeRecords(state.records);
   initializeFilters();renderDashboard();
   if (Exact.truth(resultId)) $(resultId).textContent = (Exact.truth(Exact.seq(state.language, "en")) ? "Saved to the cloud. The sync assistant will update the local copy." : "已保存到云端，云同步助手会自动写回本地。");
@@ -943,7 +960,7 @@ async function saveFixed() {
 function renderHistory(){
   const month=Exact.or(()=>($("historyMonth").value), ()=>((Exact.or(()=>($("selectedDate").value), ()=>(""))).slice(0,7)));if(Exact.truth(Exact.not(month)))return;
   const items=state.days.filter(row=>String(row.日期).startsWith(month));
-  const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(Exact.or(()=>(row.佐料明细), ()=>("")))}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(Exact.or(()=>(row.其他明细), ()=>("")))}</td><td>${escapeHtml(Exact.or(()=>(row.当日备注), ()=>("")))}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
+  const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(detailCellDisplay(row.其他明细))}</td><td>${escapeHtml(Exact.or(()=>(row.当日备注), ()=>("")))}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
   const fixed=fixedBreakdown(Exact.toNumber(month.slice(0,4)),Exact.toNumber(month.slice(5,7)));
   const fixedRow=`<tr class="month-summary-row"><td colspan="11"> ${month} ${(Exact.truth(Exact.seq(state.language, "en")) ? "Fixed cost summary" : "本月固定成本汇总")} · ${(Exact.truth(Exact.seq(state.language, "en")) ? "Labour" : "人工")}: ${money(fixed.labour)} · ${(Exact.truth(Exact.seq(state.language, "en")) ? "Rent" : "房租")}: ${money(fixed.rent)} · ${(Exact.truth(Exact.seq(state.language, "en")) ? "Water" : "水费")}: ${money(fixed.water)} · ${(Exact.truth(Exact.seq(state.language, "en")) ? "Electricity" : "电费")}: ${money(fixed.electric)} · ${(Exact.truth(Exact.seq(state.language, "en")) ? "Gas" : "煤气")}: ${money(fixed.gas)} · ${(Exact.truth(Exact.seq(state.language, "en")) ? "Other" : "其它")}: ${money(fixed.other)}</td></tr>`;
   const blanks=Array.from({length:Exact.math.max(0,Exact.sub(25, items.length))},()=>'<tr class="blank-row"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join("");
@@ -951,7 +968,10 @@ function renderHistory(){
 }
 
 function dishData(key) {
-  const payload=dayPayload(key); const raw=Exact.or(()=>(Exact.or(()=>(payload.dishes.find(row=>Exact.seq(String(Exact.or(()=>(row.日期), ()=>(""))), key))), ()=>(payload.dishes[Exact.sub(payload.dishes.length, 1)]))), ()=>({})); let rows=[];
+  const payload=dayPayload(key),target=normalizeDateKey(key),record=(Exact.truth(Exact.seq(typeof currentRecord, "function")) ? currentRecord("day",key) : null);
+  const dates=new Set((Exact.or(()=>(payload.daily), ()=>([]))).map(row=>normalizeDateKey(Exact.or(()=>(Exact.or(()=>(Exact.or(()=>(row.日期), ()=>(row.date))), ()=>(record?.record_key))), ()=>("")))));
+  const unambiguous=Exact.or(()=>(Exact.and(()=>(Exact.seq(dates.size, 1)), ()=>(dates.has(target)))), ()=>(Exact.and(()=>(Exact.not(dates.size)), ()=>(Exact.seq(normalizeDateKey(Exact.or(()=>(record?.record_key), ()=>(""))), target)))));
+  const raw=Exact.or(()=>(payload.dishes.find(row=>Exact.seq(normalizeDateKey(Exact.or(()=>(Exact.or(()=>(row.日期), ()=>(row.date))), ()=>((Exact.truth(unambiguous) ? target : "")))), target))), ()=>({})); let rows=[];
   try { rows=(Exact.truth(Array.isArray(raw.菜品数据)) ? raw.菜品数据 : JSON.parse(Exact.or(()=>(raw.菜品数据), ()=>("[]")))); } catch(_){ rows=[]; }
   return {payload,raw:clone(raw),rows:(Exact.truth(Array.isArray(rows)) ? rows : [])};
 }

@@ -10,7 +10,7 @@
   function markup(options,width){
     const labels=options.labels||[],series=options.series||[],height=options.height||280,pad={l:width<400?46:58,r:18,t:18,b:34};
     const numeric=series.flatMap(s=>s.values.map(number)).filter(v=>v!==null&&Number.isFinite(v));
-    if(!labels.length||!numeric.length)return `<div class="o30-empty">${en()?'No records in this period':'这段时间还没有记录'}<small>${en()?'Choose another period or enter records.':'可切换月份，或录入后再查看。'}</small></div>`;
+    if(!labels.length||!numeric.length)return `<div class="o30-empty">${esc(options.emptyText||(en()?'No records in this period':'这段时间还没有记录'))}<small>${en()?'Choose another period or enter records.':'可切换月份，或录入后再查看。'}</small></div>`;
     const d=domain(numeric),pw=width-pad.l-pad.r,ph=height-pad.t-pad.b,bar=options.kind==='bar',slot=pw/Math.max(1,labels.length),x=i=>bar?pad.l+slot*(i+.5):pad.l+(labels.length===1?pw/2:i*pw/(labels.length-1)),y=v=>pad.t+(d.max-v)/(d.max-d.min)*ph;
     const grid=[];for(let v=d.min,i=0;i<=10&&v<=d.max+d.step*.01;v+=d.step,i++){const py=y(v);grid.push(`<line x1="${pad.l}" x2="${width-pad.r}" y1="${py}" y2="${py}" class="${Math.abs(v)<d.step*.001?'o30-zero':'o30-grid'}"/><text x="${pad.l-9}" y="${py+4}" text-anchor="end" class="o30-axis">${esc(axis(v))}</text>`);}
     const labelsEvery=Math.max(1,Math.ceil(labels.length/Math.max(2,Math.floor(pw/60))));
@@ -44,5 +44,21 @@
   }
   proBusinessGroupedBars=function(node,groups,keys,average){businessChart(node,groups,keys,average,'bar');};
   const businessBase=renderBusinessStats;renderBusinessStats=function(){businessBase();businessChart($('statsChart'),proBusinessTrendGroups(filteredStatsItems(),proBusinessModeAverage()),selectedProMetrics(),proBusinessModeAverage(),'line');};
-  const ingredientBase=renderIngredientStats;renderIngredientStats=function(type){ingredientBase(type);const purchase=type==='purchase',rows=purchase?statsPurchaseRows():statsConsumptionRows(),metric=$(purchase?'purchaseMetric':'consumptionMetric').value;let points=aggregateByDate(rows,item=>purchase?(metric==='unit'||metric==='monthlyAverageUnit'?(item.quantity?item.total/item.quantity:0):metric==='monthlyTotal'?item.total:item.quantity):item.quantity);if(!purchase&&metric==='cumulative'){let running=Exact.decimal(0);points=points.map(p=>({...p,value:(running=Exact.add(running,p.value))}));}render($('statsChart'),{labels:points.map(p=>p.date.slice(5)),series:[{name:$(purchase?'purchaseMetric':'consumptionMetric').selectedOptions[0].textContent,values:points.map(p=>p.value)}],format:v=>Exact.decimal(v).toLocaleString('zh-CN',{maximumFractionDigits:3})});};
+  renderIngredientGroupedCharts=function(rows,purchase,metric,value){
+    const hosts=['statsChart','statsMonthlyChart','statsWeekdayChart'].map($);
+    hosts.forEach(host=>{host.innerHTML='';host._o30Options=null;host._o30Observer?.disconnect();host._o30Observer=null;host.classList.add('o30-facets');host.classList.remove('o30-chart');host.style.height='auto';});
+    const groups=ingredientSeriesGroups(rows),format=v=>Exact.decimal(v).toLocaleString('zh-CN',{maximumFractionDigits:3});
+    if(!groups.length){hosts.forEach(host=>render(host,{labels:[],series:[]}));return;}
+    for(const group of groups){
+      const first=group[0],emptyText=purchase&&!group.some(row=>entered(row.total))?(en()?'Selected records are not priced yet':'所选记录尚未定价'):'',unknown=ingredientAggregate(group).unknownQuantity,name=`${first.name}（${first.unit||'无单位'}）${purchase&&unknown&&(metric==='unit'||metric==='monthlyAverageUnit')?' · 单价仅计已定价数量':''}`,panels=hosts.map(host=>{const panel=document.createElement('div');host.appendChild(panel);return panel;});
+      let points=aggregateByDate(group,value);
+      if(!purchase&&metric==='cumulative'){let running=0;points=points.map(point=>({...point,value:(running+=point.value)}));}
+      render(panels[0],{labels:points.map(p=>p.date.slice(5)),series:[{name,values:points.map(p=>p.value)}],format,emptyText});
+      const monthly=aggregateByMonth(group,item=>purchase?value(item):(metric==='monthlyAverage'?(item.days?item.quantity/item.days:0):item.quantity));
+      render(panels[1],{labels:monthly.map(p=>p.label),kind:'bar',series:[{name,values:monthly.map(p=>p.value)}],format,emptyText});
+      const labels=['周一','周二','周三','周四','周五','周六','周日'],week=labels.map(()=>[]);group.forEach(row=>week[(parseDate(row.date).getDay()+6)%7].push(row));
+      const values=week.map(list=>{if(!list.length)return null;const aggregate=ingredientAggregate(list),{quantity,days}=aggregate;return purchase?value(aggregate):quantity/days;});
+      render(panels[2],{labels,kind:'bar',series:[{name,values}],format,emptyText});
+    }
+  };
 })();

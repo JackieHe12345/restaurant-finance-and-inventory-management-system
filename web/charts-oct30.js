@@ -1,4 +1,4 @@
-/* Oct30LingChen: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 /* Responsive reporting charts. Decimal values remain exact in text; only
  * coordinates are converted to Number. Missing observations stay missing. */
@@ -11,7 +11,7 @@
   function markup(options,width){
     const labels=Exact.or(()=>(options.labels), ()=>([])),series=Exact.or(()=>(options.series), ()=>([])),height=Exact.or(()=>(options.height), ()=>(280)),pad={l:(Exact.truth(Exact.lt(width, 400)) ? 46 : 58),r:18,t:18,b:34};
     const numeric=series.flatMap(s=>s.values.map(number)).filter(v=>Exact.and(()=>(Exact.sneq(v, null)), ()=>(Exact.finite(v))));
-    if(Exact.truth(Exact.or(()=>(Exact.not(labels.length)), ()=>(Exact.not(numeric.length)))))return `<div class="o30-empty">${(Exact.truth(en()) ? 'No records in this period' : '这段时间还没有记录')}<small>${(Exact.truth(en()) ? 'Choose another period or enter records.' : '可切换月份，或录入后再查看。')}</small></div>`;
+    if(Exact.truth(Exact.or(()=>(Exact.not(labels.length)), ()=>(Exact.not(numeric.length)))))return `<div class="o30-empty">${esc(Exact.or(()=>(options.emptyText), ()=>((Exact.truth(en()) ? 'No records in this period' : '这段时间还没有记录'))))}<small>${(Exact.truth(en()) ? 'Choose another period or enter records.' : '可切换月份，或录入后再查看。')}</small></div>`;
     const d=domain(numeric),pw=Exact.sub(Exact.sub(width, pad.l), pad.r),ph=Exact.sub(Exact.sub(height, pad.t), pad.b),bar=Exact.seq(options.kind, 'bar'),slot=Exact.div(pw, Exact.math.max(1,labels.length)),x=i=>(Exact.truth(bar) ? Exact.add(pad.l, Exact.mul(slot, Exact.add(i, .5))) : Exact.add(pad.l, (Exact.truth(Exact.seq(labels.length, 1)) ? Exact.div(pw, 2) : Exact.div(Exact.mul(i, pw), Exact.sub(labels.length, 1))))),y=v=>Exact.add(pad.t, Exact.mul(Exact.div(Exact.sub(d.max, v), Exact.sub(d.max, d.min)), ph));
     const grid=[];for(let v=d.min,i=0;Exact.truth(Exact.and(()=>(Exact.lte(i, 10)), ()=>(Exact.lte(v, Exact.add(d.max, Exact.mul(d.step, .01))))));(v = Exact.add(v, d.step)),i++){const py=y(v);grid.push(`<line x1="${pad.l}" x2="${Exact.sub(width, pad.r)}" y1="${py}" y2="${py}" class="${(Exact.truth(Exact.lt(Exact.math.abs(v), Exact.mul(d.step, .001))) ? 'o30-zero' : 'o30-grid')}"/><text x="${Exact.sub(pad.l, 9)}" y="${Exact.add(py, 4)}" text-anchor="end" class="o30-axis">${esc(axis(v))}</text>`);}
     const labelsEvery=Exact.math.max(1,Exact.math.ceil(Exact.div(labels.length, Exact.math.max(2,Exact.math.floor(Exact.div(pw, 60))))));
@@ -45,5 +45,21 @@
   }
   proBusinessGroupedBars=function(node,groups,keys,average){businessChart(node,groups,keys,average,'bar');};
   const businessBase=renderBusinessStats;renderBusinessStats=function(){businessBase();businessChart($('statsChart'),proBusinessTrendGroups(filteredStatsItems(),proBusinessModeAverage()),selectedProMetrics(),proBusinessModeAverage(),'line');};
-  const ingredientBase=renderIngredientStats;renderIngredientStats=function(type){ingredientBase(type);const purchase=Exact.seq(type, 'purchase'),rows=(Exact.truth(purchase) ? statsPurchaseRows() : statsConsumptionRows()),metric=$((Exact.truth(purchase) ? 'purchaseMetric' : 'consumptionMetric')).value;let points=aggregateByDate(rows,item=>(Exact.truth(purchase) ? (Exact.truth(Exact.or(()=>(Exact.seq(metric, 'unit')), ()=>(Exact.seq(metric, 'monthlyAverageUnit')))) ? (Exact.truth(item.quantity) ? Exact.div(item.total, item.quantity) : 0) : (Exact.truth(Exact.seq(metric, 'monthlyTotal')) ? item.total : item.quantity)) : item.quantity));if(Exact.truth(Exact.and(()=>(Exact.not(purchase)), ()=>(Exact.seq(metric, 'cumulative'))))){let running=Exact.decimal(0);points=points.map(p=>({...p,value:(running=Exact.add(running,p.value))}));}render($('statsChart'),{labels:points.map(p=>p.date.slice(5)),series:[{name:$((Exact.truth(purchase) ? 'purchaseMetric' : 'consumptionMetric')).selectedOptions[0].textContent,values:points.map(p=>p.value)}],format:v=>Exact.decimal(v).toLocaleString('zh-CN',{maximumFractionDigits:3})});};
+  renderIngredientGroupedCharts=function(rows,purchase,metric,value){
+    const hosts=['statsChart','statsMonthlyChart','statsWeekdayChart'].map($);
+    hosts.forEach(host=>{host.innerHTML='';host._o30Options=null;host._o30Observer?.disconnect();host._o30Observer=null;host.classList.add('o30-facets');host.classList.remove('o30-chart');host.style.height='auto';});
+    const groups=ingredientSeriesGroups(rows),format=v=>Exact.decimal(v).toLocaleString('zh-CN',{maximumFractionDigits:3});
+    if(Exact.truth(Exact.not(groups.length))){hosts.forEach(host=>render(host,{labels:[],series:[]}));return;}
+    for(const group of groups){
+      const first=group[0],emptyText=(Exact.truth(Exact.and(()=>(purchase), ()=>(Exact.not(group.some(row=>entered(row.total)))))) ? (Exact.truth(en()) ? 'Selected records are not priced yet' : '所选记录尚未定价') : ''),unknown=ingredientAggregate(group).unknownQuantity,name=`${first.name}（${Exact.or(()=>(first.unit), ()=>('无单位'))}）${(Exact.truth(Exact.and(()=>(Exact.and(()=>(purchase), ()=>(unknown))), ()=>(Exact.or(()=>(Exact.seq(metric, 'unit')), ()=>(Exact.seq(metric, 'monthlyAverageUnit')))))) ? ' · 单价仅计已定价数量' : '')}`,panels=hosts.map(host=>{const panel=document.createElement('div');host.appendChild(panel);return panel;});
+      let points=aggregateByDate(group,value);
+      if(Exact.truth(Exact.and(()=>(Exact.not(purchase)), ()=>(Exact.seq(metric, 'cumulative'))))){let running=0;points=points.map(point=>({...point,value:((running = Exact.add(running, point.value)))}));}
+      render(panels[0],{labels:points.map(p=>p.date.slice(5)),series:[{name,values:points.map(p=>p.value)}],format,emptyText});
+      const monthly=aggregateByMonth(group,item=>(Exact.truth(purchase) ? value(item) : (Exact.truth(Exact.seq(metric, 'monthlyAverage')) ? (Exact.truth(item.days) ? Exact.div(item.quantity, item.days) : 0) : item.quantity)));
+      render(panels[1],{labels:monthly.map(p=>p.label),kind:'bar',series:[{name,values:monthly.map(p=>p.value)}],format,emptyText});
+      const labels=['周一','周二','周三','周四','周五','周六','周日'],week=labels.map(()=>[]);group.forEach(row=>week[Exact.mod(Exact.add(parseDate(row.date).getDay(), 6), 7)].push(row));
+      const values=week.map(list=>{if(Exact.truth(Exact.not(list.length)))return null;const aggregate=ingredientAggregate(list),{quantity,days}=aggregate;return (Exact.truth(purchase) ? value(aggregate) : Exact.div(quantity, days));});
+      render(panels[2],{labels,kind:'bar',series:[{name,values}],format,emptyText});
+    }
+  };
 })();

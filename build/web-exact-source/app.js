@@ -2,7 +2,7 @@
 
 const API = "/api/v1";
 const SESSION_TTL = 2 * 60 * 60 * 1000;
-const state = { token: "", user: null, datasets: [], dataset: null, records: [], days: [], dayRowsByDate: new Map(), dayRecordMap: new Map(), months: new Map(), recordMap: new Map(), entryWindows: [], cashPosition: null, language: localStorage.getItem("restaurant_language") || "zh", activePage: "overview", autoRefresh: null, refreshBusy: false, pendingDatasetId: "", editorDirty: false, editorDrafts: Object.create(null), editorBaselines: Object.create(null) };
+const state = { contextGeneration: 0, recordWriteRevision: 0, cashPositionDatasetId: "", cashPositionRevision: 0, token: "", user: null, datasets: [], dataset: null, records: [], days: [], dayRowsByDate: new Map(), dayRecordMap: new Map(), months: new Map(), recordMap: new Map(), entryWindows: [], cashPosition: null, language: localStorage.getItem("restaurant_language") || "zh", activePage: "overview", autoRefresh: null, refreshBusy: false, pendingDatasetId: "", editorDirty: false, editorDrafts: Object.create(null), editorBaselines: Object.create(null) };
 const $ = (id) => document.getElementById(id);
 const colors = ["#365f96", "#7994b8", "#586d84", "#a5b5ca", "#84909d", "#bcc7d5", "#526b8b", "#ced5df"];
 
@@ -11,7 +11,7 @@ const metricText = {
 };
 function trPair(pair){ return pair[state.language === "en" ? 1 : 0]; }
 function mt(key){ return trPair(metricText[key] || [key,key]); }
-function setSession(token, user) { const payload={token,user,expiresAt:Date.now()+SESSION_TTL}; localStorage.setItem("restaurant_session",JSON.stringify(payload)); state.token=token; state.user=user||null; }
+function setSession(token, user) { state.contextGeneration=(state.contextGeneration||0)+1; const payload={token,user,expiresAt:Date.now()+SESSION_TTL}; localStorage.setItem("restaurant_session",JSON.stringify(payload)); state.token=token; state.user=user||null; }
 function restoreSession() { try { const value=JSON.parse(localStorage.getItem("restaurant_session")||"null"); if(value?.token && Number(value.expiresAt)>Date.now()){state.token=value.token;state.user=value.user||null;return true;} } catch(_){} localStorage.removeItem("restaurant_session"); return false; }
 function touchSession(){
   /* Only actual user input calls this function.  Background polling must not
@@ -37,14 +37,15 @@ function daysInMonth(year, month) { return new Date(year, month, 0).getDate(); }
 
 async function api(path, options = {}) {
   if (location.protocol === "file:") return mockApi(path,options);
+  const requestToken=state.token;
   const headers = {Accept:"application/json", ...(options.headers || {})};
   if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  if (requestToken) headers.Authorization = `Bearer ${requestToken}`;
   const response = await fetch(`${API}${path}`, {...options, headers});
   let payload = null;
   try { payload = await response.json(); } catch (_) {}
   if (!response.ok) {
-    if (response.status === 401 && !["/auth/login","/auth/test-login"].includes(path)) logout(true);
+    if (response.status === 401 && state.token===requestToken && !["/auth/login","/auth/test-login"].includes(path)) logout(true);
     const detail = payload?.detail;
     const detailMessage = typeof detail === "string" ? detail : (detail?.message || "");
     const error = new Error(detailMessage || `请求失败（${response.status}）`);error.status=response.status;error.detail=detail;throw error;
@@ -159,6 +160,7 @@ async function loginAsTest() {
 function logout(expired=false) {
   if(!expired && state.editorDirty){allowEditorNavigation(()=>logout(false));return;}
   if(typeof stopEntryTimingTicker==="function")stopEntryTimingTicker();
+  state.contextGeneration=(state.contextGeneration||0)+1;state.cashPositionDatasetId="";state.cashPositionRevision=(state.cashPositionRevision||0)+1;
   state.token=""; state.user=null; state.datasets=[]; state.dataset=null; state.records=[]; state.days=[]; state.dayRowsByDate=new Map(); state.dayRecordMap=new Map(); state.months=new Map();state.recordMap=new Map();state.entryWindows=[];state.cashPosition=null;state.pendingDatasetId="";
   clearEditorDrafts();
   localStorage.removeItem("restaurant_session");
@@ -453,18 +455,36 @@ function renderDatasetSwitcher() {
 async function loadCloudData({silent=false,datasetId=""}={}) {
   if(state.refreshBusy){if(datasetId)state.pendingDatasetId=datasetId;return;}
   state.refreshBusy=true;
+  const loadToken=state.token,loadGeneration=state.contextGeneration||0;
+  const sameSession=()=>state.token===loadToken&&(state.contextGeneration||0)===loadGeneration;
   try {
     // Scheduled permissions can start/end while the page remains open.
-    state.user = await api("/auth/me");
-    const datasetsResponse = await api("/datasets");
+    const loadedUser = await api("/auth/me");if(!sameSession())return;
+    const datasetsResponse = await api("/datasets");if(!sameSession())return;
+    state.user=loadedUser;
     const datasets = Array.isArray(datasetsResponse) ? datasetsResponse : (datasetsResponse?.items || []);
     const active = datasets.filter(item => item.is_active !== false);
     if (!active.length) throw new Error("当前账号没有可用的数据集。请先让云同步助手上传数据。");
     const previousDatasetId=state.dataset?.id||"";
     state.datasets=active; state.dataset=selectDatasetFrom(active,datasetId);
-    if(previousDatasetId&&previousDatasetId!==state.dataset?.id){clearEditorDrafts();}
+    if(previousDatasetId!==state.dataset?.id){
+      state.contextGeneration=(state.contextGeneration||0)+1;
+      clearEditorDrafts();state.records=[];normalizeRecords([]);state.cashPosition=null;state.cashPositionDatasetId="";state.cashPositionRevision=(state.cashPositionRevision||0)+1;
+      if(typeof refreshCashLedgerView==="function")refreshCashLedgerView();
+      if(typeof resetStoreSettingsContext==="function")resetStoreSettingsContext();
+    }
+    const selectedId=state.dataset.id,selectedGeneration=state.contextGeneration||0,writeRevision=state.recordWriteRevision||0;
+    // A refresh started before a successful local save must not restore its older snapshot.
+    const sameLedger=()=>state.token===loadToken&&state.dataset?.id===selectedId&&(state.contextGeneration||0)===selectedGeneration&&(state.recordWriteRevision||0)===writeRevision;
     localStorage.setItem(datasetStorageKey(),state.dataset.id); renderDatasetSwitcher();
-    const cloudRecords = await fetchAllRecords(state.dataset.id);
+    const cloudRecords = await fetchAllRecords(selectedId);if(!sameLedger())return;
+    let cashResponse=null;const cashRevision=state.cashPositionRevision||0;
+    if (["admin", "editor"].includes(currentRole()) && !isTestAccount()) {
+      try { cashResponse=await api(`/datasets/${encodeURIComponent(selectedId)}/cash-position`); } catch (_) {}
+      if(!sameLedger())return;
+    }
+    // A dedicated cash read may already have applied a newer response during this request.
+    if((state.cashPositionRevision||0)===cashRevision){state.cashPosition=cashResponse;state.cashPositionDatasetId=selectedId;state.cashPositionRevision=cashRevision+1;}
     if(silent&&previousDatasetId===state.dataset.id&&canonical(cloudRecords)===canonical(state.records)){
       $("lastUpdated").textContent=(state.language==="en"?"Updated ":"最近更新：")+new Date().toLocaleTimeString(state.language==="en"?"en-US":"zh-CN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
       $("notice").classList.add("hidden");
@@ -479,18 +499,10 @@ async function loadCloudData({silent=false,datasetId=""}={}) {
     if (currentRole() === "entry") {
       try {
         const windows = await api(`/datasets/${encodeURIComponent(state.dataset.id)}/entry-windows`);
+        if(!sameLedger())return;
         state.entryWindows = Array.isArray(windows) ? windows : (windows?.items || []);
       } catch (_) {
         state.entryWindows = [];
-      }
-    }
-    state.cashPosition = null;
-    if (["admin", "editor"].includes(currentRole()) && !isTestAccount()) {
-      try {
-        state.cashPosition = await api(`/datasets/${encodeURIComponent(state.dataset.id)}/cash-position`);
-      } catch (_) {
-        /* Older deployments have no dedicated route; local record fallback
-           keeps the module usable while the server is upgraded. */
       }
     }
     initializeFilters(); renderDashboard();
@@ -830,11 +842,11 @@ function currentRecord(type,key) {
 }
 function recordVersion(record) { return Number(record?.version ?? record?.current_version ?? 0) || 0; }
 
-async function ensureWebDevice() {
-  const storageKey = `restaurant_web_device_${state.dataset.id}`;
+async function ensureWebDevice(datasetId=state.dataset?.id) {
+  const storageKey = `restaurant_web_device_${datasetId}`;
   const saved = localStorage.getItem(storageKey);
   if (saved) return saved;
-  const result = await api("/devices/register", {method:"POST", body:JSON.stringify({dataset_id:state.dataset.id,name:`网页版 · ${navigator.platform || "浏览器"}`,platform:"web"})});
+  const result = await api("/devices/register", {method:"POST", body:JSON.stringify({dataset_id:datasetId,name:`网页版 · ${navigator.platform || "浏览器"}`,platform:"web"})});
   const id = result?.id || result?.device_id;
   if (!id) throw new Error("服务器没有返回网页设备编号。");
   localStorage.setItem(storageKey, id);
@@ -844,43 +856,48 @@ async function ensureWebDevice() {
 async function saveRecord(type,key,payload,resultId) {
   payload=Exact.normalizePayload(payload);
   if (!canEdit()) throw new Error("当前账号为只读权限，不能修改数据。");
-  const record = currentRecord(type,key);
-  /* Keep legacy slash-formatted day keys addressable. If such a record is
-     edited from the ISO date picker, update it in place instead of creating a
-     second record for the same calendar day. */
-  const writeKey = record?.record_key || key;
+  // Bind every await in this write to the ledger/session that owns the editor.
+  const datasetId=state.dataset?.id,token=state.token,generation=state.contextGeneration||0;
+  if(!datasetId)throw new Error("尚未选择账本。");
+  const sameContext=()=>state.dataset?.id===datasetId&&state.token===token&&(state.contextGeneration||0)===generation;
+  const assertContext=(saved=false)=>{if(!sameContext())throw new Error(saved?"原账本已保存；当前账本已切换，请返回原账本查看。":"保存已取消：账本或登录状态已改变，请在原账本重新确认后保存。");};
+  const record = currentRecord(type,key),writeKey = record?.record_key || key;
   const oldPayload = record ? unpackPayload(record) : {};
   let writePayload = payload;
-  /* Preserve sibling dates when an old record packed multiple daily rows
-     under one non-date key.  Editor save functions intentionally submit one
-     selected row; merge that row back into the original payload before PUT. */
+  // Legacy compound records contain independent dates in all three sections.
+  // Replace only the editor's date, retaining every other row (including undated legacy rows).
   if (type === "day" && record) {
-    const sourceRows = dayRowsFromPayload(oldPayload,record.record_key);
-    const incomingRows = Array.isArray(payload?.daily) ? payload.daily : [];
-    if (sourceRows.length > 1 && incomingRows.length === 1) {
-      const target = normalizeDateKey(key), incoming = clone(incomingRows[0]);
-      let replaced = false;
-      const mergedRows = sourceRows.map(source => {
-        const sourceDate = normalizeDateKey(source?.日期 || record.record_key);
-        if (!replaced && sourceDate === target) { replaced = true; return {...source,...incoming,日期:incoming.日期 || source.日期 || target}; }
-        return clone(source);
-      });
-      if (!replaced) mergedRows.push({...incoming,日期:incoming.日期 || target});
-      writePayload = {...oldPayload,...payload,daily:mergedRows};
-    } else if (!Array.isArray(payload?.daily) && sourceRows.length) {
-      writePayload = {...oldPayload,...payload,daily:sourceRows};
+    writePayload={...oldPayload,...payload};
+    const target=normalizeDateKey(key),sourceDaily=dayRowsFromPayload(oldPayload,record.record_key);
+    const sourceDates=new Set(sourceDaily.map(row=>normalizeDateKey(row?.日期||row?.date||record.record_key)));
+    const fallbackDate=sourceDates.size===1?[...sourceDates][0]:record.record_key;
+    const rowDate=row=>normalizeDateKey(row?.日期||row?.date||fallbackDate);
+    for(const field of ["daily","dishes","fixed_expenses"]){
+      const source=field==="daily"?sourceDaily:(Array.isArray(oldPayload[field])?oldPayload[field]:[]);
+      if(!Array.isArray(payload?.[field])){if(source.length)writePayload[field]=clone(source);continue;}
+      const incoming=payload[field].filter(row=>rowDate(row)===target);
+      const replacement=incoming.map(row=>({...clone(row),日期:row.日期||target}));
+      const merged=[];let inserted=false;
+      for(const row of source){if(rowDate(row)===target){if(!inserted){merged.push(...replacement);inserted=true;}}else merged.push(clone(row));}
+      if(!inserted)merged.push(...replacement);
+      writePayload[field]=merged;
     }
   }
   if (canonical(oldPayload) === canonical(writePayload)) {
     if (resultId) $(resultId).textContent = state.language==="en"?"Nothing changed, so no change log was created.":"内容没有变化，不会写入修改记录。";
     return false;
   }
-  const deviceId = await ensureWebDevice();
-  const body = {event_id:uuid(),expected_version:recordVersion(record),occurred_at:new Date().toISOString(),source:"cloud",device_id:deviceId,payload:writePayload,checksum:await sha256(canonical(writePayload))};
-  const saved=await api(`/datasets/${encodeURIComponent(state.dataset.id)}/records/${encodeURIComponent(type)}/${encodeURIComponent(writeKey)}`, {method:"PUT",body:JSON.stringify(body)});
+  const deviceId = await ensureWebDevice(datasetId);assertContext();
+  const checksum=await sha256(canonical(writePayload));assertContext();
+  const body = {event_id:uuid(),expected_version:recordVersion(record),occurred_at:new Date().toISOString(),source:"cloud",device_id:deviceId,payload:writePayload,checksum};
+  const saved=await api(`/datasets/${encodeURIComponent(datasetId)}/records/${encodeURIComponent(type)}/${encodeURIComponent(writeKey)}`, {method:"PUT",body:JSON.stringify(body)});
+  // Throw before editor wrappers forget drafts or redraw another ledger.
+  assertContext(true);
   const identity=`${type}/${writeKey}`,normalized={...saved,record_type:type,record_key:writeKey,payload:clone(saved?.payload??writePayload)};
   const index=state.records.findIndex(item=>`${item.record_type}/${item.record_key}`===identity);
   if(index>=0)state.records[index]=normalized;else state.records.push(normalized);
+  state.recordWriteRevision=(state.recordWriteRevision||0)+1;
+  state.cashPositionRevision=(state.cashPositionRevision||0)+1;
   normalizeRecords(state.records);
   initializeFilters();renderDashboard();
   if (resultId) $(resultId).textContent = state.language==="en"?"Saved to the cloud. The sync assistant will update the local copy.":"已保存到云端，云同步助手会自动写回本地。";
@@ -953,7 +970,7 @@ async function saveFixed() {
 function renderHistory(){
   const month=$("historyMonth").value||($("selectedDate").value||"").slice(0,7);if(!month)return;
   const items=state.days.filter(row=>String(row.日期).startsWith(month));
-  const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(row.佐料明细||"")}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(row.其他明细||"")}</td><td>${escapeHtml(row.当日备注||"")}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
+  const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(detailCellDisplay(row.其他明细))}</td><td>${escapeHtml(row.当日备注||"")}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
   const fixed=fixedBreakdown(Number(month.slice(0,4)),Number(month.slice(5,7)));
   const fixedRow=`<tr class="month-summary-row"><td colspan="11"> ${month} ${state.language==="en"?"Fixed cost summary":"本月固定成本汇总"} · ${state.language==="en"?"Labour":"人工"}: ${money(fixed.labour)} · ${state.language==="en"?"Rent":"房租"}: ${money(fixed.rent)} · ${state.language==="en"?"Water":"水费"}: ${money(fixed.water)} · ${state.language==="en"?"Electricity":"电费"}: ${money(fixed.electric)} · ${state.language==="en"?"Gas":"煤气"}: ${money(fixed.gas)} · ${state.language==="en"?"Other":"其它"}: ${money(fixed.other)}</td></tr>`;
   const blanks=Array.from({length:Math.max(0,25-items.length)},()=>'<tr class="blank-row"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join("");
@@ -961,7 +978,10 @@ function renderHistory(){
 }
 
 function dishData(key) {
-  const payload=dayPayload(key); const raw=payload.dishes.find(row=>String(row.日期||"")===key)||payload.dishes[payload.dishes.length-1]||{}; let rows=[];
+  const payload=dayPayload(key),target=normalizeDateKey(key),record=typeof currentRecord==="function"?currentRecord("day",key):null;
+  const dates=new Set((payload.daily||[]).map(row=>normalizeDateKey(row.日期||row.date||record?.record_key||"")));
+  const unambiguous=(dates.size===1&&dates.has(target))||(!dates.size&&normalizeDateKey(record?.record_key||"")===target);
+  const raw=payload.dishes.find(row=>normalizeDateKey(row.日期||row.date||(unambiguous?target:""))===target)||{}; let rows=[];
   try { rows=Array.isArray(raw.菜品数据)?raw.菜品数据:JSON.parse(raw.菜品数据||"[]"); } catch(_){ rows=[]; }
   return {payload,raw:clone(raw),rows:Array.isArray(rows)?rows:[]};
 }

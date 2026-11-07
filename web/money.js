@@ -1,4 +1,4 @@
-/* Oct30LingChen. Exact decimal arithmetic. No binary floating point is used
+/* v1.0.1. Exact decimal arithmetic. No binary floating point is used
  * for a Decimal calculation; only chart/DOM adapters may call toNumber().
  * Persisted currency is ROUND_HALF_UP to cents; unit prices have 6 places.
  */

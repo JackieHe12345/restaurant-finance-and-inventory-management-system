@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Oct30LingChen using the existing environment. Never removes backups.
+# Deploy v1.0.1 using the existing environment. Never removes backups.
 set -Eeuo pipefail
 umask 077
 
@@ -11,7 +11,7 @@ sudo bash deploy_from_home_ubuntu.sh --release-dir /home/ubuntu/RELEASE \
 
 Optional: --evidence-dir NEW_DIRECTORY --base-url http://127.0.0.1
 The evidence directory must not already exist. API/web backups are retained in
-/opt/restaurant-cloud/backups/Oct30LingChen-TIMESTAMP-UNIQUE. No pip install,
+/opt/restaurant-cloud/backups/v1.0.1-TIMESTAMP-UNIQUE. No pip install,
 Nginx changes, backup deletion, or database restore is performed.
 EOF
 }
@@ -49,7 +49,7 @@ venv_python=/opt/restaurant-cloud/.venv/bin/python
 runtime_env=/opt/restaurant-cloud/.env.runtime
 nginx_target=/etc/nginx/conf.d/restaurant-cloud-upload.conf
 service_name=restaurant-cloud.service
-expected_version=Oct30LingChen
+expected_version=v1.0.1
 backup_root=""
 transaction_started=0
 committed=0
@@ -274,7 +274,7 @@ if [[ -e "$backup_parent" || -L "$backup_parent" ]]; then
 else
   mkdir -m 0700 -- "$backup_parent"
 fi
-backup_root="$(mktemp -d "$backup_parent/Oct30LingChen-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
+backup_root="$(mktemp -d "$backup_parent/v1.0.1-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
 evidence_dir="${evidence_dir:-$backup_root/evidence}"
 [[ "$evidence_dir" == /* ]] || die "evidence directory must be absolute."
 [[ ! -e "$evidence_dir" && ! -L "$evidence_dir" ]] || die "evidence directory already exists."

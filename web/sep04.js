@@ -1,4 +1,4 @@
-/* Oct30LingChen: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 
 /* Sep04V1 final behaviour: independent permissions, cash ledger and audit filters. */
@@ -64,7 +64,9 @@
 
   const baseLoadCloudDataV4 = loadCloudData;
   loadCloudData = async function(options={}){
+    if(Exact.truth(Exact.and(()=>(options.datasetId), ()=>(Exact.sneq(options.datasetId, state.dataset?.id))))){state.cashPosition=null;state.cashPositionDatasetId="";clearCashLedgerV4();}
     const result = await baseLoadCloudDataV4(options);
+    if(Exact.truth(Exact.seq(state.activePage, "cash")))renderCashLedgerV4();
     $("cashNavButton")?.classList.toggle("hidden", Exact.or(()=>(Exact.not(["admin","editor"].includes(permanentRole()))), ()=>(isTestAccount())));
     $("grantNavButton")?.classList.toggle("hidden", Exact.or(()=>(Exact.sneq(permanentRole(), "admin")), ()=>(isTestAccount())));
     applyScheduledUi();
@@ -156,15 +158,23 @@
     for(const name of names)if(Exact.truth(entered(response?.[name])))return Exact.decimal(Exact.currency(response[name]));
     return fallback;
   }
-  let cashServerV4 = null;
+  function clearCashLedgerV4(){
+    if(Exact.truth($("cashLedgerRows")))$("cashLedgerRows").innerHTML='<tr><td colspan="7">正在加载当前账本现金记录…</td></tr>';
+    for(const id of ["cashCurrentBalance","cashBalanceSummary","cashPreviousMonthBalance","cashLoanMonth","cashLoanYear","cashLoanTotal"])if(Exact.truth($(id)))$(id).textContent="—";
+  }
+  window.refreshCashLedgerView=clearCashLedgerV4;
   async function loadCashLedgerV4(){
     if (Exact.truth(Exact.or(()=>(Exact.not(["admin","editor"].includes(permanentRole()))), ()=>(Exact.not(state.dataset?.id))))) return;
-    cashServerV4 = await api(`/datasets/${encodeURIComponent(state.dataset.id)}/cash-position`);
+    const datasetId=state.dataset.id,token=state.token,generation=Exact.or(()=>(state.contextGeneration), ()=>(0)),revision=Exact.or(()=>(state.cashPositionRevision), ()=>(0));
+    const response=await api(`/datasets/${encodeURIComponent(datasetId)}/cash-position`);
+    if(Exact.truth(Exact.or(()=>(Exact.or(()=>(Exact.or(()=>(Exact.sneq(state.dataset?.id, datasetId)), ()=>(Exact.sneq(state.token, token)))), ()=>(Exact.sneq(Exact.or(()=>(state.contextGeneration), ()=>(0)), generation)))), ()=>(Exact.sneq(Exact.or(()=>(state.cashPositionRevision), ()=>(0)), revision)))))return;
+    state.cashPosition=response;state.cashPositionDatasetId=datasetId;state.cashPositionRevision=Exact.add(revision, 1);
     renderCashLedgerV4();
   }
   function renderCashLedgerV4(){
     if (Exact.truth(Exact.not($("cashLedgerRows")))) return;
-    const payload = cashPayloadV4(), response = Exact.or(()=>(cashServerV4), ()=>({})), opening = Exact.decimal(Exact.currency(response.opening_balance ?? payload.opening_balance ?? payload.base_balance));
+    if(Exact.truth(Exact.and(()=>(state.refreshBusy), ()=>(Exact.sneq(state.cashPositionDatasetId, state.dataset?.id))))){clearCashLedgerV4();return;}
+    const payload = cashPayloadV4(), response = (Exact.truth(Exact.seq(state.cashPositionDatasetId, state.dataset?.id)) ? Exact.or(()=>(state.cashPosition), ()=>({})) : {}), opening = Exact.decimal(Exact.currency(response.opening_balance ?? payload.opening_balance ?? payload.base_balance));
     const correctionInput=$("cashOpeningBalanceV4"), correctionDate=$("cashOpeningDateV4");
     if(Exact.truth(Exact.sneq(document.activeElement, correctionInput)))correctionInput.value="";
     if(Exact.truth(Exact.and(()=>(Exact.sneq(document.activeElement, correctionDate)), ()=>(Exact.not(correctionDate.value)))))correctionDate.value=isoDate(new Date());
@@ -193,7 +203,7 @@
   }
   async function saveCashPayloadV4(payload, message){
     await saveRecord("global","cash_position",payload,"cashResultV4");
-    cashServerV4 = null; await loadCashLedgerV4(); $("cashResultV4").textContent = message;
+    state.cashPosition=null;state.cashPositionDatasetId=""; await loadCashLedgerV4(); $("cashResultV4").textContent = message;
   }
   async function saveCashBaselineV4(){
     const input=$("cashOpeningBalanceV4"), raw=input.value.trim(), date=$("cashOpeningDateV4").value;

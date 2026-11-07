@@ -1,10 +1,12 @@
 # restaurant-finance-and-inventory-management-system
 
+> The v1.0.1 source is available in this repository and in `Nov07.zip` under `Nov07/source/`. When using the ZIP, work directly in that directory instead of cloning again. Start with `00_交接必读.md` in the ZIP. See [the detailed changelog](CHANGELOG.md) for changes dated 2026 Nov 07.
+
 [中文文档](<README (中文).md>) · [English deployment guide](docs/DEPLOYMENT.md) · [中文部署指南](docs/DEPLOYMENT.zh-CN.md)
 
 `restaurant-finance-and-inventory-management-system` connects daily restaurant bookkeeping with purchasing, stock movements, fixed expenses, cash balances and operating reports. A book can record separate A/B store income channels; independent books have their own records and account memberships. The browser client and a Python desktop client work with the cloud API and exchange Excel workbooks.
 
-The source in this repository is labelled `Oct30LingChen`. It includes the browser application, FastAPI backend, desktop source, build tools and tests. A fresh installation starts with its own database and credentials. Production records, merchant keys and packaged macOS binaries are not part of the repository.
+The source in this repository is labelled `v1.0.1`. It includes the browser application, FastAPI backend, desktop source, build tools and tests. A fresh installation starts with its own database and credentials. Production records, merchant keys and packaged macOS binaries are not part of the repository.
 
 ## Implementation at a glance
 
@@ -17,7 +19,7 @@ The source in this repository is labelled `Oct30LingChen`. It includes the brows
 | A daily JSON document contains entries with different editing deadlines | Server-owned timing maps track individual income fields, customer fields and detail items rather than relying on the document's last update time | `backend/app/models.py`, `backend/app/main.py`, `backend/tests/test_dataset_api.py` |
 | Monthly expenses and dated payments can be counted twice | Analytics presents monthly saved amounts and itemized fixed expenses as separate bases, with categories and source details | `build/web-exact-source/analytics-oct30.js`, `web/analytics-oct30.css` |
 
-The API suite currently passes 120 tests and 13 subtests. Browser money/business checks pass 232 assertions. The FIFO contract covers 77 fixtures and 1,020 movement/balance checks: it compares **cost and allocation results between the browser and desktop**, then compares **quantity balances with the API**. The API does not implement a third FIFO cost engine.
+The API suite currently passes 148 tests and 15 subtests. Browser money/business checks pass 232 assertions. The FIFO contract covers 77 fixtures and 1,020 movement/balance checks: it compares **cost and allocation results between the browser and desktop**, then compares **quantity balances with the API**. The API does not implement a third FIFO cost engine.
 
 ## Application scope
 
@@ -223,7 +225,7 @@ python -m pip install -r desktop/requirements.txt
 python build/test_fifo_contract.py
 ```
 
-`node` must be on `PATH`; alternatively set `NODE_BINARY` to its absolute path. The test uses Qt's offscreen platform. The pinned desktop stack was checked with Python 3.12; the selected macOS wheels require macOS 14 or newer. The desktop source imports `fcntl`, so Windows support is not claimed. Launch the native interface with `python desktop/restaurant_cost_manager.py` on a machine with a graphical session.
+`node` must be on `PATH`; alternatively set `NODE_BINARY` to its absolute path. The test uses Qt's offscreen platform. The source test environment uses Python 3.12 on macOS. The separately bundled v1.0.1 app requires macOS 15 or newer; source dependency wheels can have their own system requirements. The desktop source imports `fcntl`, so Windows support is not claimed. Launch the native interface with `python desktop/restaurant_cost_manager.py` on a machine with a graphical session.
 
 ## Run a new instance
 
@@ -249,19 +251,22 @@ The complete first-install procedure, native API setup, Nginx routing and existi
 After the checks pass, generate the server archive from the checked-in source:
 
 ```bash
-python build/make_release.py --output dist/restaurant-cloud-Oct30LingChen-deploy.tar.gz
+python build/make_release.py --output dist/restaurant-cloud-v1.0.1-deploy.tar.gz
 ```
 
-The archive has a `restaurant-cloud-Oct30LingChen/` root and contains `api/`, `web_frontend/`, `VERSION`, Nginx material and deployment/verification scripts. It does not include a database or runtime secrets. The builder refuses to overwrite an existing output; choose a new path for a subsequent build.
+The archive has a `restaurant-cloud-v1.0.1/` root and contains `api/`, `web_frontend/`, `VERSION`, Nginx material and deployment/verification scripts. It does not include a database or runtime secrets. The builder refuses to overwrite an existing output; choose a new path for a subsequent build.
 
 `deploy/verify_release_files.py` compares installed API/static files with a supplied release and checks the API health, version and required routes. `deploy/verify_deployment.py` captures PostgreSQL records in a read-only transaction and compares before/after evidence without printing payloads. The latter checks deployment preservation, not whether every user workflow is correct. Both need an explicitly chosen private evidence directory in the documented commands.
 
 | Check | Observed result | What it establishes |
 | --- | --- | --- |
-| API pytest suite | 120 passed, 13 subtests passed | Record access, money, inventory validation, name correction, Excel and WeChat regression behavior under test fixtures |
+| API pytest suite | 148 passed, 15 subtests passed | Record access, money, inventory validation, name correction, Excel and WeChat regression behavior under test fixtures |
 | Browser exact-money suite | 232 checks passed | Decimal arithmetic, field normalization, editor totals, legacy parsing and FIFO conservation |
 | FIFO contract | 77 fixtures, 1,020 movement/balance checks passed | Exact browser/desktop costs and allocations; API quantity balance agreement |
 | Existing browser regression scripts | Passed | Inventory document, customer-field, cash/history and asset-version regressions |
+| v1.0.1 regression suite | 25 groups passed | Original browser defects and late-response cache races |
+| Desktop regression suites | 12 method and 10 Qt tests passed | Cash aliases, synchronization, structured details and real Excel round-trips |
+| Report layout | 20 combinations passed | Chinese/English, five widths and normal/enlarged text |
 
 These are local automated results for the source set. They do not certify every browser/device, a packaged native binary or a production deployment.
 
@@ -286,7 +291,7 @@ docs/DEPLOYMENT.zh-CN.md   the same deployment guide in Chinese
 compose.yaml              independent local PostgreSQL/API/Nginx instance
 README.md                 English documentation
 README (中文).md          Chinese documentation
-VERSION                   Oct30LingChen
+VERSION                   v1.0.1
 ```
 
 ## Current boundaries
@@ -298,3 +303,12 @@ The desktop source and browser use matching financial contracts where tested, bu
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+## v1.0.1 complete distribution
+
+The complete ZIP additionally provides the rebuilt universal macOS app, server deployment tarball, change-by-change notes, test/build evidence, and the pre-fix audit. The bundled app requires macOS 15 or later and uses an ad-hoc signature; it is not Apple-notarized. Its preserved runtime is Python 3.12.10, PySide6 6.11.2, pandas 2.3.3, Matplotlib 3.11.1 and openpyxl 3.1.5. These versions differ from a newly installed source test environment.
+
+v1.0.1 regression commands include `python build/test_v1_0_1_desktop.py`, `QT_QPA_PLATFORM=offscreen python build/test_v1_0_1_desktop_qt.py`, `node web/test_v1_0_1_regressions.js`, and `(cd backend && PYTHONPATH=.:tests python -m pytest -q tests)`. Build/verification helpers are `build/rebuild_macos_app.py`, `build/verify_macos_app.py` and the separate offline harness `build/qa_packaged_desktop.py`. Full instructions are in the distribution's Chinese release notes. The bundled v1.0.1 app can supply the runtime for a desktop rebuild with macOS Python 3.12; the original Oct30 attachment is not required. See the ZIP build guide for commands and a separate output directory. `build/OCT30_ACCEPTANCE_RESULT.json` is historical evidence, not the v1.0.1 result.
+
+The ZIP source directory omits `.git`, dependencies and credentials. To use `build/make_release.py` from an extracted copy, first initialize a local Git repository and add the source files (`git init`, then `git add .`); this builder deliberately requires tracked runtime sources. Install the locked build/test dependencies as described above. Do not add secrets or user data to that source tree.

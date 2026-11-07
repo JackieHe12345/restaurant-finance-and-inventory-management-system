@@ -64,7 +64,9 @@
 
   const baseLoadCloudDataV4 = loadCloudData;
   loadCloudData = async function(options={}){
+    if(options.datasetId&&options.datasetId!==state.dataset?.id){state.cashPosition=null;state.cashPositionDatasetId="";clearCashLedgerV4();}
     const result = await baseLoadCloudDataV4(options);
+    if(state.activePage==="cash")renderCashLedgerV4();
     $("cashNavButton")?.classList.toggle("hidden", !["admin","editor"].includes(permanentRole()) || isTestAccount());
     $("grantNavButton")?.classList.toggle("hidden", permanentRole() !== "admin" || isTestAccount());
     applyScheduledUi();
@@ -157,15 +159,23 @@
     for(const name of names)if(entered(response?.[name]))return num(response[name]);
     return fallback;
   }
-  let cashServerV4 = null;
+  function clearCashLedgerV4(){
+    if($("cashLedgerRows"))$("cashLedgerRows").innerHTML='<tr><td colspan="7">正在加载当前账本现金记录…</td></tr>';
+    for(const id of ["cashCurrentBalance","cashBalanceSummary","cashPreviousMonthBalance","cashLoanMonth","cashLoanYear","cashLoanTotal"])if($(id))$(id).textContent="—";
+  }
+  window.refreshCashLedgerView=clearCashLedgerV4;
   async function loadCashLedgerV4(){
     if (!["admin","editor"].includes(permanentRole()) || !state.dataset?.id) return;
-    cashServerV4 = await api(`/datasets/${encodeURIComponent(state.dataset.id)}/cash-position`);
+    const datasetId=state.dataset.id,token=state.token,generation=state.contextGeneration||0,revision=state.cashPositionRevision||0;
+    const response=await api(`/datasets/${encodeURIComponent(datasetId)}/cash-position`);
+    if(state.dataset?.id!==datasetId||state.token!==token||(state.contextGeneration||0)!==generation||(state.cashPositionRevision||0)!==revision)return;
+    state.cashPosition=response;state.cashPositionDatasetId=datasetId;state.cashPositionRevision=revision+1;
     renderCashLedgerV4();
   }
   function renderCashLedgerV4(){
     if (!$("cashLedgerRows")) return;
-    const payload = cashPayloadV4(), response = cashServerV4 || {}, opening = num(response.opening_balance ?? payload.opening_balance ?? payload.base_balance);
+    if(state.refreshBusy&&state.cashPositionDatasetId!==state.dataset?.id){clearCashLedgerV4();return;}
+    const payload = cashPayloadV4(), response = state.cashPositionDatasetId===state.dataset?.id?(state.cashPosition||{}):{}, opening = num(response.opening_balance ?? payload.opening_balance ?? payload.base_balance);
     const correctionInput=$("cashOpeningBalanceV4"), correctionDate=$("cashOpeningDateV4");
     if(document.activeElement!==correctionInput)correctionInput.value="";
     if(document.activeElement!==correctionDate&&!correctionDate.value)correctionDate.value=isoDate(new Date());
@@ -194,7 +204,7 @@
   }
   async function saveCashPayloadV4(payload, message){
     await saveRecord("global","cash_position",payload,"cashResultV4");
-    cashServerV4 = null; await loadCashLedgerV4(); $("cashResultV4").textContent = message;
+    state.cashPosition=null;state.cashPositionDatasetId=""; await loadCashLedgerV4(); $("cashResultV4").textContent = message;
   }
   async function saveCashBaselineV4(){
     const input=$("cashOpeningBalanceV4"), raw=input.value.trim(), date=$("cashOpeningDateV4").value;

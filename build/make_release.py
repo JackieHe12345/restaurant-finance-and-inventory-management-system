@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT / f'dist/restaurant-cloud-{version}-deploy.tar.gz')
     args = parser.parse_args()
-    if not version or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_' for c in version):
+    if not version or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.' for c in version):
         parser.error('Invalid VERSION')
     files = {'VERSION': ROOT/'VERSION', 'api/requirements.txt': ROOT/'backend/requirements.txt',
              'nginx/restaurant-cloud-upload.conf': ROOT/'deploy/restaurant-cloud-upload.conf'}

@@ -47,12 +47,13 @@
     if(control instanceof HTMLInputElement && control.type === "file") return control.files?.[0]?.name || "—";
     if(control instanceof HTMLInputElement && control.type === "password") return control.value ? "••••••" : "—";
     const value=String(control.value ?? "").trim();
+    if(control.matches?.('[data-dish="detail"],#ledgerFoodDetail,#ledgerSpiceDetail')&&typeof detailCellDisplay==="function")return detailCellDisplay(value)||"—";
     return value || "—";
   }
 
   function markPresentationControls(){
     document.querySelectorAll(".app-page input:not([type=hidden]), .app-page select, .app-page textarea").forEach(control=>{
-      if(keepAsNavigationControl(control)){
+      if(control.hidden||keepAsNavigationControl(control)){
         clearReadOnlyProjection(control);
         return;
       }

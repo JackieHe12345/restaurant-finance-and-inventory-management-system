@@ -1,4 +1,4 @@
-Oct30LingChen exact monetary rules
+v1.0.1 exact monetary rules
 Scope: API, browser and desktop monetary input, persistence and FIFO allocation.
 金额运算：禁止binary float/Number做资金加减乘除和舍入。Python Decimal由原字符串构造，网页任意精度十进制(基于BigInt)。入库和API传输规范十进制字符串，金额两位ROUND_HALF_UP，单价六位。接收旧numeric兼容读取，部署不能批量改写真实历史账本。数量本身可小数，参与成本乘除需精确十进制。
 FIFO须批次成本守恒，分摊尾差归批次最后一次出库；未知价格明确未知。图表坐标和比例仅在最终绘图边界可转float，不能回写账务。

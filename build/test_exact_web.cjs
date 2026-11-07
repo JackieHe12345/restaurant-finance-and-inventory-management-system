@@ -22,7 +22,7 @@ equal(vm.runInContext("money(num('0.1') && Exact.add(num('0.1'),num('0.2')))",co
 equal(context.sumItems([{total:'0.1'},{total:'0.2'}]).toFixed(2),'0.30','line totals');
 const price={value:'0.335'},quantity={value:'3'},total={value:''};context.proSyncAmountFields(quantity,price,total,'quantity');equal(total.value,'1.01','editor quantity times precise price');
 const inferred={value:''};context.proSyncAmountFields({value:'3'},inferred,{value:'10.00'},'total');equal(inferred.value,'3.333333','derived unit price');
-const items=context.parseDetailItems('大豆油 3桶 10.00, 盐 1袋 0.10');equal(context.sumItems(items).toFixed(2),'10.10','legacy text parsing');equal(context.serializeItems(items),'大豆油 3桶 10.00, 盐 1袋 0.10','legacy precise serialization');
+const items=context.parseDetailItems('大豆油 3桶 10.00, 盐 1袋 0.10');equal(context.sumItems(items).toFixed(2),'10.10','legacy text parsing');equal(context.parseDetailItems(context.serializeItems(items)).map(item=>[item.name,item.quantity,item.unit,Exact.amount(item.total)].join('|')).join(','),'大豆油|3|桶|10.00,盐|1|袋|0.10','legacy rows remain exact in structured serialization');
 state.months.set('2026-10',{人工总额:'3.10',房租总额:'0.00'});
 let metrics=context.dayMetrics({日期:'2026-10-01',收益:'0.30',食材成本:'0.10',佐料成本:'0.00',总客人数:0,新客人数量:0});equal(Exact.amount(metrics.gross),'0.20');equal(Exact.amount(metrics.fixedDaily),'0.10');equal(Exact.amount(metrics.net),'0.10');equal(context.percent(metrics.revenue,d(0)),'0.0%','zero truthiness');
 let aggregated=context.aggregate([metrics,metrics]);equal(Exact.amount(aggregated.revenue),'0.60');equal(Exact.amount(aggregated.net),'0.20');equal(context.proAggregateBusinessMetric([metrics,metrics],'revenue').toFixed(2),'0.60');

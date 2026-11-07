@@ -23,7 +23,7 @@ def main():
     p.add_argument('--api-dir', type=Path, default=Path('/opt/restaurant-cloud/api'))
     p.add_argument('--web-dir', type=Path, default=Path('/var/www/restaurant-web'))
     p.add_argument('--evidence-dir', type=Path, required=True)
-    p.add_argument('--expected-version', default='Oct30LingChen')
+    p.add_argument('--expected-version', default='v1.0.1')
     p.add_argument('--base-url', default='http://127.0.0.1')
     p.add_argument('--api-base-url', default='http://127.0.0.1:8000')
     p.add_argument('--nginx-conf', type=Path, default=Path('/etc/nginx/conf.d/restaurant-cloud-upload.conf'))

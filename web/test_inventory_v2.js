@@ -19,4 +19,4 @@ for(const voided of [true,1,'true','1']){data=fifo.replay({receipts:[{...receipt
 data=fifo.replay({receipts:[receipt('early',5,10),receipt('later',5,20)],overrides:[{...item,id:'count',quantity:5,recorded_at:'2026-10-29T02:00:00+00:00'}],adjustments:[{...item,id:'after-count',quantity:4,kind:'normal',recorded_at:'2026-10-29T03:00:00Z'}]});
 decimalEqual(data.movements.find(row=>row.id==='after-count').cost,80);decimalEqual(data.balances[0].remaining,1);
 decimalEqual(data.movements.find(row=>row.id==='count').cost,50);decimalEqual(data.balances[0].manualUsed,4);
-console.log('Oct30LingChen document/FIFO movement regression checks passed.');
+console.log('v1.0.1 document/FIFO movement regression checks passed.');

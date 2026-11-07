@@ -1,5 +1,5 @@
 "use strict";
-/* Oct30LingChen: navigation shell shared by every financial surface. */
+/* v1.0.1: navigation shell shared by every financial surface. */
 (() => {
   const toggle=$('sidebarToggle'),backdrop=$('sidebarBackdrop'),sidebar=$('appSidebar');
   function syncSidebar(){if(sidebar)sidebar.inert=window.innerWidth<=1100&&!document.body.classList.contains('sidebar-open');}

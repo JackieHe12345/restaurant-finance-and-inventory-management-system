@@ -1,8 +1,10 @@
 # restaurant-finance-and-inventory-management-system 部署指南
 
+> v1.0.1 源码保存在本仓库及 `Nov07.zip` 的 `Nov07/source/` 中。从 ZIP 接手时直接使用该目录，无须再次克隆；先读 ZIP 内 `00_交接必读.md`。2026 Nov 07 的详细改动见[中文版修改日志](../CHANGELOG%20(%E4%B8%AD%E6%96%87).md)。
+
 [返回 README](../README%20%28%E4%B8%AD%E6%96%87%29.md) · [English](DEPLOYMENT.md) | 简体中文
 
-本指南对应 `Oct30LingChen`。新实例推荐使用仓库根目录的 Docker Compose；已有 Ubuntu 原生服务使用单独的发布包升级流程。两者的目录、运行环境和操作命令不同。
+本指南对应 `v1.0.1`。新实例推荐使用仓库根目录的 Docker Compose；已有 Ubuntu 原生服务使用单独的发布包升级流程。两者的目录、运行环境和操作命令不同。
 
 文中的主机路径是安装约定，不是生产凭据。以下步骤说明如何安装和核验，不表示任何生产服务器已经完成部署或验收。
 
@@ -44,7 +46,7 @@ docker compose ps
 curl --fail http://127.0.0.1:8080/api/v1/health
 ```
 
-首次构建和 API 启动可能需要一段时间；若健康检查暂时失败，先看 `docker compose logs --tail=100 backend`，确认服务启动后再检查。成功响应中的 `status` 应为 `ok`，`version` 应为 `Oct30LingChen`。
+首次构建和 API 启动可能需要一段时间；若健康检查暂时失败，先看 `docker compose logs --tail=100 backend`，确认服务启动后再检查。成功响应中的 `status` 应为 `ok`，`version` 应为 `v1.0.1`。
 
 打开 <http://127.0.0.1:8080>，使用 `.env` 中的管理员登录。创建独立账本后，再创建其他账号并分配账本。初始管理员只在同名账号不存在时创建；修改 `.env` 里的 `ADMIN_PASSWORD` 不会重设数据库中已有账号的密码。
 
@@ -136,9 +138,17 @@ docker compose exec -T database pg_dump -U restaurant -d restaurant -Fc > "$fina
 docker compose exec -T backend tar -C /data -czf - payment-secrets > "$finance_backup_dir/payment-secrets.tar.gz"
 docker compose exec -T backend tar -C /opt/restaurant-cloud -czf - backups > "$finance_backup_dir/recovery-files.tar.gz"
 cp .env "$finance_backup_dir/runtime.env"
-git rev-parse HEAD > "$finance_backup_dir/source-commit.txt"
+cp VERSION "$finance_backup_dir/VERSION"
+if [ -e .git ] && git rev-parse --verify HEAD >/dev/null 2>&1; then
+  git rev-parse HEAD > "$finance_backup_dir/source-commit.txt"
+fi
+if [ -f ../PACKAGE_MANIFEST.json ]; then
+  cp ../PACKAGE_MANIFEST.json "$finance_backup_dir/PACKAGE_MANIFEST.json"
+fi
 docker compose exec -T database pg_restore --list < "$finance_backup_dir/database.dump" > "$finance_backup_dir/database-contents.txt"
 ```
+
+ZIP源码没有Git历史，`git init`加`git add`也不会产生HEAD。上述命令因此保存`VERSION`和可用的完整包清单，只有本地存在HEAD时才记录提交号；同时保留实际使用的发布ZIP，若改过源码则另存对应源码快照。
 
 逐条确认命令成功后，将备份转存到受限的持久存储。备份包含凭据和业务数据，不应进入 Git。`pg_restore --list` 只能检查归档能否被读取；还需在独立数据库中试恢复，并核对登录、账本和库存，才能确认恢复流程可用。
 
@@ -149,12 +159,12 @@ docker compose exec -T database pg_restore --list < "$finance_backup_dir/databas
 先完成 README 列出的网页构建、API 回归和 FIFO 契约检查，再从仓库根目录执行：
 
 ```bash
-python3 build/make_release.py --output dist/restaurant-cloud-Oct30LingChen-deploy.tar.gz
+python3 build/make_release.py --output dist/restaurant-cloud-v1.0.1-deploy.tar.gz
 ```
 
 默认输出路径也是上述路径。打包器以排他方式创建压缩包，拒绝覆盖已有文件；需要重新打包时使用新的输出文件名。
 
-包内根目录是 `restaurant-cloud-Oct30LingChen/`，包含：
+包内根目录是 `restaurant-cloud-v1.0.1/`，包含：
 
 ```text
 api/app/                            Python API 源码
@@ -173,9 +183,9 @@ verify_release_files.py            文件与 HTTP 核验
 将压缩包和 `.sha256` 文件传到目标主机后，在它们所在目录核对并解压：
 
 ```bash
-sha256sum -c restaurant-cloud-Oct30LingChen-deploy.tar.gz.sha256
+sha256sum -c restaurant-cloud-v1.0.1-deploy.tar.gz.sha256
 mkdir restaurant-finance-release-check
-tar -xzf restaurant-cloud-Oct30LingChen-deploy.tar.gz -C restaurant-finance-release-check
+tar -xzf restaurant-cloud-v1.0.1-deploy.tar.gz -C restaurant-finance-release-check
 ```
 
 macOS 对应的校验命令是 `shasum -a 256 -c ...`。使用新建空目录解压；升级脚本接收的是解压后的发布根目录，不是 Git 仓库目录，也不是 `.tar.gz` 文件。
@@ -192,7 +202,7 @@ macOS 对应的校验命令是 `shasum -a 256 -c ...`。使用新建空目录解
 | 网页 | `/var/www/restaurant-web` |
 | Nginx 上传/缓存片段 | `/etc/nginx/conf.d/restaurant-cloud-upload.conf` |
 | 已运行的 systemd 服务 | `restaurant-cloud.service` |
-| 本次程序备份与默认证据 | `/opt/restaurant-cloud/backups/Oct30LingChen-UTCSTAMP-UNIQUE/` |
+| 本次程序备份与默认证据 | `/opt/restaurant-cloud/backups/v1.0.1-UTCSTAMP-UNIQUE/` |
 
 该脚本不能用来更新 Compose 容器。API、网页、备份和暂存目录必须位于同一文件系统，以便通过目录重命名切换。现有 API/网页必须是实际目录。现有 requirements 和 Nginx 片段必须与发布包逐字节一致；若不同，脚本会停止，需先单独评审依赖或 Nginx 变更。
 
@@ -201,8 +211,8 @@ macOS 对应的校验命令是 `shasum -a 256 -c ...`。使用新建空目录解
 确认数据库备份可用，并暂停其他客户端、后台任务和外部数据库写入。后验检查要求受保护的业务记录与前验一致；部署期间的正常业务写入也会使这项检查失败。
 
 ```bash
-sudo bash /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-Oct30LingChen/deploy_from_home_ubuntu.sh \
-  --release-dir /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-Oct30LingChen \
+sudo bash /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1/deploy_from_home_ubuntu.sh \
+  --release-dir /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1 \
   --base-url http://127.0.0.1
 ```
 
@@ -227,14 +237,14 @@ sudo bash /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-Oct30Li
 ### 发布文件与 HTTP
 
 ```bash
-sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-Oct30LingChen/verify_release_files.py \
-  --release-dir /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-Oct30LingChen \
+sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1/verify_release_files.py \
+  --release-dir /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1 \
   --api-dir /opt/restaurant-cloud/api \
   --web-dir /var/www/restaurant-web \
   --nginx-conf /etc/nginx/conf.d/restaurant-cloud-upload.conf \
   --base-url http://127.0.0.1 \
   --api-base-url http://127.0.0.1:8000 \
-  --expected-version Oct30LingChen \
+  --expected-version v1.0.1 \
   --evidence-dir /opt/restaurant-cloud/backups/manual-release-check-001
 ```
 
@@ -247,13 +257,13 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 在升级前停止业务写入并执行 `before`，升级后保持写入暂停并执行 `after`。两次使用同一证据目录：
 
 ```bash
-sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-Oct30LingChen/verify_deployment.py before \
+sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1/verify_deployment.py before \
   --env-file /opt/restaurant-cloud/.env.runtime \
   --app-dir /opt/restaurant-cloud/api \
   --evidence-dir /opt/restaurant-cloud/backups/manual-db-check-001
 
 # 完成程序更新后再执行：
-sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-Oct30LingChen/verify_deployment.py after \
+sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1/verify_deployment.py after \
   --env-file /opt/restaurant-cloud/.env.runtime \
   --app-dir /opt/restaurant-cloud/api \
   --evidence-dir /opt/restaurant-cloud/backups/manual-db-check-001

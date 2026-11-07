@@ -1,4 +1,4 @@
-/* Oct30LingChen: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 
 /* Sep01V1: two-store naming, shared-cost reporting and data-management tools.
@@ -6,6 +6,7 @@
 state.storeSettings = Exact.or(()=>(state.storeSettings), ()=>({store_a_name:"A店",store_b_name:"B店",wechat_auto_sync:true,wechat:{}}));
 let v26StoreSettingsFetchedAt = 0;
 let v26StoreSettingsDataset = "";
+let v26StoreSettingsToken = "",v26StoreSettingsGeneration = Exact.neg(1),v26StoreSettingsRequest = 0,v26StoreSettingsRevision = 0;
 const v26OriginalTexts = new WeakMap();
 
 function storeName(slot){
@@ -44,15 +45,23 @@ function installV26WorkbookTools(){
   if(Exact.truth(Exact.not($("pageData")))) throw new Error("v28 页面缺少数据管理模块");
 }
 
+function v26StoreContext(){return{datasetId:state.dataset?.id,token:state.token,generation:Exact.or(()=>(state.contextGeneration), ()=>(0))};}
+function v26StoreContextCurrent(context){return Exact.and(()=>(Exact.and(()=>(Exact.seq(state.dataset?.id, context.datasetId)), ()=>(Exact.seq(state.token, context.token)))), ()=>(Exact.seq(Exact.or(()=>(state.contextGeneration), ()=>(0)), context.generation)));}
+function v26AssertStoreContext(context){if(Exact.truth(Exact.not(v26StoreContextCurrent(context))))throw new Error("原账本操作已完成；账本或登录状态已切换，请返回原账本查看。");}
+function resetStoreSettingsContext(){state.storeSettings={store_a_name:"A店",store_b_name:"B店",wechat_auto_sync:true,wechat:{}};v26StoreSettingsDataset="";v26StoreSettingsToken="";v26StoreSettingsGeneration=Exact.neg(1);v26StoreSettingsFetchedAt=0;v26StoreSettingsRequest++;v26StoreSettingsRevision++;for(const [id,value] of [["storeAName","A店"],["storeBName","B店"],["wechatMchA",""],["wechatMchB",""],["wechatPubIdA",""],["wechatPubIdB",""]])if(Exact.truth($(id)))$(id).value=value;for(const id of ["storeNameResult","wechatResultA","wechatResultB"])if(Exact.truth($(id)))$(id).textContent="";renderStoreSettings();applyStoreNames();}
+function v26StoreSettingsApplied(context){v26StoreSettingsDataset=context.datasetId;v26StoreSettingsToken=context.token;v26StoreSettingsGeneration=context.generation;v26StoreSettingsFetchedAt=Date.now();}
 async function loadStoreSettings(force=false){
-  if(Exact.truth(Exact.not(state.dataset?.id)))return;
-  if(Exact.truth(Exact.and(()=>(Exact.and(()=>(Exact.not(force)), ()=>(Exact.seq(v26StoreSettingsDataset, state.dataset.id)))), ()=>(Exact.lt(Exact.sub(Date.now(), v26StoreSettingsFetchedAt), 15000))))){applyStoreNames();return;}
+  const context=v26StoreContext();if(Exact.truth(Exact.not(context.datasetId)))return;
+  const cached=Exact.and(()=>(Exact.and(()=>(Exact.seq(v26StoreSettingsDataset, context.datasetId)), ()=>(Exact.seq(v26StoreSettingsToken, context.token)))), ()=>(Exact.seq(v26StoreSettingsGeneration, context.generation)));
+  if(Exact.truth(Exact.not(cached)))resetStoreSettingsContext();
+  if(Exact.truth(Exact.and(()=>(Exact.and(()=>(Exact.not(force)), ()=>(cached))), ()=>(Exact.lt(Exact.sub(Date.now(), v26StoreSettingsFetchedAt), 15000))))){applyStoreNames();return;}
+  const request=++v26StoreSettingsRequest,revision=v26StoreSettingsRevision;
   try{
-    const result=await api(`/datasets/${encodeURIComponent(state.dataset.id)}/store-settings`);
-    state.storeSettings=Exact.or(()=>(result), ()=>(state.storeSettings));
-    v26StoreSettingsDataset=state.dataset.id;v26StoreSettingsFetchedAt=Date.now();
+    const result=await api(`/datasets/${encodeURIComponent(context.datasetId)}/store-settings`);
+    if(Exact.truth(Exact.or(()=>(Exact.or(()=>(Exact.not(v26StoreContextCurrent(context))), ()=>(Exact.sneq(request, v26StoreSettingsRequest)))), ()=>(Exact.sneq(revision, v26StoreSettingsRevision)))))return;
+    state.storeSettings=Exact.or(()=>(result), ()=>(state.storeSettings));v26StoreSettingsApplied(context);
     renderStoreSettings();applyStoreNames();
-  }catch(error){console.warn("store settings",error);}
+  }catch(error){if(Exact.truth(v26StoreContextCurrent(context)))console.warn("store settings",error);}
 }
 function renderStoreSettings(){
   if(Exact.truth($("storeSettingsDataset")))$("storeSettingsDataset").textContent=Exact.or(()=>(Exact.or(()=>(state.dataset?.name), ()=>(state.dataset?.id))), ()=>("—"));
@@ -75,27 +84,32 @@ function refreshV26DatasetTargets(){
   for(const id of ["overwriteTargetDataset","copyTargetDataset"]){const select=$(id);if(Exact.truth(Exact.not(select)))continue;const current=select.value;select.innerHTML=state.datasets.filter(d=>Exact.sneq(d.id, state.dataset?.id)).map(d=>`<option value="${escapeHtml(d.id)}">${escapeHtml(Exact.or(()=>(d.name), ()=>(d.id)))}</option>`).join("");if(Exact.truth([...select.options].some(o=>Exact.seq(o.value, current))))select.value=current;}
 }
 async function saveStoreNamesV26(){
+  const context=v26StoreContext();if(Exact.truth(Exact.not(context.datasetId)))throw new Error("尚未选择账本。");v26StoreSettingsRevision++;
   const a=$("storeAName").value.trim(),b=$("storeBName").value.trim();if(Exact.truth(Exact.or(()=>(Exact.not(a)), ()=>(Exact.not(b)))))throw new Error("两家店名都不能为空。");
-  const result=await api(`/datasets/${encodeURIComponent(state.dataset.id)}/store-settings`,{method:"PUT",body:JSON.stringify({store_a_name:a,store_b_name:b,wechat_auto_sync:false})});
+  const result=await api(`/datasets/${encodeURIComponent(context.datasetId)}/store-settings`,{method:"PUT",body:JSON.stringify({store_a_name:a,store_b_name:b,wechat_auto_sync:false})});
+  v26AssertStoreContext(context);v26StoreSettingsRevision++;v26StoreSettingsApplied(context);
   state.storeSettings={...state.storeSettings,...result};$("storeNameResult").textContent="已保存。";applyStoreNames();renderDashboard();renderHistory();renderStats?.();
 }
 function formAppendFile(form,key,id){const file=$(id)?.files?.[0];if(Exact.truth(file))form.append(key,file);}
 async function saveWechatConfigV26(slot){
+  const context=v26StoreContext();v26StoreSettingsRevision++;
   const form=new FormData();form.append("mchid",$(Exact.add("wechatMch", slot)).value.trim());form.append("public_key_id",$(Exact.add("wechatPubId", slot)).value.trim());
   const required=[["apiclient_cert",Exact.add("wechatCert", slot)],["apiclient_key",Exact.add("wechatKey", slot)],["pub_key",Exact.add("wechatPub", slot)]];
   for(const [key,id] of required){const file=$(id).files?.[0];if(Exact.truth(Exact.not(file)))throw new Error(`请上传 ${(Exact.truth(id.includes("Cert")) ? "apiclient_cert.pem" : (Exact.truth(Exact.and(()=>(id.includes("Key")), ()=>(Exact.not(id.includes("Pub"))))) ? "apiclient_key.pem" : "pub_key.pem"))}。`);form.append(key,file);}
   formAppendFile(form,"apiclient_p12",Exact.add("wechatP12", slot));formAppendFile(form,"readme_cn",Exact.add("wechatReadme", slot));
   $(Exact.add("wechatResult", slot)).textContent="正在校验证书并上传……";
-  try{await api(`/datasets/${encodeURIComponent(state.dataset.id)}/stores/${slot}/wechat-config`,{method:"POST",body:form});$(Exact.add("wechatResult", slot)).textContent="上传成功，证书与私钥匹配检查已通过。";await loadStoreSettings(true);}catch(error){$(Exact.add("wechatResult", slot)).textContent=`上传失败：${Exact.or(()=>(error.message), ()=>(error))}`;throw error;}
+  try{v26StoreSettingsRevision++;await api(`/datasets/${encodeURIComponent(context.datasetId)}/stores/${slot}/wechat-config`,{method:"POST",body:form});v26AssertStoreContext(context);v26StoreSettingsRevision++;$(Exact.add("wechatResult", slot)).textContent="上传成功，证书与私钥匹配检查已通过。";await loadStoreSettings(true);}catch(error){if(Exact.truth(v26StoreContextCurrent(context)))$(Exact.add("wechatResult", slot)).textContent=`上传失败：${Exact.or(()=>(error.message), ()=>(error))}`;throw error;}
 }
 async function testWechatV26(slot){
+  const context=v26StoreContext();
   $(Exact.add("wechatResult", slot)).textContent="正在调用微信支付测试……";
-  try{const result=await api(`/datasets/${encodeURIComponent(state.dataset.id)}/stores/${slot}/wechat-config/test?bill_date=${yesterdayIso()}`,{method:"POST"});$(Exact.add("wechatResult", slot)).textContent=`验证成功：${result.bill_date}，读取 ${result.rows} 条账单明细。`;}catch(error){$(Exact.add("wechatResult", slot)).textContent=`验证失败：${Exact.or(()=>(error.message), ()=>(error))}`;throw error;}
+  try{const result=await api(`/datasets/${encodeURIComponent(context.datasetId)}/stores/${slot}/wechat-config/test?bill_date=${yesterdayIso()}`,{method:"POST"});v26AssertStoreContext(context);$(Exact.add("wechatResult", slot)).textContent=`验证成功：${result.bill_date}，读取 ${result.rows} 条账单明细。`;}catch(error){if(Exact.truth(v26StoreContextCurrent(context)))$(Exact.add("wechatResult", slot)).textContent=`验证失败：${Exact.or(()=>(error.message), ()=>(error))}`;throw error;}
 }
-async function downloadWechatBillV26(slot){const date=Exact.or(()=>($(Exact.add("wechatBillDate", slot))?.value), ()=>(yesterdayIso()));const result=$(Exact.add("wechatResult", slot));result.textContent="正在从微信支付 API 下载账单……";try{const response=await api(`/datasets/${encodeURIComponent(state.dataset.id)}/stores/${slot}/wechat-config/test?bill_date=${encodeURIComponent(date)}`,{method:"POST"});result.textContent=`下载成功：${date}，已连接 ${storeName(slot)} API，读取 ${Exact.or(()=>(response.rows), ()=>(0))} 条明细。`;}catch(error){result.textContent=`下载失败：${Exact.or(()=>(error.message), ()=>(error))}`;throw error;}}
+async function downloadWechatBillV26(slot){const context=v26StoreContext(),date=Exact.or(()=>($(Exact.add("wechatBillDate", slot))?.value), ()=>(yesterdayIso()));const result=$(Exact.add("wechatResult", slot));result.textContent="正在从微信支付 API 下载账单……";try{const response=await api(`/datasets/${encodeURIComponent(context.datasetId)}/stores/${slot}/wechat-config/test?bill_date=${encodeURIComponent(date)}`,{method:"POST"});v26AssertStoreContext(context);result.textContent=`下载成功：${date}，已连接 ${storeName(slot)} API，读取 ${Exact.or(()=>(response.rows), ()=>(0))} 条明细。`;}catch(error){if(Exact.truth(v26StoreContextCurrent(context)))result.textContent=`下载失败：${Exact.or(()=>(error.message), ()=>(error))}`;throw error;}}
 async function deleteWechatV26(slot){
+  const context=v26StoreContext();
   if(Exact.truth(Exact.not(confirm(`确定删除 ${storeName(slot)} 的微信支付配置吗？服务器上的商户证书和私钥会被删除。`))))return;
-  try{await api(`/datasets/${encodeURIComponent(state.dataset.id)}/stores/${slot}/wechat-config`,{method:"DELETE"});$(Exact.add("wechatResult", slot)).textContent="微信配置已删除。";await loadStoreSettings(true);}catch(error){$(Exact.add("wechatResult", slot)).textContent=`删除失败：${Exact.or(()=>(error.message), ()=>(error))}`;throw error;}
+  try{v26StoreSettingsRevision++;await api(`/datasets/${encodeURIComponent(context.datasetId)}/stores/${slot}/wechat-config`,{method:"DELETE"});v26AssertStoreContext(context);v26StoreSettingsRevision++;$(Exact.add("wechatResult", slot)).textContent="微信配置已删除。";await loadStoreSettings(true);}catch(error){if(Exact.truth(v26StoreContextCurrent(context)))$(Exact.add("wechatResult", slot)).textContent=`删除失败：${Exact.or(()=>(error.message), ()=>(error))}`;throw error;}
 }
 
 function effectiveWechatV26(prefix){
@@ -145,7 +159,7 @@ renderDashboard=function(){v26DashboardBase();const c=selectedContext(),all=data
 renderHistory=function(){
   const month=Exact.or(()=>($("historyMonth").value), ()=>((Exact.or(()=>($("selectedDate").value), ()=>(""))).slice(0,7)));if(Exact.truth(Exact.not(month)))return;const table=$("historyRows")?.closest("table");if(Exact.truth(Exact.not(table)))return;
   table.querySelector("thead tr").innerHTML=`<th>日期</th><th>总收入</th><th>${escapeHtml(storeName("A"))}收入</th><th>${escapeHtml(storeName("B"))}收入</th><th>新客</th><th>总客数</th><th>食材总价格</th><th>佐料明细</th><th>当日总固定成本</th><th>其它明细</th><th>当日备注</th><th>毛利润（毛利率）</th><th>净利润（净利率）</th>`;
-  const items=state.days.filter(row=>String(row.日期).startsWith(month));const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${money(m.storeA)}</td><td>${money(m.storeB)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(Exact.or(()=>(row.佐料明细), ()=>("")))}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(Exact.or(()=>(row.其他明细), ()=>("")))}</td><td>${escapeHtml(Exact.or(()=>(row.当日备注), ()=>("")))}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
+  const items=state.days.filter(row=>String(row.日期).startsWith(month));const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${money(m.storeA)}</td><td>${money(m.storeB)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(detailCellDisplay(row.其他明细))}</td><td>${escapeHtml(Exact.or(()=>(row.当日备注), ()=>("")))}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
   const fixed=fixedBreakdown(Exact.toNumber(month.slice(0,4)),Exact.toNumber(month.slice(5,7)));const fixedRow=`<tr class="month-summary-row"><td colspan="13"> ${month} 本月共享固定成本汇总 · 人工: ${money(fixed.labour)} · 房租: ${money(fixed.rent)} · 水费: ${money(fixed.water)} · 电费: ${money(fixed.electric)} · 煤气: ${money(fixed.gas)} · 其它: ${money(fixed.other)}</td></tr>`;const blanks=Array.from({length:Exact.math.max(0,Exact.sub(25, items.length))},()=>Exact.add(Exact.add('<tr class="blank-row">', Array.from({length:13},(_,i)=>`<td>${(Exact.truth(Exact.seq(i, 0)) ? '&nbsp;' : '')}</td>`).join("")), '</tr>')).join("");$("historyRows").innerHTML=Exact.add(Exact.add(fixedRow, rows), blanks);applyStoreNames();
 };
 

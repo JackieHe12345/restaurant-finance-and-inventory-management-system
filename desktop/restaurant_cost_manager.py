@@ -289,8 +289,8 @@ from PySide6.QtCore import Qt, QDate, QDateTime, QEvent, QStandardPaths, QTimer,
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QIntValidator
 
 # Keep the product version in the source as well as in the packaged bundle.  The
-# delivery version for this build is Oct30LingChen.
-APP_VERSION = "Oct30LingChen"
+# delivery version for this build is v1.0.1.
+APP_VERSION = "v1.0.1"
 
 # A cloud login can be valid while the first background record refresh is still
 # in flight.  Require several failed cycles and a short grace period before
@@ -841,7 +841,7 @@ def _embedded_local_records():
     return result
 
 
-def _embedded_apply_cloud_records(records, replace_all=False):
+def _embedded_apply_cloud_records(records, replace_all=False, expected_hashes=None):
     path = str(globals().get('INTERNAL_FILE_PATH') or '').strip()
     if not path:
         return False
@@ -851,8 +851,19 @@ def _embedded_apply_cloud_records(records, replace_all=False):
         'global': ('__global_records', '记录类型'),
     }
     changed = False
+    records = [item for _index, item in sorted(enumerate(records), key=lambda pair: (
+        int(pair[1].get('sequence') or pair[1].get('seq') or pair[0] + 1),
+        int(pair[1].get('version') or 0), pair[0]))]
     with internal_sync_lock(path):
         frames = _read_internal_frames(path)
+        if expected_hashes is not None:
+            current_hashes = _internal_record_hashes(frames, FIXED_CLOUD_DATASET_ID)
+            keys = set(current_hashes) | set(expected_hashes) if replace_all else {
+                (str(item.get('record_type') or ''), str(item.get('record_key') or ''))
+                for item in records
+            }
+            if any(current_hashes.get(key) != expected_hashes.get(key) for key in keys):
+                raise CloudSyncError('下载期间本地记录已修改，本次未覆盖；请等待下一轮同步或处理冲突。')
         if replace_all:
             for sheet_name, _key_column in mapping.values():
                 frame = frames[sheet_name]
@@ -892,6 +903,50 @@ def _embedded_apply_cloud_records(records, replace_all=False):
             }])], ignore_index=True)
             _write_internal_frames(path, frames)
     return changed
+
+
+def _embedded_align_source_order(cloud_records):
+    """Align canonical source priority without overwriting pending local payloads.
+
+    The full acknowledged server snapshot (including this cycle's PUT results)
+    is necessary: applying a subset in key order can invert overlapping days.
+    Concurrent local saves stay pending and keep their priority until uploaded.
+    """
+    path = str(globals().get('INTERNAL_FILE_PATH') or '').strip()
+    if not path:
+        return
+    cloud_map = {(item.get('record_type'), item.get('record_key')): (index, item)
+                 for index, item in enumerate(cloud_records) if not item.get('is_deleted')}
+    mapping = {'__day_records': ('day', '日期'), '__month_records': ('month', '月份'),
+               '__global_records': ('global', '记录类型')}
+    with internal_sync_lock(path):
+        frames = _read_internal_frames(path)
+        ranked = []
+        for sheet, (kind, key_column) in mapping.items():
+            frame = frames[sheet]
+            for index, row in frame.iterrows():
+                if str(row.get('dataset_id') or '') != FIXED_CLOUD_DATASET_ID:
+                    continue
+                identity = (kind, str(row.get(key_column) or ''))
+                source = cloud_map.get(identity)
+                old_order = safe_float(row.get('source_order', len(ranked) + 1))
+                if source is not None and str(row.get('sha256') or '') == _embedded_payload_hash(source[1].get('payload')):
+                    cloud_index, record = source
+                    order = (0, int(record.get('sequence') or record.get('seq') or cloud_index + 1),
+                             int(record.get('version') or 0), cloud_index)
+                else:
+                    order = (1, old_order, 0, len(ranked))
+                ranked.append((order, sheet, index))
+        changed = False
+        for rank, (_order, sheet, index) in enumerate(sorted(ranked, key=lambda item: item[0]), start=1):
+            frame = frames[sheet]
+            if 'source_order' not in frame.columns:
+                frame['source_order'] = pd.Series([''] * len(frame), index=frame.index, dtype=object)
+            if safe_float(frame.at[index, 'source_order']) != rank:
+                frame.at[index, 'source_order'] = rank
+                changed = True
+        if changed:
+            _write_internal_frames(path, frames)
 
 
 class EmbeddedCloudSyncWorker:
@@ -1321,98 +1376,97 @@ class EmbeddedCloudSyncWorker:
         }, self._token)
 
     def _sync_records(self, config, dataset_id, cloud_records, role):
+        # The snapshot below is what this cycle can acknowledge. A GUI save during
+        # an HTTP request must remain a change for the NEXT cycle.
         local_map = _embedded_local_records()
-        cloud_map = {
-            (str(item.get('record_type') or ''), str(item.get('record_key') or '')): item
-            for item in cloud_records
-            if item.get('record_type') in {'day', 'month', 'global'} and item.get('record_key')
-        }
+        hidden = {('global', key) for key in ('cash_position', 'cash_balance', 'base_balance')} if role not in {'admin', 'editor'} else set()
+        if hidden:
+            stale = [dict(record, is_deleted=True) for identity, record in local_map.items() if identity in hidden]
+            if stale:
+                _embedded_apply_cloud_records(stale)
+            local_map = {key: value for key, value in local_map.items() if key not in hidden}
+        cloud_records = [item for item in cloud_records
+                         if (item.get('record_type'), item.get('record_key')) not in hidden]
+        cloud_map = {(str(item.get('record_type') or ''), str(item.get('record_key') or '')): item
+                     for item in cloud_records
+                     if item.get('record_type') in {'day', 'month', 'global'} and item.get('record_key')}
         baselines_by_dataset = config.setdefault('embedded_baselines', {})
         baseline = baselines_by_dataset.get(dataset_id)
+        baseline = dict(baseline) if isinstance(baseline, dict) else {}
+        for identity in hidden:
+            baseline.pop('\u0000'.join(identity), None)
         switching = str(config.get('embedded_last_dataset_id') or '') not in ('', dataset_id)
-        if not isinstance(baseline, dict):
-            baseline = {}
-
+        snapshot_hashes = {identity: item.get('checksum') for identity, item in local_map.items()}
+        acknowledged_local = dict(local_map)
+        acknowledged_cloud = dict(cloud_map)
+        conflicts = []
         active_cloud = [item for item in cloud_records if not item.get('is_deleted')]
-        if switching:
-            _embedded_apply_cloud_records(cloud_records, replace_all=True)
-            local_map = _embedded_local_records()
-            baselines_by_dataset[dataset_id] = self._build_baseline(local_map, cloud_map)
-            config['embedded_last_dataset_id'] = dataset_id
-            config['embedded_baselines'] = baselines_by_dataset
-            save_embedded_sync_config(config)
-            return []
-        if not baseline:
-            if active_cloud or switching or not local_map:
-                _embedded_apply_cloud_records(cloud_records, replace_all=True)
-            elif role in {'admin', 'editor', 'entry'} or self.snapshot().get('temporary_permissions'):
-                for local in local_map.values():
-                    identity = (local['record_type'], local['record_key'])
-                    if self._effective_role(role, dataset_id, identity) in {'admin', 'editor', 'entry'}:
-                        self._put_local(config, dataset_id, local, None, 0)
-                cloud_records = self._fetch_cloud_records(config, dataset_id)
-                cloud_map = {
-                    (str(item.get('record_type') or ''), str(item.get('record_key') or '')): item
-                    for item in cloud_records if item.get('record_key')
-                }
-            local_map = _embedded_local_records()
-            baseline = self._build_baseline(local_map, cloud_map)
-            baselines_by_dataset[dataset_id] = baseline
-            config['embedded_last_dataset_id'] = dataset_id
-            config['embedded_baselines'] = baselines_by_dataset
-            save_embedded_sync_config(config)
-            return []
-
-        apply_from_cloud, conflicts, pushed = [], [], False
-        identities = set(local_map) | set(cloud_map) | {
-            tuple(key.split('\u0000', 1)) for key in baseline if '\u0000' in key
-        }
-        for identity in sorted(identities):
-            local, cloud = local_map.get(identity), cloud_map.get(identity)
-            key_text = '\u0000'.join(identity)
-            previous = baseline.get(key_text, {})
-            local_hash = local.get('checksum') if local else None
-            cloud_hash = self._cloud_marker(cloud)
-            local_changed = local_hash != previous.get('local_hash')
-            cloud_changed = cloud_hash != previous.get('cloud_hash')
-            if local_changed and cloud_changed:
-                if local and cloud and not cloud.get('is_deleted') and local_hash == cloud_hash:
+        recovering = bool(config.get('embedded_cache_recovery'))
+        if recovering and not active_cloud and local_map:
+            raise CloudSyncError('内部缓存正在恢复，但云端暂无有效记录。年度镜像已保留，请确认所选账本后再恢复；未向云端提交删除。')
+        if switching or (not baseline and (active_cloud or not local_map or recovering)):
+            _embedded_apply_cloud_records(cloud_records, replace_all=True, expected_hashes=snapshot_hashes)
+            acknowledged_local = {identity: dict(item, checksum=self._cloud_marker(item))
+                                  for identity, item in cloud_map.items() if not item.get('is_deleted')}
+        else:
+            identities = set(local_map) | set(cloud_map) | {
+                tuple(key.split('\u0000', 1)) for key in baseline if '\u0000' in key
+            }
+            apply_from_cloud = []
+            for identity in sorted(identities):
+                local, cloud = local_map.get(identity), cloud_map.get(identity)
+                previous = baseline.get('\u0000'.join(identity), {})
+                local_hash = local.get('checksum') if local else None
+                cloud_hash = self._cloud_marker(cloud)
+                local_changed = local_hash != previous.get('local_hash')
+                cloud_changed = (cloud_hash != previous.get('cloud_hash')
+                                 or int((cloud or {}).get('version') or 0) != int(previous.get('cloud_version') or 0)
+                                 or int((cloud or {}).get('sequence') or (cloud or {}).get('seq') or 0) != int(previous.get('cloud_sequence') or 0))
+                if local_changed and cloud_changed:
+                    if local and cloud and not cloud.get('is_deleted') and local_hash == cloud_hash:
+                        continue
+                    conflicts.append('/'.join(identity))
                     continue
-                conflicts.append('/'.join(identity))
-                continue
-            if cloud_changed:
-                if cloud:
-                    apply_from_cloud.append(cloud)
-                continue
-            if local_changed:
+                if cloud_changed:
+                    if cloud:
+                        apply_from_cloud.append(cloud)
+                        if cloud.get('is_deleted'):
+                            acknowledged_local.pop(identity, None)
+                        else:
+                            acknowledged_local[identity] = dict(cloud, checksum=cloud_hash)
+                    continue
+                if not local_changed:
+                    continue
                 record_role = self._effective_role(role, dataset_id, identity)
                 if record_role not in {'admin', 'editor', 'entry'}:
                     conflicts.append('/'.join(identity))
                     continue
                 if local:
-                    self._put_local(config, dataset_id, local, cloud, (cloud or {}).get('version', 0))
+                    response = self._put_local(config, dataset_id, local, cloud, (cloud or {}).get('version', 0))
                 elif cloud and not cloud.get('is_deleted'):
-                    self._delete_cloud(config, dataset_id, cloud)
-                pushed = True
-
-        if apply_from_cloud:
-            _embedded_apply_cloud_records(apply_from_cloud)
-        if pushed:
-            cloud_records = self._fetch_cloud_records(config, dataset_id)
-            cloud_map = {
-                (str(item.get('record_type') or ''), str(item.get('record_key') or '')): item
-                for item in cloud_records if item.get('record_key')
-            }
-        local_map = _embedded_local_records()
-        fresh = self._build_baseline(local_map, cloud_map)
+                    response = self._delete_cloud(config, dataset_id, cloud)
+                else:
+                    continue
+                # The write response names the version actually accepted by the
+                # server. A later list response could already contain someone else's
+                # next write and must not silently acknowledge that unseen version.
+                if not isinstance(response, dict) or not response.get('record_key'):
+                    raise CloudSyncError('云端未返回已保存记录的版本；下次同步将重新核对。')
+                acknowledged_cloud[identity] = response
+            if apply_from_cloud:
+                _embedded_apply_cloud_records(apply_from_cloud, expected_hashes=snapshot_hashes)
+        _embedded_align_source_order(list(acknowledged_cloud.values()))
+        fresh = self._build_baseline(acknowledged_local, acknowledged_cloud)
         for conflict in conflicts:
-            identity = tuple(conflict.split('/', 1))
-            key_text = '\u0000'.join(identity)
+            key_text = '\u0000'.join(conflict.split('/', 1))
             if key_text in baseline:
                 fresh[key_text] = baseline[key_text]
+            else:
+                fresh.pop(key_text, None)
         baselines_by_dataset[dataset_id] = fresh
         config['embedded_last_dataset_id'] = dataset_id
         config['embedded_baselines'] = baselines_by_dataset
+        config.pop('embedded_cache_recovery', None)
         save_embedded_sync_config(config)
         return conflicts
 
@@ -1424,6 +1478,7 @@ class EmbeddedCloudSyncWorker:
                 'local_hash': local.get('checksum') if local else None,
                 'cloud_hash': self._cloud_marker(cloud),
                 'cloud_version': int((cloud or {}).get('version') or 0),
+                'cloud_sequence': int((cloud or {}).get('sequence') or (cloud or {}).get('seq') or 0),
             }
         return result
 
@@ -2973,7 +3028,8 @@ def _read_internal_frames(path):
                     for column in columns:
                         if column not in frame.columns:
                             frame[column] = ''
-                    frames[sheet_name] = frame[columns].astype(object).fillna('')
+                    optional = [key for key in ('source_order', 'sequence', 'version') if key in frame.columns and key not in columns]
+                    frames[sheet_name] = frame[columns + optional].astype(object).fillna('')
     except PermissionError as exc:
         raise ExcelAccessError(excel_access_message(path, '读取内部数据文件', exc)) from exc
     except Exception as exc:
@@ -3064,20 +3120,52 @@ def validate_internal_excel(path, require_write=False):
 
 
 def _write_internal_frames(path, frames):
-    """Atomically write the internal compact store; its sheets are deliberately hidden."""
+    """Validate cells and read back complete JSON before replacing the store."""
+    prepared = {name: money_excel_frame(frame) for name, frame in frames.items()}
+    ordered_sheets = ('__day_records', '__month_records', '__global_records')
+    if any('source_order' in prepared.get(name, pd.DataFrame()).columns for name in ordered_sheets):
+        # Exports use one global source order. Re-number after local additions
+        # so a day/month append cannot create duplicate restore ranks.
+        ranked = []
+        for name in ordered_sheets:
+            frame = prepared.get(name, pd.DataFrame())
+            for index, row in frame.iterrows():
+                value = row.get('source_order', '')
+                order = safe_float(value) if money_value_was_entered(value) else float('inf')
+                ranked.append((order, len(ranked), name, index))
+        for rank, (_order, _tie, name, index) in enumerate(sorted(ranked), start=1):
+            if 'source_order' not in prepared[name].columns:
+                prepared[name]['source_order'] = ''
+            prepared[name].at[index, 'source_order'] = rank
+    for sheet_name, frame in prepared.items():
+        for column in frame.columns:
+            if len(str(column)) > 32767:
+                raise ExcelFormatError(f'内部 Excel 的 {sheet_name} 列名超过 32767 字符，原文件未改动。')
+        for row_number, values in enumerate(frame.itertuples(index=False, name=None), start=2):
+            for column, value in zip(frame.columns, values):
+                if isinstance(value, str) and len(value) > 32767:
+                    raise ExcelFormatError(f'内部 Excel 的 {sheet_name} 第 {row_number} 行 {column} 超过单格 32767 字符上限，原文件未改动。请减少单条记录内容后重试。')
+    _validate_internal_frames_integrity(prepared)
     _ensure_internal_storage_access(path)
     temp_path = None
     try:
-        fd, temp_path = tempfile.mkstemp(prefix='.restaurant_finance_internal_', suffix='.xlsx',
-                                         dir=os.path.dirname(path))
+        fd, temp_path = tempfile.mkstemp(prefix='.restaurant_finance_internal_', suffix='.xlsx', dir=os.path.dirname(path))
         os.close(fd)
         with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
-            for sheet_name, frame in frames.items():
-                money_excel_frame(frame).to_excel(writer, sheet_name=sheet_name, index=False)
+            for sheet_name, frame in prepared.items():
+                frame.to_excel(writer, sheet_name=sheet_name, index=False)
             for sheet_name in ('__day_records', '__month_records', '__global_records', '__audit_records', '__meta'):
                 writer.book[sheet_name].sheet_state = 'veryHidden'
-        with pd.ExcelFile(temp_path):
-            pass
+        with pd.ExcelFile(temp_path) as workbook:
+            reread = {name: read_excel_exact(workbook, sheet_name=name).fillna('') for name in prepared}
+        _validate_internal_frames_integrity(reread)
+        for sheet_name, frame in prepared.items():
+            if 'payload_json' not in frame.columns:
+                continue
+            before = list(frame['payload_json'].fillna('').astype(str))
+            after = list(reread[sheet_name]['payload_json'].fillna('').astype(str))
+            if before != after:
+                raise ExcelFormatError(f'内部 Excel 的 {sheet_name} JSON 写回校验不一致，原文件未改动。')
         os.replace(temp_path, path)
         temp_path = None
     except OSError as exc:
@@ -3189,9 +3277,12 @@ def _internal_records_for_key(frame, dataset_id, key_column, key):
 
 def _replace_internal_record(frame, dataset_id, key_column, key, payload_json=None, digest=None):
     mask = (frame['dataset_id'] == dataset_id) & (frame[key_column] == key)
+    source_order = max((safe_float(value) for value in frame.get('source_order', [])), default=0) + 1
     frame = frame.loc[~mask].copy()
     if payload_json is not None:
         row = {'dataset_id': dataset_id, key_column: key, 'payload_json': payload_json, 'sha256': digest}
+        if 'source_order' in frame.columns:
+            row['source_order'] = source_order
         frame = pd.concat([frame, pd.DataFrame([row])], ignore_index=True)
     return frame
 
@@ -4698,7 +4789,109 @@ def save_dishes(df):
     save_current_user_sheet('dishes', clean, '日期')
 
 
+def _detail_json_rows(raw):
+    value = raw
+    if isinstance(raw, str):
+        try:
+            value = exact_json_loads(raw)
+        except (ValueError, TypeError):
+            return None
+    return [dict(item) for item in value if isinstance(item, dict)] if isinstance(value, list) else None
+
+
+def _detail_record(name, quantity='', unit='', price='', total='', note=''):
+    return {'name': str(name), 'quantity': str(quantity) if quantity not in (None, '') else '',
+            'unit': str(unit or ''), 'price': price_text(price) if money_value_was_entered(price) else '',
+            'total': money_text(total) if money_value_was_entered(total) else '', 'note': str(note or '')}
+
+
+def _serialize_detail_records(items):
+    return exact_json_dumps(items, ensure_ascii=False, separators=(',', ':')) if items else ''
+
+
+def _detail_parts(raw):
+    structured = _detail_json_rows(raw)
+    return structured if structured is not None else [part.strip() for part in re.split(r'[,，;；\n]', str(raw or '')) if part.strip()]
+
+
+def _detail_display_text(raw):
+    """Readable projection only; callers keep the original structured value."""
+    structured = _detail_json_rows(raw)
+    if structured is None:
+        try:
+            item = exact_json_loads(str(raw or ''))
+        except (ValueError, TypeError):
+            item = None
+        structured = [item] if isinstance(item, dict) and any(key in item for key in ('name', '名称', '食材名称')) else None
+    if structured is None:
+        return str(raw or '')
+    lines = []
+    for original, item in zip(structured, _inventory_detail_items(structured)):
+        quantity = original.get('quantity', original.get('数量', ''))
+        text = item['name']
+        if money_value_was_entered(quantity):
+            text += ' ' + unit_join(format(decimal_number(quantity), 'f'), item['unit'])
+        elif item['unit']:
+            text += '（' + item['unit'] + '）'
+        if money_value_was_entered(item['unit_price']):
+            text += ' · 单价 ' + price_text(item['unit_price'])
+        if money_value_was_entered(item['total']):
+            text += ' · 合计 ' + money_text(item['total'])
+        elif not money_value_was_entered(item['unit_price']):
+            text += ' · 待定价'
+        if item['note']:
+            text += '（' + item['note'] + '）'
+        lines.append(text)
+    return '；'.join(lines)
+
+
+class DetailLineEdit(QLineEdit):
+    """Render a readable detail summary while existing save paths receive raw JSON.
+
+    Structured rows are edited through the existing selection dialog so commas,
+    duplicate names and unknown values cannot be damaged by summary parsing.
+    Plain legacy text retains its normal direct text editing behaviour.
+    """
+    def setText(self, value):
+        raw = exact_json_dumps(value, ensure_ascii=False) if isinstance(value, list) else str(value or '')
+        self._detail_raw = raw if _detail_json_rows(raw) is not None else None
+        self._detail_requested_readonly = bool(getattr(self, '_detail_requested_readonly', False))
+        super().setText(_detail_display_text(raw) if self._detail_raw is not None else raw)
+        super().setReadOnly(bool(getattr(self, '_detail_requested_readonly', False)) or self._detail_raw is not None)
+        self.setToolTip((_detail_display_text(raw) + '\n使用旁边的选择按钮修改明细。') if self._detail_raw is not None else '')
+
+    def text(self):
+        raw = getattr(self, '_detail_raw', None)
+        return raw if raw is not None else super().text()
+
+    def clear(self):
+        self.setText('')
+
+    def setReadOnly(self, value):
+        self._detail_requested_readonly = bool(value)
+        super().setReadOnly(bool(value) or getattr(self, '_detail_raw', None) is not None)
+
+
+class DetailTableItem(QTableWidgetItem):
+    """Keep the raw detail available to collectors; paint its readable summary."""
+    def __init__(self, value):
+        raw = exact_json_dumps(value, ensure_ascii=False) if isinstance(value, list) else str(value or '')
+        self._detail_raw = raw if _detail_json_rows(raw) is not None else None
+        super().__init__(_detail_display_text(raw) if self._detail_raw is not None else raw)
+        if self._detail_raw is not None:
+            self.setToolTip(_detail_display_text(raw))
+
+    def text(self):
+        return self._detail_raw if self._detail_raw is not None else super().text()
+
+
 def detail_total_cost(detail_text):
+    structured = _detail_json_rows(detail_text)
+    if structured is not None:
+        return sum(money_amount(item['total']) if money_value_was_entered(item['total']) else
+                   money_amount(item['quantity'] * unit_price_value(item['unit_price']))
+                   if money_value_was_entered(item['unit_price']) else 0
+                   for item in _inventory_detail_items(structured))
     total = 0
     for part in re.split(r'[,，]', str(detail_text or '')):
         clean, _note = split_item_note(part)
@@ -5132,21 +5325,27 @@ def calc_week_summary(day_str, df_daily=None, df_fixed=None):
         & (date_values.dt.date <= end_of_week)
         & (date_values.dt.date <= today)
     ]
-    if week_df.empty: return None
 
     metrics = [
         calc_day_metrics(row['日期'], df, fixed_df)
         for _, row in week_df.iterrows()
         if day_has_meaningful_data(row)
     ]
-    if not metrics: return None
 
-    total_net = sum(m['净利润'] for m in metrics)
-    total_fixed = sum(m['固定分摊'] for m in metrics)
+    # Fixed costs accrue on calendar days even without a meaningful daily row.
+    # Future days are not charged; elapsed_* remains the existing average divisor.
+    total_fixed = sum(
+        calc_day_metrics((start_of_week + timedelta(days=offset)).isoformat(), df, fixed_df)['固定分摊']
+        for offset in range(7) if start_of_week + timedelta(days=offset) <= today
+    )
+    if not metrics and not total_fixed:
+        return None
+    total_variable = sum(m['变动成本'] for m in metrics)
+    total_net = sum(m['收益'] for m in metrics) - total_variable - total_fixed
     elapsed_days = elapsed_week_days(target_date)
     return {
         '本周收益': sum(m['收益'] for m in metrics), '本周毛利': sum(m['毛利'] for m in metrics),
-        '本周总成本': sum(m['总成本'] for m in metrics), '本周变动成本': sum(m['变动成本'] for m in metrics),
+        '本周总成本': total_variable + total_fixed, '本周变动成本': total_variable,
         '本周固定成本': total_fixed, '本周净利': total_net,
         '日均净利': decimal_divide(total_net, elapsed_days), '活跃天数': len(metrics), '日均天数': elapsed_days
     }
@@ -5162,7 +5361,6 @@ def calc_month_summary(year, month, df_daily=None, df_fixed=None):
         & (date_values.dt.month == int(month))
         & (date_values.dt.date <= today)
     ]
-    if month_df.empty: return None
 
     metrics = []
     food_sum, spice_sum, water_sum, other_sum = 0, 0, 0, 0
@@ -5175,13 +5373,14 @@ def calc_month_summary(year, month, df_daily=None, df_fixed=None):
             water_sum += money_amount(row.get('水电', 0))
             other_sum += money_amount(row.get('其他', 0))
 
-    if not metrics: return None
 
     total_variable = sum(m['变动成本'] for m in metrics)
     active_days = len(metrics)
     fixed = get_monthly_fixed_breakdown(year, month, fixed_df)
     dim = calendar.monthrange(year, month)[1]
-    total_fixed = fixed['固定支出合计']
+    total_fixed = fixed['固定支出合计'] if (int(year), int(month)) <= (today.year, today.month) else 0
+    if not metrics and not total_fixed:
+        return None
     total_cost = total_variable + total_fixed
     total_net = sum(m['收益'] for m in metrics) - total_cost
 
@@ -5193,12 +5392,12 @@ def calc_month_summary(year, month, df_daily=None, df_fixed=None):
         '日均净利': decimal_divide(total_net, elapsed_days), '活跃天数': active_days, '日均天数': elapsed_days,
         '开销明细': {k: v for k, v in
                      {'食材成本': food_sum, '佐料成本': spice_sum, '日结水电': water_sum, '其他': other_sum,
-                      '人工总额(分摊)': (decimal_divide(fixed['人工'], dim)) * active_days if dim else 0,
-                      '房租总额(分摊)': (decimal_divide(fixed['房租及物业'], dim)) * active_days if dim else 0,
-                      '水费(实际使用分摊)' if fixed['实际使用水费'] is not None else '水费(支出分摊)': (decimal_divide(fixed['计入成本水费'], dim)) * active_days if dim else 0,
-                      '电费(实际使用分摊)' if fixed['实际使用电费'] is not None else '电费(支出分摊)': (decimal_divide(fixed['计入成本电费'], dim)) * active_days if dim else 0,
-                      '月煤气费(分摊)': (decimal_divide(fixed['计入成本煤气费'], dim)) * active_days if dim else 0,
-                      '其它固定成本(分摊)': (decimal_divide(fixed['其它固定成本'], dim)) * active_days if dim else 0}.items() if v > 0}
+                      '人工总额(分摊)': fixed['人工'],
+                      '房租总额(分摊)': fixed['房租及物业'],
+                      '水费(实际使用分摊)' if fixed['实际使用水费'] is not None else '水费(支出分摊)': fixed['计入成本水费'],
+                      '电费(实际使用分摊)' if fixed['实际使用电费'] is not None else '电费(支出分摊)': fixed['计入成本电费'],
+                      '月煤气费(分摊)': fixed['计入成本煤气费'],
+                      '其它固定成本(分摊)': fixed['其它固定成本']}.items() if v > 0}
     }
 
 
@@ -5211,7 +5410,6 @@ def calc_year_summary(year, df_daily=None, df_fixed=None):
         (date_values.dt.year == int(year))
         & (date_values.dt.date <= today)
     ]
-    if year_df.empty: return None
 
     metrics, unique_months = [], set()
     for _, row in year_df.iterrows():
@@ -5220,7 +5418,6 @@ def calc_year_summary(year, df_daily=None, df_fixed=None):
             metrics.append(m)
             unique_months.add(row['日期'][:7])
 
-    if not metrics: return None
     total_variable = sum(m['变动成本'] for m in metrics)
     # Do not charge an annual snapshot with fixed-cost rows from months that
     # have not happened yet.  The current month keeps its configured monthly
@@ -5232,6 +5429,11 @@ def calc_year_summary(year, df_daily=None, df_fixed=None):
         if year < reference.year or (year == reference.year and month <= reference.month)
     )
     total_fixed = paid_fixed_total
+    if not metrics and not total_fixed:
+        return None
+    cost_months = {f'{int(year):04d}-{month:02d}' for month in range(1, 13)
+                   if (int(year), month) <= (reference.year, reference.month)
+                   and get_monthly_fixed_breakdown(year, month, fixed_df)['固定支出合计']}
     total_cost = total_variable + total_fixed
     total_net = sum(m['收益'] for m in metrics) - total_cost
     elapsed_days = elapsed_year_days(year)
@@ -5242,7 +5444,7 @@ def calc_year_summary(year, df_daily=None, df_fixed=None):
         '本年变动成本': total_variable,
         '本年固定成本': total_fixed, '本年净利': total_net,
         '本年固定支出': paid_fixed_total,
-        '月均净利': decimal_divide(total_net, len(unique_months)), '日均净利': decimal_divide(total_net, elapsed_days),
+        '月均净利': decimal_divide(total_net, len(unique_months | cost_months)), '日均净利': decimal_divide(total_net, elapsed_days),
         '活跃天数': len(metrics), '日均天数': elapsed_days, '活跃月数': len(unique_months)
     }
 
@@ -5415,6 +5617,8 @@ def _inventory_day_sheet(sheet_name):
         frame = frames.get('__day_records', pd.DataFrame())
         if {'dataset_id', '日期', 'payload_json'}.issubset(frame.columns):
             selected = frame[frame['dataset_id'].astype(str) == str(FIXED_CLOUD_DATASET_ID)]
+            if 'source_order' in selected.columns:
+                selected = selected.assign(_source_order=pd.to_numeric(selected['source_order'], errors='coerce').fillna(0)).sort_values('_source_order', kind='stable')
             daily_rows, daily_ranks, daily_sources, direct_sources, dish_fallback = {}, {}, {}, {}, {}
             records = []
             def js_text(value):
@@ -5439,7 +5643,7 @@ def _inventory_day_sheet(sheet_name):
                     date = normalize_day(item.get('日期') or key)
                     if not date: continue
                     normalized = {**item, '日期': date}
-                    rank = (safe_float(row.get('sequence', row.get('seq', 0))), safe_float(row.get('version', row.get('current_version', 0))), record_index, row_index)
+                    rank = (safe_float(row.get('source_order', row.get('sequence', row.get('seq', 0)))), safe_float(row.get('version', row.get('current_version', 0))) if 'source_order' not in selected.columns else 0, record_index, row_index)
                     if date not in daily_ranks or rank >= daily_ranks[date]:
                         previous = daily_rows.get(date)
                         daily_rows[date] = normalized if previous is None else {**previous, **{field: value for field, value in normalized.items() if entered(value)}}
@@ -5850,6 +6054,10 @@ def unit_candidates(extra_units=None):
 
 
 def parse_cost_detail_part(part, extra_units=None):
+    if isinstance(part, dict):
+        item = _inventory_detail_items([part])[0]
+        return {'name': item['name'], 'qty': str(part.get('quantity', part.get('数量', ''))),
+                'unit': item['unit'], 'total': item['total'], 'raw': part}
     part = str(part).strip()
     if not part:
         return None
@@ -5885,7 +6093,7 @@ def scan_unit_usages(target_units):
             detail = str(row.get(col, '') or '')
             if detail == 'nan':
                 continue
-            for part in re.split(r'[,，]', detail):
+            for part in _detail_parts(detail):
                 parsed = parse_cost_detail_part(part, target_units)
                 if parsed and parsed["unit"] in target_units and parsed["name"]:
                     usages.append({
@@ -5979,6 +6187,15 @@ def show_usage_message(parent, title, text, details, allow_yes=False):
 
 
 def replace_units_in_detail(detail_str, rename_map):
+    structured = _detail_json_rows(detail_str)
+    if structured is not None:
+        changed = False
+        for item in structured:
+            field = 'unit' if 'unit' in item else '单位'
+            if item.get(field) in rename_map:
+                item[field] = rename_map[item[field]]
+                changed = True
+        return _serialize_detail_records(structured) if changed else detail_str
     if not str(detail_str).strip() or str(detail_str) == 'nan':
         return detail_str
     parts = []
@@ -6751,6 +6968,13 @@ def _create_internal_automatically_from_user(user_path, internal_path):
     if os.path.exists(internal_path):
         raise ExcelAccessError(f'准备新建的内部 Excel 已存在：\n{internal_path}')
 
+    # A surviving annual mirror cannot prove deletion of other years. Drop
+    # all old sync baselines BEFORE reconstructing this partial cache. The next
+    # connected cycle restores the complete authoritative cloud snapshot.
+    sync_config = load_embedded_sync_config()
+    sync_config['embedded_baselines'] = {}
+    sync_config['embedded_cache_recovery'] = True
+    save_embedded_sync_config(sync_config)
     write_user_workbook_metadata(user_path, FIXED_CLOUD_DATASET_ID, year)
     _write_internal_frames(internal_path, _default_internal_frames())
 
@@ -6769,11 +6993,6 @@ def _create_internal_automatically_from_user(user_path, internal_path):
         frames, FIXED_CLOUD_DATASET_ID, ACTIVE_USER_EXCEL_YEAR
     )
     save_path_config(FILE_PATH, ACTIVE_USER_EXCEL_YEAR, INTERNAL_FILE_PATH)
-    _write_cloud_override_request(
-        INTERNAL_FILE_PATH,
-        'auto_recreated_internal_from_user',
-        '启动时检测到内部 Excel 丢失，已由现存用户 Excel 自动重建。',
-    )
     trigger_sync_assistant_now()
     return INTERNAL_FILE_PATH
 
@@ -7450,32 +7669,13 @@ class ItemSelectDialog(QDialog):
         self.table.setRowCount(0)
         df = load_ingredients()
         df_cat = df[df['分类'] == self.category]
-        # 数据文件存储的是“名称 数量单位 总价”；单价由总价÷数量还原。
-        current_data = {}  # name -> (qty, unit, unit_price, total_price, note)
-        for x in current_selection.replace('，', ',').split(','):
-            x = x.strip()
-            if not x: continue
-            x, note = split_item_note(x)
-            # 尝试带单位的格式: "牛肉 5斤 50"
-            m = re.match(r'^(.*?)\s+(\d+(?:\.\d+)?)\s*' + get_unit_pattern() + r'?\s+(\d+(?:\.\d+)?)$', x)
-            if m:
-                name = m.group(1).strip()
-                qty = m.group(2)
-                unit = m.group(3) or ''
-                total_price = m.group(4)
-                unit_price = decimal_number(total_price) / decimal_number(qty) if decimal_number(qty) > 0 else 0
-                current_data[name] = (qty, unit, f"{unit_price:.6f}", total_price, note)
-            else:
-                # 旧格式: "牛肉 50"
-                m = re.match(r'^(.*?)\s*(\d+(?:\.\d+)?)$', x)
-                if m:
-                    current_data[m.group(1).strip()] = ('', '', '', m.group(2), note)
-                elif x:
-                    current_data[x] = ('', '', '', '', note)
-
+        details = PurchaseDetailTab._parse_detail(self, current_selection)
+        current_rows = [(name, (qty, unit, price, total, note)) for name, qty, unit, price, total, note, _raw in details]
+        existing_names = {name for name, _values in current_rows}
+        available = current_rows + [(str(name).strip(), None) for name in df_cat['词条名称'] if str(name).strip() not in existing_names]
         row = 0
-        for item in df_cat['词条名称']:
-            name = str(item).strip()
+        for name, values in available:
+            name = str(name).strip()
             if not name: continue
             self.table.insertRow(row)
             
@@ -7487,9 +7687,9 @@ class ItemSelectDialog(QDialog):
             name_item = QTableWidgetItem(name)
             name_item.setFlags(Qt.ItemIsEnabled)
             
-            if name in current_data:
+            if values is not None:
                 chk_item.setCheckState(Qt.Checked)
-                qty, unit, unit_price, total_price, note = current_data[name]
+                qty, unit, unit_price, total_price, note = values
             else:
                 chk_item.setCheckState(Qt.Unchecked)
                 qty, unit, unit_price, total_price, note = '', '', '', '', ''
@@ -7500,26 +7700,27 @@ class ItemSelectDialog(QDialog):
             # 数量输入框（第2列）
             qty_edit = QLineEdit()
             qty_edit.setPlaceholderText("数量")
-            qty_edit.setText(str(qty) if qty else '')
+            qty_edit.setText(str(qty) if qty != '' else '')
             self.table.setCellWidget(row, 2, qty_edit)
             
             # 单位下拉框（第3列）
             unit_combo = QComboBox()
             unit_combo.addItems([''] + self.UNITS)
-            if unit in self.UNITS:
-                unit_combo.setCurrentText(unit)
+            if unit and unit not in self.UNITS:
+                unit_combo.addItem(unit)
+            unit_combo.setCurrentText(unit)
             self.table.setCellWidget(row, 3, unit_combo)
             
             # 单价输入框（第4列）
             price_edit = QLineEdit()
             price_edit.setPlaceholderText("填单价")
-            price_edit.setText(str(unit_price) if unit_price else '')
+            price_edit.setText(str(unit_price) if unit_price != '' else '')
             self.table.setCellWidget(row, 4, price_edit)
 
             # 总价输入框（第5列）
             total_edit = QLineEdit()
             total_edit.setPlaceholderText("填总价")
-            total_edit.setText(str(total_price) if total_price else '')
+            total_edit.setText(str(total_price) if total_price != '' else '')
             self.table.setCellWidget(row, 5, total_edit)
 
             note_edit = QLineEdit()
@@ -7583,8 +7784,8 @@ class ItemSelectDialog(QDialog):
             df = pd.concat([df, pd.DataFrame([{'词条名称': new_val, '分类': self.category}])], ignore_index=True)
             save_ingredients(df)
             current_checked = self._get_current_inputs()
-            current_checked.append(new_val)
-            self.load_data(", ".join(current_checked))
+            current_checked.append(_detail_record(new_val))
+            self.load_data(_serialize_detail_records(current_checked))
 
     def del_item(self):
         checked_names = []
@@ -7622,14 +7823,9 @@ class ItemSelectDialog(QDialog):
                 total = total_widget.text().strip() if total_widget else ''
                 note = note_widget.text().strip() if note_widget else ''
                 
-                if qty and total:
-                    # 带单位格式: 牛肉 5斤 50
-                    selected.append(join_item_note(f"{name} {unit_join(qty, unit)} {total}", note))
-                elif total:
-                    # 旧格式: 牛肉 50
-                    selected.append(join_item_note(f"{name} {total}", note))
-                else:
-                    selected.append(join_item_note(name, note))
+                price_widget = self.table.cellWidget(row, 4)
+                price = price_widget.text().strip() if price_widget else ''
+                selected.append(_detail_record(name, qty, unit, price, total, note))
         return selected
 
     def _calculate_total(self, row):
@@ -7740,7 +7936,7 @@ class ItemSelectDialog(QDialog):
                     QMessageBox.Yes) != QMessageBox.Yes:
                 return
 
-        self.selected_items_str = ", ".join(self._get_current_inputs())
+        self.selected_items_str = _serialize_detail_records(self._get_current_inputs())
         self.accept()
 class InventoryNameCorrectionDialog(QDialog):
     def __init__(self, inventory, category='食材', old_name=''):
@@ -9125,7 +9321,7 @@ class MoreStatsTab(QWidget):
         daily = daily[daily["日期_dt"].dt.year == year]
         names = set()
         for _, row in daily.iterrows():
-            for part in re.split(r"[,，]", str(row.get("食材明细", "") or "")):
+            for part in _detail_parts(row.get("食材明细", "")):
                 parsed = self._parse_food_part(part)
                 if parsed:
                     names.add(parsed["食材"])
@@ -9201,6 +9397,12 @@ class MoreStatsTab(QWidget):
 
     def _parse_consumption_parts(self, detail_text):
         """解析菜品使用食材；数量即菜品页填写的当日实际总用量。"""
+        structured = _detail_json_rows(detail_text)
+        if structured is not None:
+            return [{'食材': item['name'], '数量': item['quantity'], '单位': item['unit'] or '无单位',
+                     '成本': money_amount(item['total']) if money_value_was_entered(item['total']) else 0,
+                     '数量已填写': money_value_was_entered(raw.get('quantity', raw.get('数量', '')))}
+                    for raw, item in zip(structured, _inventory_detail_items(structured))]
         parts = []
         unit_regex = re.compile(
             r'^(.*?)\s+(\d+(?:\.\d+)?)\s*' + get_unit_pattern()
@@ -9435,6 +9637,15 @@ class MoreStatsTab(QWidget):
         return decimal_number(decimal_divide(decimal_sum(frame[metric]), len(frame)) if average else decimal_sum(frame[metric]))
 
     def _parse_food_part(self, part):
+        if isinstance(part, dict):
+            item = _inventory_detail_items([part])[0]
+            if not item['name'] or item['quantity'] <= 0:
+                return None
+            total = (money_amount(item['total']) if money_value_was_entered(item['total']) else
+                     money_amount(item['quantity'] * unit_price_value(item['unit_price']))
+                     if money_value_was_entered(item['unit_price']) else None)
+            return {'食材': item['name'], '数量': item['quantity'], '单位': item['unit'] or '无单位',
+                    '总价': total, '单价': total / item['quantity'] if total is not None else None}
         part = str(part).strip()
         if not part:
             return None
@@ -9472,7 +9683,7 @@ class MoreStatsTab(QWidget):
             dt = pd.to_datetime(day, errors="coerce")
             if pd.isna(dt):
                 continue
-            for part in re.split(r"[,，]", str(row.get("食材明细", "") or "")):
+            for part in _detail_parts(row.get("食材明细", "")):
                 parsed = self._parse_food_part(part)
                 if not parsed or parsed["食材"] not in self.selected_food_items:
                     continue
@@ -9491,12 +9702,18 @@ class MoreStatsTab(QWidget):
         if frame.empty:
             return 0
         quantity = decimal_number(frame["数量"].sum())
-        total = decimal_number(frame["总价"].sum())
+        priced = frame[frame["总价"].notna()]
+        known_quantity = decimal_number(priced["数量"].sum())
+        total = decimal_number(priced["总价"].sum())
         active_days = max(int(frame["日期"].nunique()), 1)
         if metric in ("单价随时间变化", "每月平均单价"):
-            return decimal_divide(total, quantity) if quantity else 0
+            # A missing amount is unknown, never a zero-cost purchase.
+            return decimal_divide(total, known_quantity) if known_quantity else float('nan')
         if metric == "每月采购总价":
-            return decimal_divide(total, active_days) if average else total
+            if priced.empty:
+                return float('nan')
+            priced_days = max(int(priced["日期"].nunique()), 1)
+            return decimal_divide(total, priced_days) if average else total
         if metric == "每月采购量":
             return decimal_divide(quantity, active_days) if average else quantity
         return 0
@@ -10096,14 +10313,18 @@ class MoreStatsTab(QWidget):
                     "食材": str(item["食材"]),
                     "数量": decimal_number(item["数量"]),
                     "单位": str(item["单位"]),
-                    "总价": money_amount(item["总价"]),
-                    "单价": decimal_number(item["单价"]),
+                    "总价": money_amount(item["总价"]) if pd.notna(item["总价"]) else "待定价",
+                    "单价": decimal_number(item["单价"]) if pd.notna(item["单价"]) else "待定价",
                 })
         if not frame.empty and (average_mode or metric != "单价随时间变化"):
             for (month, series_name), sub in frame.groupby(["月份", "系列"]):
                 first = sub.iloc[0]
                 quantity = decimal_number(sub["数量"].sum())
-                total = decimal_number(sub["总价"].sum())
+                priced = sub[sub["总价"].notna()]
+                total = decimal_number(priced["总价"].sum())
+                pending_quantity = decimal_number(sub[sub["总价"].isna()]["数量"].sum())
+                known_quantity = decimal_number(priced["数量"].sum())
+                priced_days = max(int(priced["日期"].nunique()), 1)
                 active_days = max(int(sub["日期"].nunique()), 1)
                 rows.append({
                     "类型": "月度汇总",
@@ -10111,9 +10332,10 @@ class MoreStatsTab(QWidget):
                     "食材": str(first["食材"]),
                     "数量": quantity,
                     "单位": str(first["单位"]),
-                    "总价": total,
-                    "单价": decimal_divide(total, quantity) if quantity else 0,
-                    "采购日均总价": decimal_divide(total, active_days),
+                    "已知总价": total if not priced.empty else "待定价",
+                    "待定价数量": pending_quantity,
+                    "单价": decimal_divide(total, known_quantity) if known_quantity else "待定价",
+                    "已知采购日均总价": decimal_divide(total, priced_days) if not priced.empty else "待定价",
                     "采购日均数量": decimal_divide(quantity, active_days),
                 })
         self._set_table(pd.DataFrame(rows))
@@ -11906,14 +12128,14 @@ class LedgerTab(QWidget):
         self.entry_total_customers.setPlaceholderText("填整数")
         self.entry_total_customers.setValidator(QIntValidator(0, 9999999, self))
 
-        self.entry_food_detail = QLineEdit();
+        self.entry_food_detail = DetailLineEdit();
         self.entry_food_detail.setPlaceholderText("例: 牛肉 400 或 牛肉400")
         self.btn_manage_food = QPushButton(" 选择食材")
         food_detail_layout = QHBoxLayout();
         food_detail_layout.addWidget(self.entry_food_detail);
         food_detail_layout.addWidget(self.btn_manage_food)
 
-        self.entry_spice_detail = QLineEdit();
+        self.entry_spice_detail = DetailLineEdit();
         self.entry_spice_detail.setPlaceholderText("例: 盐 10 或 耗油25")
         self.btn_manage_spice = QPushButton(" 选择佐料")
         spice_detail_layout = QHBoxLayout();
@@ -12379,7 +12601,7 @@ class LedgerTab(QWidget):
                     f'可修改/删除 {_entry_time_text((deadline - now).total_seconds())}'
                     if now < deadline else '已锁定'
                 )
-                detail_lines.append(f'{category}·{text}：{status}')
+                detail_lines.append(f'{category}·{_detail_display_text(text)}：{status}')
             if isinstance(legacy_cost, dict) and legacy_cost.get('active', True):
                 saved_at = _parse_entry_stamp(legacy_cost.get('saved_at')) or legacy_fallback
                 deadline = _parse_entry_stamp(legacy_cost.get('edit_deadline')) or saved_at + ENTRY_EDIT_WINDOW
@@ -13342,12 +13564,12 @@ class LedgerTab(QWidget):
             self.table.setItem(real_row, 4, QTableWidgetItem(f"{safe_float(row.get('新客人数量', 0)):g}"))
             self.table.setItem(real_row, 5, QTableWidgetItem(f"{safe_float(row.get('总客人数', 0)):g}"))
             self.table.setItem(real_row, 6, QTableWidgetItem(f"{money_amount(row.get('食材成本', 0)):.2f} 元"))
-            self.table.setItem(real_row, 7, QTableWidgetItem(str(row.get('佐料明细', ''))))
+            self.table.setItem(real_row, 7, QTableWidgetItem(_detail_display_text(row.get('佐料明细', ''))))
             fixed_for_day = m_metrics['固定分摊'] if m_metrics else 0
             self.table.setItem(real_row, 8, QTableWidgetItem(f"{fixed_for_day:.2f}"))
             other_disp = str(row.get('其他明细', '')).strip() or (
                 f"旧版其他 {money_amount(row.get('其他', 0))}" if money_amount(row.get('其他', 0)) > 0 else "")
-            self.table.setItem(real_row, 9, QTableWidgetItem(other_disp))
+            self.table.setItem(real_row, 9, QTableWidgetItem(_detail_display_text(other_disp)))
             self.table.setItem(real_row, 10, QTableWidgetItem(str(row.get('当日备注', ''))))
             revenue = m_metrics['收益'] if m_metrics else 0
             gross = m_metrics['毛利'] if m_metrics else 0
@@ -13743,7 +13965,7 @@ class DishTab(QWidget):
         self.lbl_status.setText("")
 
     def _readonly_item(self, text):
-        item = QTableWidgetItem(text)
+        item = DetailTableItem(text)
         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         return item
 
@@ -14172,6 +14394,8 @@ class PurchaseDetailTab(QWidget):
                 # 单位用下拉框
                 unit_combo = QComboBox()
                 unit_combo.addItems([''] + UNITS_LIST)
+                if unit and unit not in UNITS_LIST:
+                    unit_combo.addItem(unit)
                 if unit:
                     unit_combo.setCurrentText(unit)
                 self.table.setCellWidget(i, 3, unit_combo)
@@ -14179,7 +14403,7 @@ class PurchaseDetailTab(QWidget):
                 self.table.setItem(i, 4, QTableWidgetItem(f"{unit_price:.6f}" if unit_price != '' else ''))
                 self.table.setItem(i, 5, QTableWidgetItem(f"{total_price:.2f}" if total_price != '' else ''))
                 self.table.setItem(i, 6, QTableWidgetItem(note))
-                total_cost += total_price if total_price != '' else 0
+                total_cost += self._table_item_string(i)[1]
 
             self.lbl_total_items.setText(f"{self.category}种类: {len(items)}")
             self.lbl_total_cost.setText(f"总金额: {total_cost:.2f} 元")
@@ -14190,6 +14414,15 @@ class PurchaseDetailTab(QWidget):
     def _parse_detail(self, detail_str):
         """解析明细字符串，返回 [(名称, 数量, 单位, 单价, 总价, 备注, 原文), ...]"""
         results = []
+        structured = _detail_json_rows(detail_str)
+        if structured is not None:
+            for raw, item in zip(structured, _inventory_detail_items(structured)):
+                quantity = raw.get('quantity', raw.get('数量', ''))
+                qty = decimal_number(quantity) if money_value_was_entered(quantity) else ''
+                price = unit_price_value(item['unit_price']) if money_value_was_entered(item['unit_price']) else ''
+                total = money_amount(item['total']) if money_value_was_entered(item['total']) else ''
+                results.append((item['name'], qty, item['unit'], price, total, item['note'], exact_json_dumps(raw, ensure_ascii=False)))
+            return results
         if not detail_str or detail_str == 'nan':
             return results
 
@@ -14269,13 +14502,13 @@ class PurchaseDetailTab(QWidget):
         total_cost = 0
         count = 0
         for row in range(self.table.rowCount()):
-            item = self.table.item(row, 5)  # 总价列
-            if item and item.text().strip():
-                try:
-                    total_cost += money_amount(item.text())
+            try:
+                item, amount = self._table_item_string(row)
+                if item and (money_value_was_entered(item['total']) or money_value_was_entered(item['price'])):
+                    total_cost += amount
                     count += 1
-                except ValueError:
-                    pass
+            except ValueError:
+                pass
         self.lbl_total_items.setText(f"{self.category}种类: {count}")
         self.lbl_total_cost.setText(f"总金额: {total_cost:.2f} 元")
 
@@ -14414,20 +14647,14 @@ class PurchaseDetailTab(QWidget):
             total_str = total_item.text().strip() if total_item and total_item.text().strip() else ''
             note = note_item.text().strip() if note_item else ''
 
-            if qty_str and unit and total_str:
-                food_items.append(join_item_note(f"{name} {unit_join(qty_str, unit)} {total_str}", note))
-            elif total_str:
-                food_items.append(join_item_note(f"{name} {total_str}", note))
-            else:
-                food_items.append(join_item_note(name, note))
+            price_str = price_item.text().strip() if price_item else ''
+            food_items.append(_detail_record(name, qty_str, unit, price_str, total_str, note))
 
-            if total_str:
-                try:
-                    total_cost += money_amount(total_str)
-                except ValueError:
-                    pass
-
-        detail_str = ", ".join(food_items) if food_items else ""
+        # A structured row may intentionally omit total while retaining a
+        # quantity and unit price. Use the same effective-amount contract as
+        # the ledger and inventory, without filling in the user's raw total.
+        total_cost = detail_total_cost(food_items)
+        detail_str = _serialize_detail_records(food_items)
 
         # 保存到 Excel
         df = load_daily()
@@ -14499,27 +14726,14 @@ class PurchaseDetailTab(QWidget):
         unit = unit_widget.currentText().strip() if unit_widget else ''
         total = total_item.text().strip() if total_item else ''
         note = note_item.text().strip() if note_item else ''
-        try:
-            total_value = money_amount(total) if total else 0
-        except ValueError:
-            total_value = 0
-        if qty and unit and total:
-            text = f"{name} {unit_join(qty, unit)} {total}"
-        elif total:
-            text = f"{name} {total}"
-        else:
-            text = name
-        return join_item_note(text, note), total_value
+        price_item = self.table.item(row, 4)
+        price = price_item.text().strip() if price_item else ''
+        item = _detail_record(name, qty, unit, price, total, note)
+        return item, detail_total_cost([item])
 
     def _detail_tuple_to_string(self, item):
-        name, qty, unit, _unit_price, total_price, note, _raw = item
-        if qty != '' and unit and total_price != '':
-            text = f"{name} {unit_join(qty, unit)} {total_price}"
-        elif total_price != '':
-            text = f"{name} {total_price}"
-        else:
-            text = str(name).strip()
-        return join_item_note(text, note)
+        name, qty, unit, price, total, note, _raw = item
+        return _detail_record(name, qty, unit, price, total, note)
 
     def move_selected_to_other_category(self):
         """Move checked rows between the food and spice columns for this date."""
@@ -14561,13 +14775,10 @@ class PurchaseDetailTab(QWidget):
                 for item in self._parse_detail(destination_text)
             ]
             destination_items.extend(moved_items)
-            destination_cost = sum(
-                (money_amount(item[4]) if item[4] != '' else 0)
-                for item in self._parse_detail(destination_text)
-            ) + moved_cost
-            df.loc[idx, self.detail_column] = ", ".join(current_items)
+            destination_cost = detail_total_cost(destination_items)
+            df.loc[idx, self.detail_column] = _serialize_detail_records(current_items)
             df.loc[idx, self.cost_column] = current_cost
-            df.loc[idx, other_detail_column] = ", ".join(destination_items)
+            df.loc[idx, other_detail_column] = _serialize_detail_records(destination_items)
             df.loc[idx, other_cost_column] = destination_cost
         else:
             # This is unusual because the page normally loads an existing day, but
@@ -14577,9 +14788,9 @@ class PurchaseDetailTab(QWidget):
                 '食材成本': 0, '食材明细': '', '佐料成本': 0, '佐料明细': '',
                 '水电': 0, '其他': 0, '其他明细': '', '当日备注': ''
             }
-            new_row[self.detail_column] = ", ".join(current_items)
+            new_row[self.detail_column] = _serialize_detail_records(current_items)
             new_row[self.cost_column] = current_cost
-            new_row[other_detail_column] = ", ".join(moved_items)
+            new_row[other_detail_column] = _serialize_detail_records(moved_items)
             new_row[other_cost_column] = moved_cost
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 
@@ -15602,7 +15813,7 @@ def _load_global_record_payload(record_key, aliases=()):
     return {}
 
 
-def _save_global_record_payload(record_key, payload, source_screen='本地桌面版'):
+def _save_global_record_payload(record_key, payload, source_screen='本地桌面版', expected_hash=None, aliases=()):
     """Persist a global record and wake the embedded cloud synchronizer."""
     require_network_edit()
     path = normalize_excel_path(INTERNAL_FILE_PATH)
@@ -15612,6 +15823,13 @@ def _save_global_record_payload(record_key, payload, source_screen='本地桌面
     with internal_sync_lock(path):
         frames = _read_internal_frames(path)
         before = _internal_payload_for_identity(frames, FIXED_CLOUD_DATASET_ID, identity)
+        if before is None:
+            for alias in aliases:
+                before = _internal_payload_for_identity(frames, FIXED_CLOUD_DATASET_ID, ('global', alias))
+                if before is not None:
+                    break
+        if expected_hash is not None and _payload_and_hash(before or {})[1] != expected_hash:
+            raise ExcelAccessError('该记录已被其他窗口或设备更新，本次没有覆盖。请刷新后重新提交。')
         clean = dict(payload or {})
         clean['updated_at'] = datetime.now().astimezone().isoformat(timespec='seconds')
         validate_money_changes(clean, before)
@@ -15639,13 +15857,38 @@ def _save_global_record_payload(record_key, payload, source_screen='本地桌面
     return clean
 
 
-def save_cash_position_record(payload):
+def save_cash_position_record(payload, expected_hash=None):
     """Persist the cash-position baseline as a cloud-synchronised global record."""
     clean = dict(payload or {})
     clean['base_balance'] = money_amount(clean.get('base_balance', 0))
     clean['shareholder_loan'] = money_amount(clean.get('shareholder_loan', 0))
     clean['as_of_date'] = str(clean.get('as_of_date') or datetime.now().strftime('%Y-%m-%d'))[:10]
-    return _save_global_record_payload(CASH_POSITION_RECORD_KEY, clean, '可用余额')
+    return _save_global_record_payload(CASH_POSITION_RECORD_KEY, clean, '可用余额', expected_hash, CASH_POSITION_ALIASES)
+
+
+def _cash_position_source_frames():
+    daily = _inventory_day_sheet('daily')
+    rows = []
+    for (kind, key), record in _embedded_local_records().items():
+        if kind != 'day':
+            continue
+        payload = record.get('payload') or {}
+        for item in payload.get('fixed_expenses', []) if isinstance(payload.get('fixed_expenses'), list) else []:
+            if isinstance(item, dict):
+                rows.append({**item, '日期': str(item.get('日期') or key)[:10]})
+    return daily, pd.DataFrame(rows)
+
+
+def _cash_daily_revenue(row):
+    fields = ('A店现金', 'B店现金', 'A店微信增加', 'A店微信自动', 'A店微信覆盖',
+              'A店支付宝增加', 'A店支付宝覆盖', 'B店微信增加', 'B店微信自动',
+              'B店微信覆盖', 'B店支付宝增加', 'B店支付宝覆盖', '学生外卖', 'A店外卖', 'B店外卖')
+    if any(money_value_was_entered(row.get(field, '')) for field in fields):
+        return money_amount(recalculate_revenue_fields(dict(row)).get('收益', 0))
+    for field in ('收益', '总金额', '收入', '总收入'):
+        if money_value_was_entered(row.get(field, '')):
+            return money_amount(row.get(field))
+    return money_amount(0)
 
 
 def _cash_position_flows(as_of_date):
@@ -15755,15 +15998,13 @@ def _cash_position_ledger(payload, month_filter=''):
         except (TypeError, ValueError, OverflowError):
             return 0
 
+    daily, fixed = _cash_position_source_frames()
     try:
-        for _, row in load_daily().iterrows():
+        for _, row in daily.iterrows():
             try: day = datetime.strptime(str(row.get('日期') or ''), '%Y-%m-%d').date()
             except (TypeError, ValueError): continue
             if day <= start or day > today: continue
-            row_data = row.to_dict()
-            revenue = money_amount(recalculate_revenue_fields(row_data).get('收益', row.get('收益', 0)))
-            if abs(revenue) <= Decimal('1e-9') and money_value_was_entered(row.get('总金额', '')):
-                revenue = money_amount(row.get('总金额', 0))
+            revenue = _cash_daily_revenue(row.to_dict())
             append_delta(day, '营业收入', '当日收入', revenue)
             for column, label in [('食材成本','食材'),('佐料成本','佐料'),('水电','水电'),('其他','其它'),('手续费','手续费／抽成')]:
                 amount = money_amount(row.get(column, 0))
@@ -15771,7 +16012,7 @@ def _cash_position_ledger(payload, month_filter=''):
     except Exception:
         pass
     try:
-        for _, row in load_fixed_expenses().iterrows():
+        for _, row in fixed.iterrows():
             try: day = datetime.strptime(str(row.get('日期') or ''), '%Y-%m-%d').date()
             except (TypeError, ValueError): continue
             if start < day <= today and fixed_expense_includes_cash(row.get(FIXED_EXPENSE_CASH_COLUMN, '')):
@@ -15952,6 +16193,12 @@ def _parse_entry_stamp(value):
 
 def _entry_item_key(text):
     """Return a stable name key for a detail token, ignoring quantity/price."""
+    try:
+        item = exact_json_loads(str(text))
+    except (ValueError, TypeError):
+        item = None
+    if isinstance(item, dict):
+        return re.sub(r'\s+', ' ', str(item.get('name') or item.get('名称') or '')).strip().casefold()
     token, _note = split_item_note(str(text or '').strip())
     token = re.sub(r'\s+\d+(?:\.\d+)?\s*(?:' + get_unit_pattern() + r')?\s+\d+(?:\.\d+)?$', '', token)
     token = re.sub(r'\s*\d+(?:\.\d+)?$', '', token)
@@ -15969,19 +16216,21 @@ def _entry_record_fallback(record, fallback):
 
 
 def _entry_item_signature(text):
-    """Return the amount/unit suffix used to recognize a name-only rename."""
-    clean, note = split_item_note(str(text or '').strip())
-    match = re.search(
-        r'(\d+(?:\.\d+)?\s*(?:' + get_unit_pattern() + r')?\s+\d+(?:\.\d+)?$)',
-        clean,
-    )
-    if not match:
-        match = re.search(r'(\d+(?:\.\d+)?$)', clean)
-    suffix = match.group(1) if match else ''
-    return re.sub(r'\s+', '', suffix).casefold() + '|' + re.sub(r'\s+', '', note).casefold()
+    """The semantic detail fields except name, across text/JSON migration."""
+    normalized = _entry_normalized_token(text)
+    try:
+        value = exact_json_loads(normalized)
+    except (ValueError, TypeError):
+        return normalized
+    if isinstance(value, dict):
+        value.pop('name', None)
+    return exact_json_dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
 
 def _entry_detail_token_list(text):
+    structured = _detail_json_rows(text)
+    if structured is not None:
+        return [exact_json_dumps(item, ensure_ascii=False, sort_keys=True, separators=(',', ':')) for item in structured]
     return [
         raw.strip()
         for raw in re.split(r'[,，;；\n]+', str(text or ''))
@@ -15991,7 +16240,7 @@ def _entry_detail_token_list(text):
 
 def _entry_detail_tokens(text):
     result = {}
-    for index, raw in enumerate(re.split(r'[,，;；\n]+', str(text or ''))):
+    for index, raw in enumerate(_entry_detail_token_list(text)):
         token = raw.strip()
         if not token:
             continue
@@ -16068,7 +16317,30 @@ def _entry_income_timing_state(income_state, slot, promote=False, allow_legacy=T
 
 
 def _entry_normalized_token(text):
-    return re.sub(r'\s+', ' ', str(text or '')).strip().casefold()
+    try:
+        structured = exact_json_loads(str(text or ''))
+    except (ValueError, TypeError):
+        structured = None
+    if isinstance(structured, dict):
+        item = _inventory_detail_items([structured])[0]
+        quantity_entered = money_value_was_entered(structured.get('quantity', structured.get('数量', '')))
+    else:
+        parts = _inventory_detail_items(str(text or ''))
+        if len(parts) != 1:
+            return re.sub(r'\s+', ' ', str(text or '')).strip().casefold()
+        item = parts[0]
+        clean, _note = split_item_note(str(text or ''))
+        quantity_entered = bool(re.match(r'^(.*?)\s+(\d+(?:\.\d+)?)\s*' + get_unit_pattern() + r'?\s+(\d+(?:\.\d+)?)$', clean))
+    quantity = format(decimal_number(item['quantity']).normalize(), 'f') if quantity_entered else ''
+    total = money_text(item['total']) if money_value_was_entered(item['total']) else ''
+    price = price_text(item['unit_price']) if money_value_was_entered(item['unit_price']) else ''
+    if not price and quantity and decimal_number(quantity) > 0 and total:
+        price = price_text(decimal_number(total) / decimal_number(quantity))
+    value = {'name': item['name'], 'quantity': quantity, 'unit': item['unit'],
+             'price': price, 'total': total, 'note': item['note']}
+    for key in ('name', 'unit', 'note'):
+        value[key] = re.sub(r'\s+', ' ', str(value[key] or '')).strip().casefold()
+    return exact_json_dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
 
 def _entry_detail_state_container(details_state, category):
@@ -16280,7 +16552,7 @@ def _entry_validate_and_update_windows(
             _saved_at, edit_deadline = _entry_seed_item_clock(item, item_fallback)
             changed = _entry_normalized_token(old_tokens[old_index]) != _entry_normalized_token(new_tokens[new_index])
             if enforce and changed and now >= edit_deadline:
-                return None, f'{category}项目“{old_tokens[old_index]}”已超过保存后30分钟，不能修改。'
+                return None, f'{category}项目“{_detail_display_text(old_tokens[old_index])}”已超过保存后30分钟，不能修改。'
             item['text'] = new_tokens[new_index]
             item['active'] = True
 
@@ -16288,7 +16560,7 @@ def _entry_validate_and_update_windows(
             item = aligned[old_index]
             _saved_at, edit_deadline = _entry_seed_item_clock(item, item_fallback)
             if enforce and now >= edit_deadline:
-                return None, f'{category}项目“{old_tokens[old_index]}”已超过保存后30分钟，不能删除。'
+                return None, f'{category}项目“{_detail_display_text(old_tokens[old_index])}”已超过保存后30分钟，不能删除。'
             item['active'] = False
             item['deleted_at'] = now.isoformat(timespec='seconds')
 
@@ -16467,6 +16739,7 @@ class CashPositionTab(QWidget):
         self._role = ''
         self._loading = False
         self._payload = {}
+        self._payload_hash = _payload_and_hash({})[1]
         self._build_ui()
 
     def _build_ui(self):
@@ -16512,6 +16785,7 @@ class CashPositionTab(QWidget):
     def refresh(self):
         self._loading = True
         payload = _load_global_record_payload(CASH_POSITION_RECORD_KEY, CASH_POSITION_ALIASES)
+        self._payload_hash = _payload_and_hash(payload or {})[1]
         if not payload:
             # Migrate the most recent legacy daily field when available.
             try:
@@ -16606,7 +16880,7 @@ class CashPositionTab(QWidget):
             })
             payload['transactions'] = transactions
             payload['shareholder_loan'] = 0
-            save_cash_position_record(payload)
+            save_cash_position_record(payload, expected_hash=self._payload_hash)
             self.status.setText('余额强制修改已记入明细，正在同步云端。')
             self.refresh()
         except Exception as exc:
@@ -16654,7 +16928,7 @@ class CashPositionTab(QWidget):
             payload['as_of_date'] = transaction['date']
         payload.update({'shareholder_loan': 0, 'transactions': transactions})
         try:
-            save_cash_position_record(payload); self.status.setText(f'已增加：{kind.currentText()} {value:,.2f} 元'); self.refresh()
+            save_cash_position_record(payload, expected_hash=self._payload_hash); self.status.setText(f'已增加：{kind.currentText()} {value:,.2f} 元'); self.refresh()
         except Exception as exc: QMessageBox.warning(self, '保存失败', str(exc))
 
     def delete_item(self):
@@ -16673,7 +16947,7 @@ class CashPositionTab(QWidget):
             QMessageBox.information(self, '不能删除', '通过上方“保存余额修正”产生的记录不能删除。'); return
         if QMessageBox.question(self, '确认删除', '确定删除这条手工现金项目吗？') != QMessageBox.Yes: return
         payload = dict(self._payload); payload['transactions'] = [item for item in payload.get('transactions', []) if str(item.get('id') or '') != item_id]; payload['shareholder_loan'] = 0
-        try: save_cash_position_record(payload); self.refresh()
+        try: save_cash_position_record(payload, expected_hash=self._payload_hash); self.refresh()
         except Exception as exc: QMessageBox.warning(self, '删除失败', str(exc))
 
 
@@ -17227,7 +17501,7 @@ class MainWindow(QMainWindow):
             for widget in self.tabs.findChildren(QLineEdit):
                 if isinstance(widget.parent(), (QDateEdit, QComboBox)) or widget.property('financeSearch'):
                     continue
-                states[widget] = ('line', widget.isReadOnly())
+                states[widget] = ('line', getattr(widget, '_detail_requested_readonly', widget.isReadOnly()))
                 widget.setReadOnly(True)
             for widget in self.tabs.findChildren(QTextEdit):
                 states[widget] = ('text', widget.isReadOnly())
@@ -17460,11 +17734,15 @@ class MainWindow(QMainWindow):
         if self._cloud_file_refresh_busy:
             return
         self._cloud_file_refresh_busy = True
-        result = {'done': False, 'error': None}
+        result = {'done': False, 'error': None, 'frames': None}
 
         def task():
             try:
-                sync_internal_to_user_excels(update_baseline=True)
+                with internal_sync_lock(INTERNAL_FILE_PATH):
+                    result['frames'] = _read_internal_frames(INTERNAL_FILE_PATH)
+                    _sync_internal_to_user_excels_unlocked(update_baseline=False, internal_frames=result['frames'])
+                    result['internal_signature'] = _file_signature(INTERNAL_FILE_PATH)
+                    result['user_signature'] = _file_signature(FILE_PATH)
             except Exception as exc:
                 result['error'] = exc
             finally:
@@ -17480,13 +17758,14 @@ class MainWindow(QMainWindow):
             if result['error'] is not None:
                 self.statusBar().showMessage(f'自动刷新暂缓：{result["error"]}')
                 return
-            self._last_internal_signature = _file_signature(INTERNAL_FILE_PATH)
-            self._last_user_signature = _file_signature(FILE_PATH)
-            self._sync_waiting_notice = False
-            if self._unsaved_sections():
+            if QApplication.activeModalWidget() is not None or self._unsaved_sections():
                 self.statusBar().showMessage('云端数据已写入本地缓存；当前有未保存输入，暂不覆盖画面。')
                 return
+            self._last_internal_signature = result['internal_signature']
+            self._last_user_signature = result['user_signature']
+            self._sync_waiting_notice = False
             self._refresh_visible_tab_after_cloud_update()
+            _set_app_baseline_from_internal(result['frames'], str(ACTIVE_DATASET_ID or get_dataset_id()), ACTIVE_USER_EXCEL_YEAR)
             self.statusBar().showMessage('已同步网站最新保存的数据。', 4000)
 
         QTimer.singleShot(0, finish)

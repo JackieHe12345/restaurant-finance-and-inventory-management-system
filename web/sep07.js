@@ -1,4 +1,4 @@
-/* Oct30LingChen: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 
 /* Sep11V1: mobile/tablet presentation mode and immediate audit-row deletion. */
@@ -48,12 +48,13 @@
     if(Exact.truth(Exact.and(()=>(control instanceof HTMLInputElement), ()=>(Exact.seq(control.type, "file"))))) return Exact.or(()=>(control.files?.[0]?.name), ()=>("—"));
     if(Exact.truth(Exact.and(()=>(control instanceof HTMLInputElement), ()=>(Exact.seq(control.type, "password"))))) return (Exact.truth(control.value) ? "••••••" : "—");
     const value=String(control.value ?? "").trim();
+    if(Exact.truth(Exact.and(()=>(control.matches?.('[data-dish="detail"],#ledgerFoodDetail,#ledgerSpiceDetail')), ()=>(Exact.seq(typeof detailCellDisplay, "function")))))return Exact.or(()=>(detailCellDisplay(value)), ()=>("—"));
     return Exact.or(()=>(value), ()=>("—"));
   }
 
   function markPresentationControls(){
     document.querySelectorAll(".app-page input:not([type=hidden]), .app-page select, .app-page textarea").forEach(control=>{
-      if(Exact.truth(keepAsNavigationControl(control))){
+      if(Exact.truth(Exact.or(()=>(control.hidden), ()=>(keepAsNavigationControl(control))))){
         clearReadOnlyProjection(control);
         return;
       }

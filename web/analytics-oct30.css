@@ -1,4 +1,4 @@
-/* Oct30LingChen analytics workspace. The layout keeps the task controls visible
+/* v1.0.1 analytics workspace. The layout keeps the task controls visible
  * and lets the source table carry the detail on narrow screens. */
 :root{--oa-ink:#172a40;--oa-muted:#6f8093;--oa-line:#e2e8f0;--oa-panel:#fff;--oa-soft:#f5f8fb;--oa-blue:#2d63b8;--oa-teal:#178574}
 #pageStats{color:var(--oa-ink);font-variant-numeric:tabular-nums}

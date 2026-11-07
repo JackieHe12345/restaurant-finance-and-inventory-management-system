@@ -1,4 +1,4 @@
-/* Oct30LingChen: compact stock tables and document workflows. */
+/* v1.0.1: compact stock tables and document workflows. */
 #pageInventory.inventory-workspace{max-width:none;padding:24px 28px 18px;background:#f5f7f9;min-width:0}
 #inventoryWorkspace{max-width:1680px;margin:0 auto;color:#20312f;font-size:13px;line-height:1.45;--iw-green:#1a3a63;--iw-border:#e1e7e7}
 .iw-heading{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:21px}.iw-heading h1{font-size:27px;line-height:1.2;margin:5px 0 7px;font-weight:740;letter-spacing:-.6px}.iw-eyebrow{font-size:10px;letter-spacing:2px;color:#757c84;font-weight:600}.iw-heading p{margin:0;color:#6b7978;font-size:12px}.iw-dot{margin:0 9px;color:#afb4bb}.iw-permission{margin-left:10px;color:#525f70}.iw-header-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
