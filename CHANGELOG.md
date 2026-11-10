@@ -4,7 +4,7 @@
 
 ## v1.0.2 — 2026 Nov 10
 
-The Nov10 release delivers the final five-metric dashboard, complete fixed-text English browser interface, a more capable analytics workspace, readable charts and the retained single cash-adjustment entry point. Browser/API/macOS versions remain **v1.0.2**; the build revision is **`20261110-analytics-english-final`**. The two distributions are `For自己记账系统Nov10V1.0.2.zip` and `无隐私记账系统Nov10V1.0.2.zip`. The entries below describe the final state once, not the sequence of same-day design iterations.
+This release delivers the five-metric dashboard, complete fixed-text English browser interface, enhanced analytics, readable charts and a single cash-adjustment entry point. Browser/API/macOS versions are **v1.0.2**, with build revision **`20261110-analytics-english-final`**.
 
 ### Five consistent homepage cards
 
@@ -46,15 +46,11 @@ The separate Balance correction disclosure, balance/date fields and save button 
 
 Gross profit remains revenue minus food, seasoning and transaction fees. Daily utilities and Other expenses are deducted in net profit. Packaging, chopsticks, tissues, phone charges and other expenses are not reclassified. Monthly purchase/expense accounting is not replaced by FIFO consumption accounting, and the UI/localization work does not change production ledgers.
 
-### Same-version builds, two privacy flavors and complete handoff
+### Build, deployment and developer documentation
 
-HTML and local asset queries use the build revision `20261110-analytics-english-final` while the application/API version stays v1.0.2. Deployment preflight and file verification validate the revision, exact version-plus-revision cache queries and installed/served file hashes; a v1.0.2 health response alone is insufficient.
+HTML and local asset queries use build revision `20261110-analytics-english-final` while the application/API version stays v1.0.2. Deployment preflight and file verification validate the revision, exact version-plus-revision cache queries and installed/served file hashes; a health response with the expected version alone does not establish file identity.
 
-The clean ZIP contains software, generic deployment instructions, bilingual documentation, synthetic tests and sanitized evidence, without original private server identities or credentials/business snapshots. The owner ZIP adds the specifically requested `私人运维资料/`, including the supplied SSH credential and accounting-system private operations snapshot described by its inventory. Private artifacts remain outside the native app, web root and software-only server tar. The two ZIPs have separate manifests/checksums.
-
-Root and `source/` copies of the English and Chinese changelogs match. The root handoffs and `docs/ENGINEERING_REFERENCE.md` / `.zh-CN.md` document modules, APIs, tables, financial/FIFO contracts, English/user-content boundaries, configuration, builds, tests, deployment/rollback, privacy packaging and troubleshooting. Current acceptance evidence is under `docs/acceptance/Nov10Final/`; the pre-fix audit, earlier Nov10/Nov07 logs/screenshots and historical release notes 01–05 are archived only in the private ZIP under `私人运维资料/历史开发证据/`. The clean ZIP retains historical changelog text but omits those private historical attachments. Test results must identify the actual current artifacts, not reuse old pass counts without explanation.
-
-The actual repository publication and verified deployment state are recorded in [release status](docs/RELEASE_STATUS_v1.0.2.md). Packaging and deployment are checked separately against the final tar. Actual server identities and private snapshots remain only in the owner ZIP.
+Bilingual engineering and deployment guides cover modules, APIs, tables, money/FIFO contracts, English display versus user data, builds, tests, upgrades, rollback and troubleshooting. Source, tests and reusable build tools are version controlled; distribution archives, runtime credentials, business data and generated acceptance material are kept outside the source repository.
 
 ## v1.0.1 — 2026 Nov 07
 

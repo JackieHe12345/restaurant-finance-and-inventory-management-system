@@ -52,3 +52,24 @@ dist/
 *.app/
 *.zip
 *.tar.gz
+
+# Generated QA output and local working material
+/work/
+/qa-output/
+/test-results/
+/playwright-report/
+/docs/acceptance/
+/build/*_ACCEPTANCE_RESULT.json
+
+# Complete-distribution metadata and delivery-only documents
+/PACKAGE_MANIFEST.json
+/RELEASE_INFO.json
+/SOURCE_COMMIT.txt
+/00_交接必读.md
+/PROJECT_HANDOFF.md
+/项目交接说明.md
+/使用说明.md
+/版本说明/
+/测试与构建核验/
+/私人运维资料/
+/docs/RELEASE_STATUS_v*.md

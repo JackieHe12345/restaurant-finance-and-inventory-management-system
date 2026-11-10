@@ -1,6 +1,6 @@
 # restaurant-finance-and-inventory-management-system deployment guide
 
-> This guide applies to V1.0.2 on `main`, build `20261110-analytics-english-final`. The preceding V1.0.1 source is preserved on `old/V1.0.1`. See [release status](RELEASE_STATUS_v1.0.2.md) for actual verification and [the handoff](../PROJECT_HANDOFF.md) for system context.
+> This guide applies to v1.0.2 and build `20261110-analytics-english-final`. See the [engineering reference](ENGINEERING_REFERENCE.md) for module, data and build contracts.
 
 [Back to README](../README.md) · English | [简体中文](DEPLOYMENT.zh-CN.md)
 
@@ -15,7 +15,7 @@ Install Git, Docker Engine, Docker Compose v2, Python 3 and curl on the host, an
 Business-script sources live in `build/web-exact-source/`. Maintain the shared decimal runtime `web/money.js` and HTML/CSS assets directly in `web/`; the compiler does not generate or duplicate them.
 
 ```bash
-cd /path/to/Nov10/source
+cd /path/to/restaurant-finance-and-inventory-management-system
 ```
 
 The root `.env.example` configures Compose; `backend/.env.example` configures a directly launched Python API. They serve different purposes. The following command creates a private configuration from the root template and generates separate values for the database password, JWT secret and initial administrator password:
@@ -255,7 +255,7 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 
 A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261110-analytics-english-final"` and uses `v1.0.2-20261110-analytics-english-final` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
 
-See [release status](RELEASE_STATUS_v1.0.2.md) for the verified current deployment. An earlier v1.0.2 was also deployed on Nov 10; the complete distribution's `PROJECT_HANDOFF.md` records that historical baseline and generic upgrade layout. Actual server identities and existing backup locations are documented only in the owner distribution's `私人运维资料/PRIVATE_OPERATIONS.txt`. Recheck live state and create a new backup before deploying the final tar.
+Before deploying, recheck the target instance and create database, program and runtime-configuration backups. Operators should retain actual server identities, configuration values, backup paths and per-deployment evidence privately. This repository provides reusable procedures and verification tools.
 
 ### PostgreSQL evidence before and after an upgrade
 

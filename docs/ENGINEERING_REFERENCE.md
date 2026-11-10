@@ -1,25 +1,25 @@
 # Engineering reference — v1.0.2
 
-Date: **2026 Nov 10**. Build revision: **20261110-analytics-english-final**. This file describes the source at the repository root (equivalent to `Nov10/source/` in the ZIP). Actual deployment state is recorded in [release status](RELEASE_STATUS_v1.0.2.md). [中文版](ENGINEERING_REFERENCE.zh-CN.md) · [Root handoff](../PROJECT_HANDOFF.md).
+This reference describes the architecture, data contracts, build tools and operational boundaries of the repository. Product changes are recorded in [CHANGELOG](../CHANGELOG.md); installation and deployment procedures are in [DEPLOYMENT](DEPLOYMENT.md). [中文版](ENGINEERING_REFERENCE.zh-CN.md).
 
 ## 1. Product and ownership boundaries
 
 The system combines restaurant revenue recording, purchases, daily expenses, monthly fixed expenditure, cash balance, dish usage, inventory, multiple independent books, accounts/permissions, audit history and Excel exchange. A book can contain A/B store income channels. Store labels and business names are user data; books remain separate authorization and persistence domains.
 
-There are three executable forms: a static browser client; a FastAPI service backed by PostgreSQL; and a PySide6 macOS desktop application that works with local Excel and cloud synchronization. The server tar contains API and web runtime files. The outer complete ZIP additionally contains native runtime, complete source, documentation and verification material. The clean and private ZIPs have the same software version; only the private ZIP adds `私人运维资料/`.
+There are three executable forms: a static browser client; a FastAPI service backed by PostgreSQL; and a PySide6 macOS desktop application that works with local Excel and cloud synchronization. The repository contains their sources, tests and build/deployment tools. Server archives and native applications are generated release artifacts, separate from the source tree.
 
 Do not confuse these objects:
 
 | Object | Authority | Does not prove |
 | --- | --- | --- |
 | `VERSION` / API `v1.0.2` | Product compatibility/version label. | That two same-version builds have identical features or files. |
-| HTML build revision / `RELEASE_INFO.json` | Identifies this same-day revision. | That the currently running server has received it. |
-| Repository root (ZIP `source/`) | Editable source of this release. | That a historical Git commit contains all current edits. |
+| HTML build revision | Identifies a particular build within the product version. | That the currently running server has received it. |
+| Git commit and source tree | Identifies the exact versioned source. | That uncommitted edits or installed binaries match it. |
 | Server `MANIFEST.json` | SHA-256 of the runtime archive's files. | Preservation of real ledger records during deployment. |
-| `PACKAGE_MANIFEST.json` and outer `.sha256` | Full distribution files, modes/symlinks and ZIP bytes. | That a private snapshot can be restored without checking its dependencies. |
+| `PACKAGE_MANIFEST.json` and outer `.sha256` | Full distribution files, modes/symlinks and ZIP bytes. | That a data backup can be restored without checking its dependencies. |
 | Deployment before/after evidence | Particular server state and comparison at a recorded time. | Current availability of old backups or success of later edits. |
 
-The interface is a management-bookkeeping view. Do not infer formal accounting classifications, a completed payment, or immutable month closing from a displayed profit figure. The user expressly retained existing gross-profit and Other-expense definitions.
+The interface is a management-bookkeeping view. A displayed profit figure does not establish formal accounting classification, payment completion or an immutable month closing. Gross-profit and expense definitions are explicit application contracts described below.
 
 ## 2. Source topology and browser load order
 
@@ -51,7 +51,7 @@ The browser is plain JavaScript rather than a component framework. It has one HT
 | `backend/app/name_corrections.py`, `ingredient_corrections.py` | Preview, coordinated name updates, stock adjustment, stale-state detection and durable idempotency receipts. |
 | `backend/app/store_settings.py`, `wechat_pay.py`, `wechat_sync.py` | Store configuration and retained merchant bill code; old scheduler is not started by current startup. |
 
-Authoritative business JavaScript is under `build/web-exact-source/`. `node build/compile_exact_web.cjs` parses with Acorn and emits the corresponding `web/*.js`. Do not edit generated copies alone. HTML, CSS, `money.js`, `workbench.js`, the localization asset and licenses are direct static sources. Consult the compiler's own file list before classifying a new asset. Runtime browsers do not require Node, Acorn, a bundler or CDN.
+Authoritative business JavaScript is under `build/web-exact-source/`. `node build/compile_exact_web.cjs` parses with Acorn and emits the corresponding `web/*.js`. Do not edit generated copies alone. HTML, CSS, `money.js`, `workbench.js`, the localization assets and licenses are direct static sources. Consult the compiler's own file list before classifying a new asset. Runtime browsers do not require Node, Acorn, a bundler or CDN.
 
 ## 3. Persistence model and identity
 
@@ -96,14 +96,29 @@ Use `build/MONEY_CONTRACT.txt`, `build/FIFO_CONTRACT.md` and `backend/MONEY_BACK
 
 Legacy numeric JSON is read without losing its original decimal spelling. OOXML numeric cells are inspected before conversion where necessary. Only known financial fields and their known structured detail paths are normalized; arbitrary metadata is not converted wholesale. Chart coordinates may become ordinary floats at the final drawing boundary, never for financial persistence. Formatting an Exact value must not silently invoke `Number` during calculation.
 
-The homepage's five cards are defined in the root handoff. The essential asymmetry is intentional: current-month average revenue/gross exclude today and divide by elapsed calendar days, whereas actual monthly net includes today's recorded activity and the full monthly fixed expenditure. Daily net is that actual monthly net divided by elapsed calendar days; both net margins use actual monthly revenue. Day one has no elapsed-day average. Completed months use their full calendar days and their forecast card becomes actual net on the next month's first day. Future months are unavailable. Local calendar watchers re-evaluate even when data content is unchanged; they do not write or freeze results.
+The homepage has five cards in this order: average daily revenue; average daily gross profit (gross margin); estimated month-end profit/loss; average daily net profit (net margin); net profit (net margin). All use the same neutral card treatment; positive/negative amount colors retain their meaning. Each compares the corresponding previous-month metric. The forecast explanation starts on a new line. Exact Chinese labels and report wording are recorded in the v1.0.2 [changelog](../CHANGELOG.md).
+
+Current-month average revenue/gross exclude today and divide by elapsed calendar days, whereas actual monthly net includes today's recorded activity, excludes future dates and includes the full saved monthly fixed expenditure. Average daily net divides that actual net by elapsed calendar days. Both net margins divide actual monthly net by the same month's actual revenue, including today; missing/zero revenue makes the margin unavailable. Day one has no elapsed-day average. Completed months use all calendar days; future months are unavailable. Missing previous-month cost does not fall back to current-month cost.
+
+The local client calendar determines whether a month is complete, independently of the selected day. Browser and native date watchers re-evaluate about every five seconds even when data is unchanged; the browser also checks on becoming visible. Native refresh waits until modal dialogs close and retries after read failures. A completed month's forecast card shows actual net from the next month's first day, including December/January rollover. This neither changes the selected period nor writes/freezes a ledger value; a valid historical correction recalculates it.
+
+| Client date | Selected month | Forecast-card amount |
+| --- | --- | --- |
+| October 31 | October | Current-month projection. |
+| November 1 | October | October actual net; previous-month cost is no longer needed. |
+| November 1 | November | Unavailable until a day elapses; actual net can exist separately. |
+| January 1 | Previous December | December actual net. |
+| November 10 | December | Unavailable future period. |
 
 | Financial concept | Required meaning |
 | --- | --- |
+| Revenue | Normalize current channel entries and legacy total-only fields such as `收益` / `总金额`; meaningful channel entries take precedence over stale derived totals, never count both. |
 | Gross profit | Revenue − food − seasoning − transaction fees. |
+| Gross margin | Average daily gross ÷ average daily revenue on the same cutoff basis; unavailable for missing/zero denominator. |
 | Variable expense | Food + seasoning + daily utilities + Other + fees. |
 | Monthly fixed expense | Saved labour + rent/property + paid water/electricity/gas + other fixed. |
-| Monthly net | Revenue − variable expense − full saved monthly fixed expense. |
+| Monthly total cost | Sum of daily variable expense + full saved monthly fixed expense. |
+| Monthly net | Revenue − monthly total cost. |
 | Current forecast | Average revenue through yesterday × calendar days − previous month's total cost. |
 | Change percentage | `(current − prior) / abs(prior) × 100`; zero/missing prior needs an explicit unavailable reason. |
 | Cash force adjustment | Set target actual balance as of a date; not operating income or cost. |
@@ -111,7 +126,9 @@ The homepage's five cards are defined in the root handoff. The essential asymmet
 
 Inventory identity is category/name/unit. Different units are not silently converted. FIFO keeps original lot quantity/value/price and remaining quantity. Each issue cost is the change in rounded cumulative allocation: `round(original lot amount × cumulative issued / original quantity, 2) − already allocated`. A fully consumed lot allocates all remaining cents. Remaining value equals original booked value minus allocated value, not rounded remaining quantity × displayed price. Unknown-priced quantities remain explicit.
 
-Purchasing expense and FIFO consumption cost answer different questions. Monthly operating profit still uses the established purchase/expense basis. No packaging, consumable or phone-cost reclassification was authorized for this revision. Gross minus fixed can therefore still differ from net by daily utilities and Other expenses.
+Purchasing expense and FIFO consumption cost answer different questions. Monthly operating profit uses the purchase/expense basis. Packaging, consumables and phone costs retain their recorded expense classification. Gross minus fixed can therefore still differ from net by daily utilities and Other expenses. The detailed daily card can use dish cost when present, while monthly/average gross totals use daily bookkeeping gross. Expected utility amounts may appear in expense details; actual monthly fixed expenditure and net use paid amounts.
+
+The cash balance sheet has one manual target-balance entry point: Add an item → Force balance adjustment. This adjusts balance as of a date without creating revenue/expense or replacing earlier transactions. Ordinary entries retain their deletion rules; historical `system_locked` entries remain protected. There is no separate balance-correction form.
 
 ## 6. English display versus user data
 
@@ -158,14 +175,14 @@ Regression entry points include `build/qa_english_ui.cjs`, `build/qa_inventory_e
 
 ## 7. Analytics interpretation and chart contracts
 
-Analytics has operating, expense and customer perspectives with a selected year/month/metric and date/filter context. Existing source details connect aggregate figures to underlying records. Expense views distinguish monthly saved totals from itemized fixed payments. CSV exports must correspond to the displayed/filter scope; user values are exported unchanged and fixed headings follow interface language. The precise final presentation is listed in the current Nov10 changelog and release notes.
+Analytics has operating, expense and customer perspectives with a selected year/month/metric and date/filter context. Existing source details connect aggregate figures to underlying records. Expense views distinguish monthly saved totals from itemized fixed payments. CSV exports must correspond to the displayed/filter scope; user values are exported unchanged and fixed headings follow interface language. Product changes are recorded in [CHANGELOG](../CHANGELOG.md).
 
 Charts show every data point while choosing only as many axis labels as fit. The renderer measures text, abbreviates dates/months with period context, reserves edge/final labels, wraps category labels and recalculates on container resize. Missing observations are gaps, not fabricated zero-income days. A negative net amount must remain below zero with its correct sign. Pointer, touch, focus, arrow and Home/End inspection must expose full date/category and exact amounts. Data table totals and chart series must share the same calculation source; styling must not create a parallel financial engine.
 
 Professional presentation here means explicit period/basis, coherent selection, comparable metric summaries, useful trend/category/source views, and readable tables/empty states. Do not add pseudo-AI forecasts, invented data, misleading performance labels or probability claims that are not backed by recorded values. A more polished visualization does not change the financial basis.
 
 
-### Final analytics workflow
+### Analytics workflow
 
 The calculation-basis/comparison strip names the selected scope and prior-month relationship. Three observation cards summarize recorded-day coverage and the largest expense, plus a perspective-specific measure: profitable recorded days, saved-month-minus-itemized fixed-cost gap, or busiest customer day/customer coverage. The metric trend supports line/bar selection and displays exact mean/minimum/maximum with observation count. Details sort by column, show signed amounts and total all filtered rows across pages; CSV follows filter/sort. These are transparent observations, not new predictions or financial classifications.
 
@@ -192,36 +209,118 @@ Templates are `.env.example` for Compose and `backend/.env.example` for native A
 
 Backend startup creates missing tables, performs narrow entry-timing compatibility additions, purges expired audit, ensures initial admin and handles legacy/test memberships. It does not run an arbitrary migration, rescan/repair all old amounts, or start the retained old WeChat scheduler. The system has no payment initiation/refund/settlement gateway, bank feed, high-availability architecture or central monitoring service.
 
-## 9. Build and acceptance procedure
+## 9. Development, tests and release builds
 
-Use the exact source and instructions in the root handoff/release notes. Keep tooling outside the distribution tree. A source environment uses Python 3.12, pinned API/desktop dependencies and locked Acorn npm installation; a reused packaged native runtime can contain different library patch versions, recorded by app verification. Do not claim new source dependency versions are necessarily the bundled runtime's versions.
+Run commands below from the repository root unless noted. Use Python 3.12, the dependency files and Acorn lockfile. A reused native runtime can contain different library patch versions from a new source environment; inspect the actual app instead of inferring its dependencies from local pip packages. Keep generated logs, screenshots, JSON reports, exports and QA binaries in ignored `work/` or `dist/`, or in external CI/release artifacts. They are outputs, not source inputs.
 
-Recommended order:
+### Source environment and regression tests
 
-1. Verify source/package provenance and establish clean staging for both privacy flavors.
-2. Install `build/test-requirements.txt`, required desktop packages and `npm ci --prefix build/js-transform` in isolated development environments.
-3. Edit authored web business scripts and direct static files; compile with `node build/compile_exact_web.cjs`.
-4. Run exact-money, FIFO, browser regression, current dashboard/chart/localization/analytics checks and necessary API/native tests.
-5. Run real-browser layout/interaction checks at phone through desktop widths, Chinese and English, with synthetic data and HTTP blocked. Check UI text, preserved user content, chart bounds and responsive table behavior.
-6. Rebuild native main bytecode from the final desktop source using `build/rebuild_macos_app.py`. Verify source/bytecode, executable permissions, universal architectures and signature. Run claimed architecture QA against the actual candidate app in an isolated harness, not only source imports.
-7. Build the server tar using `build/make_release.py` from explicitly Git-tracked runtime inputs. Its output must be new. Record and verify its manifest/hash.
-8. Finish current-revision test evidence and bilingual docs. Distinguish rerun results, inherited results and limitations. Do not copy old passed counts into a new acceptance declaration.
-9. Build the clean outer ZIP and private outer ZIP from separate explicit staging directories. Private payload stays outside server tar and app. Generate manifests/ZIP hashes after all contents are final.
-10. Re-extract both packages into new directories; verify file contents, modes, symlinks, native signature and server manifest. Repeat privacy checks on extracted/nested artifacts.
+```bash
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r build/test-requirements.txt -r desktop/requirements.txt
+npm ci --prefix build/js-transform
+node build/compile_exact_web.cjs
 
-The existing QA entry points include `web/test_v1_0_1_regressions.js`, `web/test_v1_0_2_dashboard.js`, `web/test_v1_0_2_charts.js`, `build/test_exact_web.cjs`, `build/test_fifo_contract.py`, `build/test_v1_0_1_desktop*.py`, `build/test_v1_0_2_desktop*.py`, `build/qa_web_browser.cjs`, `build/qa_packaged_desktop.py`, `build/test_deployment_cache_revision.py`, and `backend/tests/`. Any new English/analytics regression paths are recorded in the current evidence and changelog.
+(cd backend && PYTHONPATH=.:tests python -m pytest -q tests)
+for test in web/test_*.js; do node "$test" || exit 1; done
+node build/test_exact_web.cjs
+node build/test_i18n_backend.cjs
+python build/test_fifo_contract.py
+python build/test_deployment_cache_revision.py
+python build/test_distribution_privacy.py
+for test in build/test_v1_0_1_desktop.py build/test_v1_0_1_desktop_qt.py \
+  build/test_v1_0_2_desktop.py build/test_v1_0_2_desktop_qt.py \
+  build/test_v1_0_2_analytics_qt.py; do
+  QT_QPA_PLATFORM=offscreen python "$test" || exit 1
+done
+```
 
-Acceptance must cover preservation of source/user data and permissions, not merely screenshots. Do not run tests against the private dump or real server. SQLite fixture tests do not prove PostgreSQL concurrency under production load; x86_64 execution under Rosetta does not mean separate Intel hardware was tested; a readable pg_dump does not mean a full restore rehearsal passed.
+The FIFO test imports the desktop module and requires Node on `PATH`, or `NODE_BINARY` set to the executable's absolute path. Native source imports `fcntl`; Windows support is not claimed. Qt tests use the offscreen platform, while ordinary native use needs a graphical session. Tests use isolated fixtures; do not load a production environment file or real ledger. Historical test filenames identify retained regression coverage and should not be renamed solely because the application version changed.
 
-## 10. Packaging, private snapshot and recovery
+### Browser QA
 
-The clean ZIP excludes original server IP/hostname, personal workstation paths/chat links, live account/book details, database dumps, runtime environment values, credentials, private keys and user content. Synthetic fixtures may intentionally contain Chinese test names and fake values. The private ZIP adds the owner-authorized `私人运维资料/` inventory, supplied SSH credential, server connection information and accounting-system snapshot. Exact collection scope and timestamp come from that inventory, not from this generic guide.
+Install Playwright in a separate tool directory and use its Chromium installation, or set `CHROME_EXECUTABLE` to an existing supported Chrome/Chromium executable:
 
-Private artifacts are never web-served and never compiled into either executable. Keep the software tar identical in intent across flavors. SSH private keys, database passwords, JWT secrets and merchant signing keys are different credentials; do not assume one substitutes for another. Merchant files may live outside PostgreSQL under `PAYMENT_SECRET_ROOT` and must be considered separately during an authorized full restore. Do not copy unrelated services' files just because they share a machine.
+```bash
+npm install --prefix work/browser-qa-tools --save-exact playwright
+work/browser-qa-tools/node_modules/.bin/playwright install chromium
 
-A restore handoff needs the database dump, matching app/config versions, runtime secrets, relevant external files, service/nginx layout and database/role assumptions. First restore into an isolated environment, inspect schema/counts/key functions, and verify credentials/configuration separately. Program rollback and database restore are different operations. Never automatically overwrite a newer production database with a pre-upgrade snapshot.
+for test in qa_web_browser qa_english_ui qa_inventory_english \
+  qa_enhanced_analytics qa_analytics_english_advanced; do
+  PLAYWRIGHT_MODULE="$PWD/work/browser-qa-tools/node_modules/playwright" \
+  QA_OUTPUT_DIR="$PWD/work/qa/$test" node "build/$test.cjs" || exit 1
+done
+```
 
-Keep a new current backup while validating a deployment; any later cleanup must target a reviewed list of old app backup directories. The deployment script itself does not delete backups. Historical paths are evidence at a time, not deletion instructions. Attached documents and old audit notes describe context; they do not authorize new production edits.
+`QA_OUTPUT_DIR` must be a writable absolute directory. Use a new directory per run when retaining evidence; the harnesses write their reports/screenshots there. `PLAYWRIGHT_MODULE` selects the installed Node module, `CHROME_EXECUTABLE` optionally selects a browser binary, and `RELEASE_SOURCE_ROOT` optionally selects another source tree. Without that override, scripts load this repository's `web/index.html` as a local file. HTTP traffic is blocked and synthetic records replace live accounts. Keep the default assertion mode; `QA_DIAGNOSTIC=1` is a diagnostic option, not a passing acceptance run.
+
+Browser checks cover phone/desktop widths, selected period and date rollover, chart labels/inspection, fixed English text, unchanged user values and canonical saved enums. Test the actual compiled assets after changing authored JavaScript. Screenshots alone do not establish financial or permission correctness.
+
+### Server archive
+
+Use a Git checkout whose intended runtime inputs are tracked. Review uncommitted changes before building; the builder requires tracked paths but is not a substitute for a clean-tree review.
+
+```bash
+python build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
+(cd dist && shasum -a 256 -c restaurant-cloud-v1.0.2-deploy.tar.gz.sha256)
+```
+
+The output must not already exist. The archive root is `restaurant-cloud-v1.0.2/`, containing API/static web files, deployment tools, configuration examples, `VERSION` and a SHA-256 `MANIFEST.json`. It excludes databases and runtime credentials. Compare archive file hashes with the selected source, then use the deployment and file-verification procedures in [DEPLOYMENT](DEPLOYMENT.md). A product-version health response alone does not verify the build revision or served assets.
+
+### macOS application and packaged-runtime QA
+
+The native rebuild helper requires macOS, Python 3.12 and a trusted existing universal Python/Qt app as `--runtime-app`. That runtime is a release input supplied separately from Git. The helper replaces the main script bytecode while preserving other runtime entries, updates both architectures, sets macOS 15 as the minimum, and produces an ad-hoc signature; it does not perform Apple notarization. Choose new output paths.
+
+```bash
+python build/rebuild_macos_app.py \
+  --runtime-app /absolute/path/to/Runtime.app \
+  --source desktop/restaurant_cost_manager.py \
+  --output dist/Finance.app --version v1.0.2 \
+  --report work/qa/app-build.json
+
+python build/verify_macos_app.py \
+  --app dist/Finance.app --source desktop/restaurant_cost_manager.py \
+  --runtime-app /absolute/path/to/Runtime.app --version v1.0.2 \
+  --report work/qa/app-verification.json
+codesign --verify --deep --strict dist/Finance.app
+```
+
+`build/qa_packaged_desktop.py` is a separate offline QA application's entry point. Do not put it into the production candidate. Build a second app and have it load the main bytecode from the candidate being tested:
+
+```bash
+python build/rebuild_macos_app.py \
+  --runtime-app /absolute/path/to/Runtime.app \
+  --source build/qa_packaged_desktop.py \
+  --output dist/Finance-QA.app --version v1.0.2 \
+  --report work/qa/qa-app-build.json
+
+V101_SOURCE_ROOT="$PWD" \
+V101_PRODUCTION_APP="$PWD/dist/Finance.app" \
+V101_QA_DIR="$PWD/work/qa/packaged-arm64" \
+/usr/bin/arch -arm64 "$PWD/dist/Finance-QA.app/Contents/MacOS/Finance-QA"
+```
+
+Run the same QA executable with `/usr/bin/arch -x86_64` and a separate `V101_QA_DIR` on a compatible host; Apple Silicon requires Rosetta for that run. If the reused runtime lacks `unittest.mock`, `V101_QA_STDLIB` may point to a Python 3.12 standard-library directory solely for the test harness. These variables retain historical `V101` names but test the candidate supplied in `V101_PRODUCTION_APP`. The harness blocks network and redirects writable user paths into its QA directory.
+
+Record the tested source commit, revision, environment and actual results. Distinguish rerun checks from inherited evidence. SQLite fixtures do not prove PostgreSQL concurrency under production load; Rosetta execution does not mean physical Intel hardware was tested; a readable database dump is not a full restore rehearsal.
+
+## 10. Distribution assembly and operational recovery
+
+`build/make_complete_package.py` is an optional distribution assembler, separate from the server tar builder. It operates on an explicit staging tree outside the source checkout. Assemble the desired source/documentation, verified server archive and optional native app there. The staging root must contain `VERSION` and a generated `RELEASE_INFO.json` with a `build_revision` field; record source commit and artifact hashes there as release provenance. These generated metadata files belong to the artifact, not to the repository root.
+
+```bash
+python -B build/make_complete_package.py \
+  --root /absolute/path/to/staging/Release \
+  --output "$PWD/dist/complete-release.zip"
+python -B build/verify_package.py --root /absolute/path/to/extracted/Release
+```
+
+The ZIP output must be outside the staging root and must not exist. The assembler refreshes `PACKAGE_MANIFEST.json`, preserves UTF-8 filenames, Unix modes and internal symlinks, and writes an outer `.sha256`. Exclude `.git`, dependency/virtual-environment directories and caches from staging. Re-extract to a new location and verify the manifest, embedded server archive and native signature. Public software artifacts must not contain actual server identities, personal workstation paths, business records, runtime environment values or credentials. Keep operational backups in separate protected storage.
+
+A recoverable operational backup needs the database dump, matching application/configuration versions, runtime secrets, relevant external files, service/Nginx layout and database/role assumptions. Merchant files may live outside PostgreSQL under `PAYMENT_SECRET_ROOT`. SSH private keys, database passwords, JWT signing secrets and merchant keys serve different purposes. First rehearse restoration in an isolated environment and verify schema, data and key workflows; an Excel exchange workbook is not a complete system backup.
+
+Program rollback and database restoration are different operations. Do not automatically overwrite a newer database with a pre-upgrade snapshot. Retain a current backup while validating a deployment and review exact targets before any later backup cleanup. The shipped deployment script retains backups and does not perform database restoration. Pause business writes through before/after database verification; inspect concurrent writes and allowed audit retention before interpreting a changed digest as corruption.
 
 ## 11. Troubleshooting map
 
@@ -243,7 +342,7 @@ Keep a new current backup while validating a deployment; any later cleanup must 
 
 ## 12. Public HTTP route inventory
 
-The following table is generated from route decorators in the delivered source. `record_key:path` can contain path-like characters and must be URL-encoded by clients. Some legacy aliases are intentionally retained. Read request/response models and the route's dependencies for exact body/authorization requirements; a route's presence is not permission to call it. `/openapi.json` on a running API is useful for that exact build, but may not match a stale local document.
+The following table is derived from route decorators in the source. `record_key:path` can contain path-like characters and must be URL-encoded by clients. Some legacy aliases are intentionally retained. Read request/response models and the route's dependencies for exact body/authorization requirements; a route's presence is not permission to call it. `/openapi.json` on a running API is useful for that exact build, but may not match a stale local document.
 
 | Method | Route | Source function |
 | --- | --- | --- |
@@ -294,24 +393,17 @@ The following table is generated from route decorators in the delivered source. 
 | POST | `/api/v1/datasets/{dataset_id}/inventory/name-corrections/apply` | `name_corrections.py:apply_correction` |
 
 
-## 13. Location of historical and private material
+## 13. Read-only artifact privacy audit
 
-Only current synthetic/sanitized verification under `docs/acceptance/Nov10Final/` is common to both ZIPs. The clean ZIP deliberately omits the pre-fix audit, older Nov07/Nov10 logs/screenshots and historical release-note files 01–05 because they can contain original workstation, server or business information. The owner ZIP archives these under `私人运维资料/历史开发证据/`; that archive is historical context, not the authoritative current source or acceptance result. Historical CHANGELOG entries remain in both packages. Their statements about an older delivery's included files describe that delivery; the current package inventory takes precedence.
+`build/audit_distribution_privacy.py` audits an extracted tree, ZIP, tar or macOS app without executing contained code. Supply actual private identifiers in a separate file **outside the distribution and repository** (JSON string array or one UTF-8 identifier per line). The implementation has no installation-specific identifier list and does not print secret excerpts. It checks UTF-8/UTF-16 bytes, complete private-key armor, archive entries and link boundaries, including decompressed PyInstaller CArchive/PYZ data within universal Mach-O slices. `build/test_distribution_privacy.py` provides synthetic scanner regressions.
 
-The owner folder additionally provides the supplied `Admin.pem`, `known_hosts`, `accounting-server-private.tar.gz` and private operations instructions/inventory. The server snapshot is a read-only capture of this accounting system's PostgreSQL data, runtime/service configuration and relevant payment-secret files, with exact scope and time recorded by its inventory. It is not an archive of unrelated services. Consult the private operations instructions before using credentials or planning a restore. No real host identity or credential value is needed in the common technical guides.
-
-
-## 14. Read-only distribution privacy audit
-
-`build/audit_distribution_privacy.py` audits an extracted tree, ZIP, tar or macOS app without executing contained code. Supply the actual private identifiers in a separate file **outside the distribution** (JSON string array or one UTF-8 identifier per line). The implementation has no installation-specific identifier list and does not print secret excerpts. It checks UTF-8/UTF-16 bytes, complete private-key armor, archive entries and link boundaries, including decompressed PyInstaller CArchive/PYZ data within universal Mach-O slices. `build/test_distribution_privacy.py` provides synthetic scanner regressions.
-
-From the extracted `Nov10/` root, for a clean package:
+Run from the repository root, using the built archive as input and an ignored report directory:
 
 ```bash
-python3 build/audit_distribution_privacy.py \
-  /absolute/path/to/无隐私记账系统Nov10V1.0.2.zip \
+python -B build/audit_distribution_privacy.py \
+  dist/restaurant-cloud-v1.0.2-deploy.tar.gz \
   --forbid-file /absolute/private/identifiers.txt \
-  --report /absolute/path/to/clean-privacy-report.json
+  --report work/qa/privacy-report.json
 ```
 
-The private owner ZIP intentionally contains credentials and a database snapshot, so do not expect a clean-package signature policy to pass on it. Instead verify its explicit private-folder inventory and ensure those artifacts are absent from the common app/server tar and clean ZIP. The scanner counts images; it does not OCR or classify their contents. Workbook/database/configuration candidates still require review, and signatures cannot establish absence of every unknown secret. That is why old screenshots/logs/audits and release notes 01–05 are kept only in the owner's historical archive, while common evidence uses current synthetic fixtures.
+Apply the same check to complete software ZIPs or extracted staging trees. Keep credentials, databases, real workbooks and operational backups outside public software artifacts. The scanner counts images but does not OCR or classify their contents. Workbook/database/configuration candidates require manual review; signatures cannot establish absence of every unknown secret. Use synthetic fixtures for reproducible tests and review screenshots/logs before sharing them. Store generated acceptance results with their release or CI run, rather than committing them as application source.

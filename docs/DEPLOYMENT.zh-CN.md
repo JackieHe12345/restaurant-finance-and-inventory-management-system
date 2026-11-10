@@ -1,6 +1,6 @@
 # restaurant-finance-and-inventory-management-system 部署指南
 
-> 本指南对应 `main` 的 V1.0.2 源码与 `20261110-analytics-english-final` 构建。旧 V1.0.1 源码保留在 `old/V1.0.1`。实际核验结果见 [发布状态](RELEASE_STATUS_v1.0.2.md)，系统结构见 [项目交接说明](../项目交接说明.md)。
+> 本指南适用于 v1.0.2 源码与 `20261110-analytics-english-final` 构建。模块、数据和构建约束见[工程技术参考](ENGINEERING_REFERENCE.zh-CN.md)。
 
 [返回 README](../README%20%28%E4%B8%AD%E6%96%87%29.md) · [English](DEPLOYMENT.md) | 简体中文
 
@@ -15,7 +15,7 @@
 业务脚本源码位于 `build/web-exact-source/`。共用十进制运行时 `web/money.js` 和 HTML/CSS 静态资源直接在 `web/` 中维护，编译器不会生成或复制它们。
 
 ```bash
-cd /path/to/Nov10/source
+cd /path/to/restaurant-finance-and-inventory-management-system
 ```
 
 根目录的 `.env.example` 用于 Compose，`backend/.env.example` 用于直接运行 Python API。两份文件用途不同。可以用下面的命令从根目录模板创建私有配置，分别生成数据库密码、JWT 密钥和初始管理员密码：
@@ -255,7 +255,7 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 
 同为 v1.0.2 的分发包可能包含不同构建。本次最终包在 HTML 声明 `data-build-revision="20261110-analytics-english-final"`，本地资源缓存查询参数使用 `v1.0.2-20261110-analytics-english-final`。原生部署预检与 `verify_release_files.py` 在逐文件清单哈希之外，验证声明的修订和精确的“版本＋修订”查询值。没有修订字段的旧发布仍使用原先的版本查询规则。不要为同版本升级关闭这些校验。
 
-当前实际部署结果见 [发布状态](RELEASE_STATUS_v1.0.2.md)。Nov 10 当日较早的 v1.0.2 也曾部署，完整包的 `项目交接说明.md` 记载该历史状态与通用升级布局。真实服务器身份和已有备份位置仅记录在自用包的 `私人运维资料/PRIVATE_OPERATIONS.txt`；部署最终 tar 前应重新检查线上状态并创建新备份。
+部署前应重新检查目标实例状态，并创建数据库、程序和运行配置备份。实际服务器身份、配置值、备份路径和每次部署的验证记录应由运维人员私下保存；本仓库提供可复用的步骤和校验工具。
 
 ### PostgreSQL 升级前后证据
 

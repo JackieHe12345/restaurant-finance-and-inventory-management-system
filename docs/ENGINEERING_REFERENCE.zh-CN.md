@@ -1,23 +1,23 @@
 # 工程技术详解 — v1.0.2
 
-日期：**2026 Nov 10**。构建修订：**20261110-analytics-english-final**。本文说明仓库根目录的源码（对应 ZIP 的 `Nov10/source/`）；实际部署状态见 [发布状态](RELEASE_STATUS_v1.0.2.md)。[English](ENGINEERING_REFERENCE.md) · [根目录交接](../项目交接说明.md)。
+本文说明仓库的架构、数据合同、构建工具和运行边界。产品变更见 [CHANGELOG](<../CHANGELOG (中文).md>)；安装与部署流程见 [部署指南](DEPLOYMENT.zh-CN.md)。[English](ENGINEERING_REFERENCE.md)。
 
-## 1. 产品与交付对象的边界
+## 1. 产品与构建对象的边界
 
 系统包含餐饮收入、采购、日常费用、月固定支出、现金余额、菜品耗用、库存、多账本、账号权限、变更历史和 Excel 交换。同一本账支持 A/B 店收入渠道；店名、商品名等是用户数据，账本是独立的权限和持久化边界。
 
-三个执行部分是静态网页、PostgreSQL 支撑的 FastAPI，以及支持本地 Excel/云同步的 PySide6 macOS 程序。服务器 tar 只包含 API 和网页运行文件；外层完整 ZIP 还包括原生运行库、全部源码、文档和核验材料。两个 ZIP 软件版本相同，只有 For自己包增加 `私人运维资料/`。
+三个执行部分是静态网页、PostgreSQL 支撑的 FastAPI，以及支持本地 Excel/云同步的 PySide6 macOS 程序。仓库保存这些部分的源码、测试以及构建/部署工具；服务器归档和原生 App 是另行生成的发布产物。
 
 | 对象 | 它能证明什么 | 不能由此推断 |
 | --- | --- | --- |
 | `VERSION` / API `v1.0.2` | 软件兼容版本标签。 | 两个同版本构建拥有相同功能/文件。 |
-| HTML build revision / `RELEASE_INFO.json` | 本次同日修订的身份。 | 线上已经部署该修订。 |
-| 仓库根目录（ZIP 的 `source/`） | 当前可编辑的权威源码。 | 历史 Git 提交含有本次所有改动。 |
+| HTML build revision | 同一软件版本下某个具体构建的身份。 | 线上已经部署该修订。 |
+| Git 提交和源码树 | 精确标识被版本管理的源码。 | 未提交修改或已安装二进制也与它一致。 |
 | 服务器 `MANIFEST.json` | 运行包文件的 SHA-256。 | 部署中真实业务记录没有变化。 |
-| `PACKAGE_MANIFEST.json` 与 ZIP `.sha256` | 全包文件、权限/符号链接，以及 ZIP 字节。 | 私人快照无需核对依赖即可恢复。 |
+| `PACKAGE_MANIFEST.json` 与 ZIP `.sha256` | 全包文件、权限/符号链接，以及 ZIP 字节。 | 数据备份无需核对依赖即可恢复。 |
 | 部署前后证据 | 特定时间的服务器状态和比较结果。 | 老备份现在仍存在，或后来改动也经过验证。 |
 
-这里的管理记账视图不自动等同于法定报表、支付成功凭证或不可变的月结。用户明确保留已有毛利润和其他支出分类。
+这里的管理记账视图不自动等同于法定报表、支付成功凭证或不可变的月结。毛利润和费用分类属于下文明确描述的应用计算合同。
 
 ## 2. 源码拓扑与网页载入顺序
 
@@ -94,14 +94,29 @@ ID、日期、版本、记录键、名字、备注和扩展元数据不是金额
 
 旧 numeric JSON 读取保留原十进制词法；需要时从 OOXML 原始数值读取。只规范已知财务路径，不能递归把任意 metadata 都转金额。绘图坐标可以在最终边界转 float，不能用于财务持久化。Exact 的格式化不能在中间运算中暗中调用 Number。
 
-五项主页指标完整定义见根目录交接。一个容易误改的区别是：当前月日均收入/毛利截至昨日，除以已过自然天数；实际月净利包含今日已录收支和整月已保存固定支出。日均净利使用该实际净利除以已过自然天数；两处净利率用实际月收入。月初没有已过天数，日均不可用。已结束月按整月天数，下个月 1 日起预测卡显示实际净利；未来月不可用。独立本地日期检查即使数据不变也刷新，不写入、不冻结月结结果。
+主页五项依次为日均收入、日均毛利润（毛利率）、预计月底盈亏、日均净利润（净利率）、净利润（净利率）。卡片使用统一背景与边框，正负金额颜色保留含义；每项比较上月同一指标。预测说明括号独立换行。精确中文标签和完整报表文案见 v1.0.2 [更新记录](<../CHANGELOG (中文).md>)。
+
+当前月日均收入/毛利截至昨日，除以已过自然天数；实际月净利包含今日已录收支、排除未来日期，并计入整月已保存固定支出。日均净利使用该实际净利除以已过自然天数。两处净利率均以实际月净利除以含今日的实际月收入；收入缺失或为零时不显示有效比率。月初没有已过天数，日均不可用。已结束月使用全月自然天数；未来月不可用。上月成本缺失时，不能拿本月成本代替。
+
+客户端本地日历决定月份是否结束，与选中的日无关。网页和原生日期监测约每五秒检查，即使数据未变也重算；网页恢复可见时也检查，原生等弹窗关闭后刷新并在读取失败后重试。下个月 1 日起，上月预测卡显示实际净利，包含十二月跨年情况。这个切换不改变选中期间、不写入或冻结月结；合法历史更正会重新计算。
+
+| 客户端日期 | 所选月份 | 预测卡金额 |
+| --- | --- | --- |
+| 10 月 31 日 | 10 月 | 当月预测。 |
+| 11 月 1 日 | 10 月 | 10 月实际净利，不再需要上月成本。 |
+| 11 月 1 日 | 11 月 | 已过一天前不可预测，实际净利可单独存在。 |
+| 1 月 1 日 | 上年 12 月 | 12 月实际净利。 |
+| 11 月 10 日 | 12 月 | 未来期间，不可用。 |
 
 | 项目 | 必须保持的含义 |
 | --- | --- |
+| 收入 | 规范渠道记录和 `收益` / `总金额` 等历史总额字段；有效渠道值优先于过期派生总额，不能两者相加。 |
 | 毛利润 | 收入 − 食材 − 佐料 − 手续费。 |
+| 毛利率 | 日均毛利 ÷ 同口径日均收入；分母缺失或为零时不可用。 |
 | 变动成本 | 食材 + 佐料 + 日结水电 + 其他 + 手续费。 |
 | 月固定支出 | 已保存人工 + 房租/物业 + 实付水/电/煤气 + 其他固定。 |
-| 月净利润 | 收入 − 变动成本 − 整月固定支出。 |
+| 月总成本 | 日变动成本合计 + 整月已保存固定支出。 |
+| 月净利润 | 收入 − 月总成本。 |
 | 当前月预测 | 截至昨日的日均收入 × 本月天数 − 上月总成本。 |
 | 环比 | `(本期 − 上期) / abs(上期) × 100`；上期零或缺失须说明。 |
 | 余额强制修改 | 某日实际余额设定，不是营业收入/支出。 |
@@ -109,7 +124,9 @@ ID、日期、版本、记录键、名字、备注和扩展元数据不是金额
 
 库存身份由类别/名称/单位组成，不暗中换算单位。FIFO 保存批次原数量、原金额、原单价和剩余量。每次出库成本为累计分摊差：`round(原批次金额 × 累计耗用量 / 原数量, 2) − 此前已分摊金额`。批次完全耗尽时吃掉全部余分。剩余价值=原入账价值−已分摊，不是剩余数量×显示单价。未知价格数量必须明确显示。
 
-采购支出和 FIFO 耗用成本回答不同问题。月度经营利润继续采用既有采购/费用口径；本次没有授权重新分类包装、耗材或话费。所以毛利减固定支出仍可能要再扣日结水电/其他才能等于净利。
+采购支出和 FIFO 耗用成本回答不同问题。月度经营利润采用采购/费用口径，包装、耗材和话费保持其记录中的费用分类。因此毛利减固定支出仍可能要再扣日结水电/其他才能等于净利。日明细卡有菜品成本时可以使用该成本；月度和日均毛利仍汇总日记账毛利。预计水电金额可以出现在费用详情，实际月固定支出和净利使用实付金额。
+
+现金余额表通过“加一项 → 余额强制修改”设置某日实际余额；不产生营业收入/费用，不替换此前交易。普通条目保留删除规则，历史 `system_locked` 条目继续受保护。没有另一个独立“余额校正”表单。
 
 ## 6. 英文显示与用户内容
 
@@ -156,14 +173,14 @@ ID、日期、版本、记录键、名字、备注和扩展元数据不是金额
 
 ## 7. 统计解释与图表合同
 
-统计按所选年/月、指标、日期/筛选上下文组织经营、费用和客流视角。来源明细连通汇总与原记录；固定支出明确区分月保存值和逐笔日期值。CSV 对应当前筛选/排序范围，固定表头随界面语言，用户值原样导出。本次最终展现功能见 Nov10 CHANGELOG 和更新说明。
+统计按所选年/月、指标、日期/筛选上下文组织经营、费用和客流视角。来源明细连通汇总与原记录；固定支出明确区分月保存值和逐笔日期值。CSV 对应当前筛选/排序范围，固定表头随界面语言，用户值原样导出。产品变更见 [CHANGELOG](<../CHANGELOG (中文).md>)。
 
 图表保留全部点，仅选择能容纳的轴标签。渲染器测量文本、结合年份背景缩写日期/月、预留首尾刻度、类别换行，容器变化后重新排布。无记录是空缺，不伪造成零收入日。负净利保持在零轴下方及原符号。悬停、触摸、焦点、方向键、Home/End 查看完整日期/类别和精确金额。表格合计和图表共享计算来源，样式不能引入另一套财务公式。
 
 专业化的含义是明确期间/口径、连贯选择、可比较摘要、趋势/类别/来源视图，以及清晰表格和空状态。不要添加没有数据支撑的“AI 预测”、虚构记录、误导评价或概率。更精致的图不等于改变会计口径。
 
 
-### 本次最终统计工作流
+### 统计工作流
 
 计算口径/环比条明确所选范围与上月关系。三个观察卡呈现有记录日期覆盖、最大费用，以及视角相关指标：有记录日中的盈利天数、月固定保存值减逐笔值的差额，或最忙客流日/客流覆盖。指标趋势支持折线和柱状，显示精确均值/最小/最大及观察数量。明细按列排序、保留金额符号，合计覆盖跨页全部筛选结果，CSV 遵循筛选/排序。这些是透明的数据观察，不是新增预测或财务分类。
 
@@ -190,34 +207,118 @@ ID、日期、版本、记录键、名字、备注和扩展元数据不是金额
 
 后端启动建立缺失表、执行明确的 entry-timing 兼容列添加、清理过期审计、确保初始管理员并处理旧/演示成员关系。它不会执行任意迁移、批量修复历史金额或开启旧微信定时任务。系统不包含支付下单/退款/清算网关、银行流水接入、高可用或集中监控服务。
 
-## 9. 构建与验收顺序
+## 9. 开发、测试与发布构建
 
-按本包源码和根目录/更新说明的命令操作，依赖工具放分发目录外。源码环境用 Python 3.12、固定依赖与 Acorn lockfile；复用的 App 运行库可有不同补丁版本，由 App 验证记录确认。不能把新装源码依赖版本当作打包运行库版本。
+以下命令未特别说明时均从仓库根目录执行。使用 Python 3.12、仓库依赖文件与 Acorn lockfile。复用的 App 运行库版本可能不同于新建源码环境，必须检查实际 App，不能从本机 pip 包推断其依赖。生成的日志、截图、JSON 报告、导出文件和 QA 程序放在忽略的 `work/`、`dist/` 或外部 CI/发布产物中；它们是输出，不是源码输入。
 
-1. 核对来源和包，分别准备无隐私/For自己暂存树。
-2. 隔离安装 `build/test-requirements.txt`、需要的桌面依赖及 `npm ci --prefix build/js-transform`。
-3. 修改真正业务源与直接静态资源，执行 `node build/compile_exact_web.cjs`。
-4. 跑精确金额、FIFO、既有网页回归、本次仪表盘/图表/英文/统计检查，以及必要 API/原生测试。
-5. 在真实浏览器用合成数据、阻断 HTTP，检查手机到电脑的中英文布局/交互、用户内容保留、图表边界和表格滚动。
-6. 用 `build/rebuild_macos_app.py` 从最终原生源码生成新的主字节码，核对源码对应、权限、双架构和签名；对实际候选 App 跑已声明架构的隔离 QA，不能只测试源导入。
-7. `build/make_release.py` 从明确 Git 跟踪的运行文件构建新路径服务器 tar，记录其清单和哈希。
-8. 完成当前修订证据与双语文档，区分本次重跑、继承结果和局限；不能照抄旧通过数作为新验收。
-9. 从两个明确暂存目录创建两个外层 ZIP，私密资料不进 App/tar。所有文件最终确定后再生成清单与 ZIP hash。
-10. 两包分别解压到新目录，检查内容、权限、符号链接、App 签名和服务器清单；再次扫描解压树及嵌套归档的隐私。
+### 源码环境与回归测试
 
-已有入口：`web/test_v1_0_1_regressions.js`、`web/test_v1_0_2_dashboard.js`、`web/test_v1_0_2_charts.js`、`build/test_exact_web.cjs`、`build/test_fifo_contract.py`、`build/test_v1_0_1_desktop*.py`、`build/test_v1_0_2_desktop*.py`、`build/qa_web_browser.cjs`、`build/qa_packaged_desktop.py`、`build/test_deployment_cache_revision.py` 及 `backend/tests/`。新增英文/统计测试路径写在本次证据和日志中。
+```bash
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r build/test-requirements.txt -r desktop/requirements.txt
+npm ci --prefix build/js-transform
+node build/compile_exact_web.cjs
 
-验收应检查用户数据和权限保持，不只截图。测试不能指向私人 dump 或真实服务器。SQLite 测试不证明生产 PostgreSQL 并发负载；Rosetta 下 x86_64 执行不等于实体 Intel 测试；pg_dump 可读也不等于完整恢复演练通过。
+(cd backend && PYTHONPATH=.:tests python -m pytest -q tests)
+for test in web/test_*.js; do node "$test" || exit 1; done
+node build/test_exact_web.cjs
+node build/test_i18n_backend.cjs
+python build/test_fifo_contract.py
+python build/test_deployment_cache_revision.py
+python build/test_distribution_privacy.py
+for test in build/test_v1_0_1_desktop.py build/test_v1_0_1_desktop_qt.py \
+  build/test_v1_0_2_desktop.py build/test_v1_0_2_desktop_qt.py \
+  build/test_v1_0_2_analytics_qt.py; do
+  QT_QPA_PLATFORM=offscreen python "$test" || exit 1
+done
+```
 
-## 10. 分包、私人快照与恢复
+FIFO 测试会导入桌面模块，要求 Node 在 `PATH`，也可把 `NODE_BINARY` 设为 Node 可执行文件的绝对路径。原生源码导入 `fcntl`，不宣称支持 Windows。Qt 测试使用 offscreen 平台；日常原生界面需要图形会话。测试使用隔离夹具，不能加载生产环境文件或真实账本。历史测试文件名表示仍需保护的回归行为，不应仅因版本变化而重命名。
 
-无隐私包排除原公网 IP/主机名、个人本机路径/聊天链接、实际账户/账本信息、数据库、环境值、密码、私钥和用户内容。合成夹具可有中文测试名字和虚构数值。私密包增加用户授权的 `私人运维资料/` 清单、提供的 SSH 凭据、连接信息及记账系统快照。具体范围/时间由该目录清单说明，本文不虚构已收集全部材料。
+### 浏览器 QA
 
-私密文件不由网页提供，不编译进 App。SSH 私钥、数据库密码、JWT 密钥和商户签名密钥是不同凭据，不能混用。商户文件可能在 PostgreSQL 之外的 `PAYMENT_SECRET_ROOT`，授权完整恢复时须单独考虑；不能因为同一台机器就顺便复制其他服务文件。
+在独立工具目录安装 Playwright 及 Chromium；也可用 `CHROME_EXECUTABLE` 指定已有且受支持的 Chrome/Chromium：
 
-恢复交接需要 dump、对应程序/配置版本、运行密钥、相关外部文件、systemd/Nginx 布局及数据库/角色假设。先在隔离环境恢复、核查 schema/数量/关键功能，再单独验证凭据与配置。程序回退与数据库恢复是不同操作，不能自动把升级前快照覆盖较新的生产数据库。
+```bash
+npm install --prefix work/browser-qa-tools --save-exact playwright
+work/browser-qa-tools/node_modules/.bin/playwright install chromium
 
-发布验证时保留新的当前备份；若之后清理，应删除事先审核清单内的旧应用备份。部署脚本本身不删备份。历史路径是当时证据，不是删除指令。附件和旧审查说明提供背景，不构成新的生产修改授权。
+for test in qa_web_browser qa_english_ui qa_inventory_english \
+  qa_enhanced_analytics qa_analytics_english_advanced; do
+  PLAYWRIGHT_MODULE="$PWD/work/browser-qa-tools/node_modules/playwright" \
+  QA_OUTPUT_DIR="$PWD/work/qa/$test" node "build/$test.cjs" || exit 1
+done
+```
+
+`QA_OUTPUT_DIR` 必须为可写绝对目录。保留验收记录时，每次运行使用新目录；脚本会在其中写报告和截图。`PLAYWRIGHT_MODULE` 指定已安装 Node 模块，`CHROME_EXECUTABLE` 可选指定浏览器，`RELEASE_SOURCE_ROOT` 可选切换待测源码树；默认以本地文件方式加载本仓库 `web/index.html`。外部 HTTP 被阻断，合成记录替代真实账号。验收保持默认断言模式，`QA_DIAGNOSTIC=1` 只用于诊断，不能算通过验收。
+
+浏览器检查覆盖手机/电脑宽度、所选期间与跨月切换、图表标签/交互、固定英文、用户值保持和规范保存枚举。修改业务源后，应测试实际编译资源。仅有截图不能证明财务或权限行为正确。
+
+### 服务器归档
+
+在已经跟踪所需运行文件的 Git 工作副本中构建。构建前审查未提交修改；构建器检查路径是否被跟踪，但不能代替工作区状态审查。
+
+```bash
+python build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
+(cd dist && shasum -a 256 -c restaurant-cloud-v1.0.2-deploy.tar.gz.sha256)
+```
+
+输出路径必须不存在。归档根目录为 `restaurant-cloud-v1.0.2/`，包含 API/静态网页、部署工具、配置示例、`VERSION` 及 SHA-256 `MANIFEST.json`，不包含数据库和运行凭据。将归档文件哈希与选定源码逐一核对，再按 [部署指南](DEPLOYMENT.zh-CN.md) 执行部署及已安装/HTTP 文件验证。健康接口只返回软件版本，不足以证明构建修订或网页资源正确。
+
+### macOS App 与打包运行库 QA
+
+原生重建工具要求 macOS、Python 3.12，以及可信的现有双架构 Python/Qt App 作为 `--runtime-app`。该运行库是另行提供的发布输入，不放进 Git。工具保留其他运行条目，仅替换主脚本字节码，更新两个架构，设置最低 macOS 15，并生成 ad-hoc 签名；不执行 Apple 公证。输出必须使用新路径。
+
+```bash
+python build/rebuild_macos_app.py \
+  --runtime-app /absolute/path/to/Runtime.app \
+  --source desktop/restaurant_cost_manager.py \
+  --output dist/Finance.app --version v1.0.2 \
+  --report work/qa/app-build.json
+
+python build/verify_macos_app.py \
+  --app dist/Finance.app --source desktop/restaurant_cost_manager.py \
+  --runtime-app /absolute/path/to/Runtime.app --version v1.0.2 \
+  --report work/qa/app-verification.json
+codesign --verify --deep --strict dist/Finance.app
+```
+
+`build/qa_packaged_desktop.py` 是独立离线 QA App 的主入口，不能替换生产候选 App 的业务入口。另建一个 QA App，让它读取待测候选 App 的主字节码：
+
+```bash
+python build/rebuild_macos_app.py \
+  --runtime-app /absolute/path/to/Runtime.app \
+  --source build/qa_packaged_desktop.py \
+  --output dist/Finance-QA.app --version v1.0.2 \
+  --report work/qa/qa-app-build.json
+
+V101_SOURCE_ROOT="$PWD" \
+V101_PRODUCTION_APP="$PWD/dist/Finance.app" \
+V101_QA_DIR="$PWD/work/qa/packaged-arm64" \
+/usr/bin/arch -arm64 "$PWD/dist/Finance-QA.app/Contents/MacOS/Finance-QA"
+```
+
+在兼容主机上另用 `/usr/bin/arch -x86_64` 运行相同 QA 可执行文件，并设置另一个 `V101_QA_DIR`；Apple Silicon 上执行 x86_64 需要 Rosetta。若复用运行库没有 `unittest.mock`，可仅为 QA 设置 `V101_QA_STDLIB`，指向 Python 3.12 标准库目录。这些环境变量沿用历史 `V101` 名字，实际测试的是 `V101_PRODUCTION_APP` 指定的候选 App。测试禁网，所有可写用户路径重定向到 QA 目录。
+
+记录实际测试的源码提交、修订、环境和结果，区分重跑检查与沿用证据。SQLite 夹具不证明生产 PostgreSQL 并发负载，Rosetta 执行不代表已经在实体 Intel 硬件测试，数据库 dump 可读也不等于完整恢复演练通过。
+
+## 10. 分发包组装与运行恢复
+
+`build/make_complete_package.py` 是可选完整分发包组装工具，与服务器 tar 构建器分开。它读取源码工作副本之外的明确暂存树；在暂存树中放入需要交付的源码/文档、已验证服务器包及可选原生 App。暂存根目录必须有 `VERSION` 和生成的 `RELEASE_INFO.json`，后者需提供 `build_revision` 字段；还应记录源码提交和产物哈希，说明构建来源。这些生成元数据属于发布产物，不是仓库根目录文件。
+
+```bash
+python -B build/make_complete_package.py \
+  --root /absolute/path/to/staging/Release \
+  --output "$PWD/dist/complete-release.zip"
+python -B build/verify_package.py --root /absolute/path/to/extracted/Release
+```
+
+ZIP 输出必须在暂存树之外且尚不存在。组装工具更新 `PACKAGE_MANIFEST.json`，保留 UTF-8 文件名、Unix 权限和内部符号链接，并生成外层 `.sha256`。暂存树不能带 `.git`、依赖/虚拟环境目录和缓存。重新解压到新位置，验证清单、内嵌服务器归档和 App 签名。公开软件产物不应包含真实服务器身份、个人本机路径、业务数据、运行环境值或凭据；运维备份应放在独立受保护存储中。
+
+可恢复的运维备份需要数据库 dump、匹配的程序/配置版本、运行密钥、相关外部文件、服务/Nginx 布局及数据库/角色假设。商户文件可能保存在 PostgreSQL 之外的 `PAYMENT_SECRET_ROOT`。SSH 私钥、数据库密码、JWT 签名密钥和商户密钥用途各不相同。先在隔离环境演练恢复，验证表结构、数据和关键流程；Excel 交换工作簿不能替代完整系统备份。
+
+程序回退和数据库恢复是不同操作，不能自动用升级前快照覆盖较新的数据库。部署核验期间保留当前备份，之后清理也须明确审查目标目录。随附部署脚本保留备份、不恢复数据库。数据库前后验证完成之前应暂停业务写入；摘要变化时，先调查并发写入与允许的审计保留清理，再判断是否数据损坏。
 
 ## 11. 排障索引
 
@@ -239,7 +340,7 @@ ID、日期、版本、记录键、名字、备注和扩展元数据不是金额
 
 ## 12. 公开 HTTP 路由清单
 
-以下由交付源码中的路由装饰器提取。`record_key:path` 可以含路径样字符，客户端须正确 URL 编码；一些旧别名刻意保留。具体请求/响应和权限以模型与路由依赖为准，有路由不等于有权调用。运行中 `/openapi.json` 只说明该运行构建，可能与过期本地文件不同。
+以下由源码中的路由装饰器提取。`record_key:path` 可以含路径样字符，客户端须正确 URL 编码；一些旧别名刻意保留。具体请求/响应和权限以模型与路由依赖为准，有路由不等于有权调用。运行中 `/openapi.json` 只说明该运行构建，可能与过期本地文件不同。
 
 | Method | Route | Source function |
 | --- | --- | --- |
@@ -290,24 +391,17 @@ ID、日期、版本、记录键、名字、备注和扩展元数据不是金额
 | POST | `/api/v1/datasets/{dataset_id}/inventory/name-corrections/apply` | `name_corrections.py:apply_correction` |
 
 
-## 13. 历史与私人资料放在哪里
+## 13. 只读产物隐私检查
 
-两个 ZIP 共用的核验资料只有 `docs/acceptance/Nov10Final/` 中本次合成/去私人信息的记录。无隐私包刻意不含修复前审查、旧 Nov07/Nov10 日志截图以及旧版本说明 01–05，因为它们可能带原本机、服务器或业务信息。For自己包把这些放在 `私人运维资料/历史开发证据/`；它们是历史背景，不是当前权威源码或验收。两包都保留 CHANGELOG 历史段落，旧段落对“随包文件”的描述只说明当时交付，本次实际目录以当前清单为准。
+`build/audit_distribution_privacy.py` 可检查解压树、ZIP、tar 或 macOS App，不执行归档内代码。真实私人标识必须放在**分发目录和仓库之外**的文件中（JSON 字符串数组或 UTF-8 每行一项）。工具源码不写具体安装环境的标识，也不输出密钥片段。它检查 UTF-8/UTF-16 字节、完整私钥标记、归档条目和链接边界，并解开双架构 Mach-O 中 PyInstaller CArchive/PYZ 内容检查。`build/test_distribution_privacy.py` 提供合成扫描回归。
 
-私人目录另提供 `Admin.pem`、`known_hosts`、`accounting-server-private.tar.gz` 及私密运维说明/清单。服务器快照只读采集本记账系统的 PostgreSQL、运行/服务配置和相关 payment-secret 文件，精确范围与时间由其清单记录，不打包无关服务。使用凭据或计划恢复前先读私密运维说明；共用技术说明无需包含真实主机身份或凭据值。
-
-
-## 14. 只读分发包隐私检查
-
-`build/audit_distribution_privacy.py` 可检查解压树、ZIP、tar 或 macOS App，不执行归档内代码。真实私人标识必须放在**分发目录之外**的文件中（JSON 字符串数组或 UTF-8 每行一项）；工具源码不写原服务器标识，也不输出密钥片段。它检查 UTF-8/UTF-16 字节、完整私钥标记、归档条目和链接边界，并解开双架构 Mach-O 中 PyInstaller CArchive/PYZ 内容检查。`build/test_distribution_privacy.py` 提供合成扫描回归。
-
-在解压后的 `Nov10/` 根目录检查无隐私包：
+从仓库根目录执行，以已构建归档为输入、忽略的目录为报告输出：
 
 ```bash
-python3 build/audit_distribution_privacy.py \
-  /absolute/path/to/无隐私记账系统Nov10V1.0.2.zip \
+python -B build/audit_distribution_privacy.py \
+  dist/restaurant-cloud-v1.0.2-deploy.tar.gz \
   --forbid-file /absolute/private/identifiers.txt \
-  --report /absolute/path/to/clean-privacy-report.json
+  --report work/qa/privacy-report.json
 ```
 
-For自己包刻意包含凭据和数据库快照，不要求它通过无隐私包的密钥排除规则；应核对独立私人目录清单，并确认这些资料没有进入共用 App/服务器 tar 或无隐私 ZIP。扫描器只计数图片，不做 OCR 或内容分类。工作簿、数据库和配置候选仍需审查，签名扫描也不能证明不存在任何未知秘密。因此旧截图/日志/审查和版本说明 01–05 仅放本人历史归档，共用核验使用当前合成夹具。
+完整软件 ZIP 或解压暂存树也应使用同一检查。凭据、数据库、真实工作簿和运维备份应独立于公开软件产物。扫描器只计数图片，不做 OCR 或内容分类；工作簿、数据库和配置候选仍需人工审查，签名扫描也不能证明没有任何未知秘密。可复现测试使用合成夹具，对外分享截图/日志前应审查内容。生成的验收结果随相应发布或 CI 运行保存，不作为应用源码提交。
