@@ -1,0 +1,9 @@
+﻿Type,Date / month,Ingredients,Quantity,Unit,Recorded cost,Average daily usage,Used in
+Daily usage,2026-10-01,收入,3.00,自定义单位,30.00,,管理员、未命名菜品
+Daily usage,2026-10-01,删除,3.00,500 g,9.00,,管理员
+Daily usage,2026-10-02,收入,3.00,自定义单位,30.00,,管理员、未命名菜品
+Daily usage,2026-10-02,删除,3.00,500 g,9.00,,管理员
+Daily usage,2026-10-03,收入,3.00,自定义单位,30.00,,管理员、未命名菜品
+Daily usage,2026-10-03,删除,3.00,500 g,9.00,,管理员
+Selected-period total,2026-10-01 to 2026-10-03,收入,9.00,自定义单位,90.00,3.00,管理员、未命名菜品
+Selected-period total,2026-10-01 to 2026-10-03,删除,9.00,500 g,27.00,3.00,管理员

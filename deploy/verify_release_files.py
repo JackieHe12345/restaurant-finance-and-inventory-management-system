@@ -3,19 +3,40 @@
 import argparse
 import hashlib
 import json
+import re
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import ProxyHandler, build_opener
 
 class Assets(HTMLParser):
     def __init__(self):
-        super().__init__(); self.paths = []
+        super().__init__(); self.paths = []; self.builds = []
     def handle_starttag(self, tag, attrs):
+        if tag == 'html':
+            self.builds.append(dict(attrs))
         for key, value in attrs:
             if (tag == 'script' and key == 'src') or (tag == 'link' and key == 'href'):
                 if value and not urlsplit(value).scheme:
                     self.paths.append(value)
+
+def release_cache_version(parser, expected_version):
+    """Keep the public API version stable while validating a rebuilt web bundle."""
+    if len(parser.builds) != 1:
+        raise ValueError('HTML build marker missing or repeated')
+    build = parser.builds[0]
+    if build.get('data-build') != expected_version:
+        raise ValueError('HTML build version mismatch')
+    revision = build.get('data-build-revision')
+    if 'data-build-revision' in build and (not isinstance(revision, str)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', revision)):
+        raise ValueError('Invalid HTML build revision')
+    return expected_version + '-' + revision if revision is not None else expected_version
+
+def validate_asset_cache_versions(paths, cache_version):
+    return ['cache version: ' + urlsplit(asset).path for asset in paths
+            if Path(urlsplit(asset).path).suffix in ('.js', '.css')
+            and parse_qs(urlsplit(asset).query).get('v') != [cache_version]]
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -23,7 +44,7 @@ def main():
     p.add_argument('--api-dir', type=Path, default=Path('/opt/restaurant-cloud/api'))
     p.add_argument('--web-dir', type=Path, default=Path('/var/www/restaurant-web'))
     p.add_argument('--evidence-dir', type=Path, required=True)
-    p.add_argument('--expected-version', default='v1.0.1')
+    p.add_argument('--expected-version', default='v1.0.2')
     p.add_argument('--base-url', default='http://127.0.0.1')
     p.add_argument('--api-base-url', default='http://127.0.0.1:8000')
     p.add_argument('--nginx-conf', type=Path, default=Path('/etc/nginx/conf.d/restaurant-cloud-upload.conf'))
@@ -43,6 +64,13 @@ def main():
             failures.append('configuration: ' + str(target))
     index = a.release_dir/'web_frontend/index.html'
     parser = Assets(); parser.feed(index.read_text())
+    parser.close()
+    try:
+        cache_version = release_cache_version(parser, a.expected_version)
+    except ValueError as exc:
+        failures.append(str(exc))
+        cache_version = a.expected_version
+    failures.extend(validate_asset_cache_versions(parser.paths, cache_version))
     expected_assets = {'analytics-oct30.js','analytics-oct30.css','dashboard-oct30.js','charts-oct30.js','reporting-oct30.css'}
     if not expected_assets <= {urlsplit(x).path for x in parser.paths}:
         failures.append('missing Oct30 statistics references')
@@ -52,8 +80,6 @@ def main():
         relative = urlsplit(asset).path
         if relative.startswith('/') or '..' in Path(relative).parts:
             failures.append('unsafe asset: ' + relative); continue
-        if asset != 'index.html' and urlsplit(asset).query != 'v=' + a.expected_version:
-            failures.append('cache version: ' + relative)
         with opener.open(base + '/' + asset, timeout=10) as r:
             actual = r.read()
         http_count += 1
@@ -65,7 +91,7 @@ def main():
     routes = all('post' in schema.get('paths',{}).get(path,{}) for path in expected_routes)
     if disk_count < 48 or http_count < 32 or not routes or schema['info']['version'] != a.expected_version or health.get('version') != a.expected_version or health.get('status') != 'ok':
         failures.append('release count/version/route/health gate')
-    result = {'installed_files_checked':disk_count,'http_assets_checked':http_count,'failures':failures,'openapi_version':schema['info']['version'],'correction_routes_registered':routes,'health':health}
+    result = {'installed_files_checked':disk_count,'http_assets_checked':http_count,'failures':failures,'cache_version':cache_version,'openapi_version':schema['info']['version'],'correction_routes_registered':routes,'health':health}
     a.evidence_dir.mkdir(parents=True,exist_ok=True,mode=0o700)
     (a.evidence_dir/'release-check.json').write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result,indent=2))

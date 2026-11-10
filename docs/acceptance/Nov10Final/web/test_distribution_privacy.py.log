@@ -1,0 +1,11 @@
+test_both_macho_architectures_and_pyz_modules_are_scanned (__main__.PrivacyAudit.test_both_macho_architectures_and_pyz_modules_are_scanned) ... ok
+test_complete_private_key_armor_only (__main__.PrivacyAudit.test_complete_private_key_armor_only) ... ok
+test_external_links_are_flagged_and_not_followed (__main__.PrivacyAudit.test_external_links_are_flagged_and_not_followed) ... ok
+test_nested_zip_and_tar_are_scanned_without_extraction (__main__.PrivacyAudit.test_nested_zip_and_tar_are_scanned_without_extraction) ... ok
+test_oversized_archive_member_is_a_blocker (__main__.PrivacyAudit.test_oversized_archive_member_is_a_blocker) ... ok
+test_utf_encodings_and_report_do_not_reveal_values (__main__.PrivacyAudit.test_utf_encodings_and_report_do_not_reveal_values) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.002s
+
+OK

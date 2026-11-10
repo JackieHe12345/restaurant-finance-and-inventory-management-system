@@ -176,16 +176,13 @@
     if (!$("cashLedgerRows")) return;
     if(state.refreshBusy&&state.cashPositionDatasetId!==state.dataset?.id){clearCashLedgerV4();return;}
     const payload = cashPayloadV4(), response = state.cashPositionDatasetId===state.dataset?.id?(state.cashPosition||{}):{}, opening = num(response.opening_balance ?? payload.opening_balance ?? payload.base_balance);
-    const correctionInput=$("cashOpeningBalanceV4"), correctionDate=$("cashOpeningDateV4");
-    if(document.activeElement!==correctionInput)correctionInput.value="";
-    if(document.activeElement!==correctionDate&&!correctionDate.value)correctionDate.value=isoDate(new Date());
     const month = $("cashMonthFilter").value || isoDate(new Date()).slice(0,7); $("cashMonthFilter").value = month;
     const withBalance=cashRowsWithBalanceV4(payload,response), balance=withBalance.length?num(withBalance[withBalance.length-1].running_balance):opening;
     const filtered = withBalance.filter(item=>!month || String(item.date).startsWith(month)).reverse();
     $("cashLedgerRows").innerHTML = filtered.length ? filtered.map(item=>{
       const force=isCashForceEntryV4(item), signed=cashSignedAmountV4(item), locked=isCashEntryLockedV4(item);
       const action=item.id?(locked?'<span class="cash-locked-entry">不可删除</span>':`<button class="danger-link" data-cash-delete="${escapeHtml(item.id)}">删除</button>`):"—";
-      return `<tr${force?' class="cash-force-entry"':""}><td>${escapeHtml(item.date||"")}</td><td>${escapeHtml(item.type||"")}</td><td>${escapeHtml(item.description||item.type||"")}</td><td>${!force&&signed>0?money(signed):"—"}</td><td>${!force&&signed<0?money(-signed):"—"}</td><td>${money(item.running_balance)}</td><td>${action}</td></tr>`;
+      return `<tr${force?' class="cash-force-entry"':""}><td>${escapeHtml(item.date||"")}</td><td>${escapeHtml(item.type||"")}</td><td>${item.description&&item.description!==item.type?userHtml(item.description):escapeHtml(systemMessage(item.type||""))}</td><td>${!force&&signed>0?money(signed):"—"}</td><td>${!force&&signed<0?money(-signed):"—"}</td><td>${money(item.running_balance)}</td><td>${action}</td></tr>`;
     }).join("") : '<tr><td colspan="7">所选月份没有现金明细。</td></tr>';
     $("cashLedgerRows").querySelectorAll("[data-cash-delete]").forEach(button=>button.addEventListener("click",()=>safely(()=>deleteCashItemV4(button.dataset.cashDelete))));
     const forceRows=withBalance.filter(isCashForceEntryV4), serverUnderstandsForce=!forceRows.length||forceRows.every(item=>item._serverRunningBalance);
@@ -206,13 +203,6 @@
     await saveRecord("global","cash_position",payload,"cashResultV4");
     state.cashPosition=null;state.cashPositionDatasetId=""; await loadCashLedgerV4(); $("cashResultV4").textContent = message;
   }
-  async function saveCashBaselineV4(){
-    const input=$("cashOpeningBalanceV4"), raw=input.value.trim(), date=$("cashOpeningDateV4").value;
-    if(!entered(raw)||num(raw)<0||!date)throw new Error("修正后的余额不能为负数，并且必须选择修正日期。");
-    const target=num(raw), payload=cashPayloadV4();
-    payload.transactions.push({id:uuid(),date,type:"余额强制修改",amount:target,description:"余额强制修改",mode:"force",system_locked:true,created_at:new Date().toISOString()});
-    await saveCashPayloadV4(payload,"余额已强制修正，原有明细均已保留。");input.value="";
-  }
   function openCashItemV4(){
     const overlay=document.createElement("div"); overlay.className="pro-modal-backdrop";
     overlay.innerHTML=`<section class="pro-modal cash-item-modal"><header><h2>现金余额表 · 加一项</h2><button type="button" data-close>关闭</button></header><div class="modal-body form-grid"><label>日期<input data-cash-date type="date" value="${isoDate(new Date())}"></label><label>类型<select data-cash-type><option>向股东借款</option><option>其它现金收入</option><option>其它现金支出</option><option>余额强制修改</option></select></label><label>金额／修正后余额<input data-cash-amount type="number" min="0" step="0.01"></label><label>说明<input data-cash-description placeholder="例如：张三借款"></label></div><footer><button class="primary" type="button" data-save>保存这一项</button></footer></section>`;
@@ -222,7 +212,7 @@
   async function deleteCashItemV4(id){
     const payload=cashPayloadV4(),target=payload.transactions.find(item=>String(item.id)===String(id));
     if(!target)return;
-    if(isCashEntryLockedV4(target))throw new Error("通过“把余额强行修正成：”保存的记录不能删除。");
+    if(isCashEntryLockedV4(target))throw new Error("历史余额校正记录已锁定，不能删除。");
     if(!confirm("确定删除这条手工现金项目吗？"))return;
     payload.transactions=payload.transactions.filter(item=>String(item.id)!==String(id));await saveCashPayloadV4(payload,"现金项目已删除。");
   }
@@ -233,7 +223,7 @@
     if(mode==="day"&&$("auditFilterDay").value){params.set("start_date",$("auditFilterDay").value);params.set("end_date",$("auditFilterDay").value);}
     if(mode==="month"&&$("auditFilterMonth").value){const [y,m]=$("auditFilterMonth").value.split("-").map(Number);params.set("start_date",`${y}-${String(m).padStart(2,"0")}-01`);params.set("end_date",`${y}-${String(m).padStart(2,"0")}-${String(daysInMonth(y,m)).padStart(2,"0")}`);}
     const rows=await api(`/audit?${params}`),items=Array.isArray(rows)?rows:(rows?.items||[]);
-    target.innerHTML=items.length?items.map(item=>`<tr><td>${escapeHtml(new Date(item.created_at||item.occurred_at).toLocaleString("zh-CN"))}</td><td>${escapeHtml(item.actor_label||item.actor_username||"—")}</td><td>${escapeHtml(auditActionLabel(item.action))}</td><td>${escapeHtml(state.dataset?.name||item.dataset_id||"—")}</td><td>${escapeHtml(`${item.record_type||""} ${item.record_key||""}`.trim())}</td><td class="audit-change-summary">${item.source==="inventory_name_correction"?`<small>${escapeHtml(auditSourceLabel(item.source))}</small>`:""}${escapeHtml(item.change_summary||"账本内容已更新")}</td><td>${permanentRole()==="admin"?`<button class="danger-link" data-delete-audit="${escapeHtml(item.id||"")}">删除</button>`:"—"}</td></tr>`).join(""):'<tr><td colspan="7">所选日期范围没有修改记录。</td></tr>';
+    target.innerHTML=items.length?items.map(item=>`<tr><td>${escapeHtml(new Date(item.created_at||item.occurred_at).toLocaleString(state.language==="en"?"en-US":"zh-CN"))}</td><td>${userHtml(item.actor_label||item.actor_username||"—")}</td><td>${escapeHtml(auditActionLabel(item.action))}</td><td>${userHtml(state.dataset?.name||item.dataset_id||"—")}</td><td>${escapeHtml(`${item.record_type||""} ${item.record_key||""}`.trim())}</td><td class="audit-change-summary">${item.source==="inventory_name_correction"?`<small>${escapeHtml(auditSourceLabel(item.source))}</small>`:""}${userHtml(typeof translateAuditSummary==="function"?translateAuditSummary(item.change_summary||"账本内容已更新",item):systemMessage(item.change_summary||"账本内容已更新"))}</td><td>${permanentRole()==="admin"?`<button class="danger-link" data-delete-audit="${escapeHtml(item.id||"")}">删除</button>`:"—"}</td></tr>`).join(""):'<tr><td colspan="7">所选日期范围没有修改记录。</td></tr>';
     target.querySelectorAll("[data-delete-audit]").forEach(button=>button.onclick=()=>safely(()=>deleteAuditLog(button.dataset.deleteAudit)));
   };
 
@@ -241,10 +231,10 @@
   async function loadTemporaryPermissionsV4(){
     if(permanentRole()!=="admin")return;
     const [users,grants]=await Promise.all([api("/users"),api("/temporary-permissions")]);grantUsersV4=users;
-    $("grantUser").innerHTML=users.filter(u=>u.role!=="admin"&&!u.is_test).map(u=>`<option value="${escapeHtml(u.id)}">${escapeHtml(u.display_name||u.username)} (${escapeHtml(u.username)})</option>`).join("");
-    $("grantDataset").innerHTML=state.datasets.filter(d=>!d.is_test).map(d=>`<option value="${escapeHtml(d.id)}">${escapeHtml(d.name||d.id)}</option>`).join("");
+    $("grantUser").innerHTML=users.filter(u=>u.role!=="admin"&&!u.is_test).map(u=>`<option data-user-content value="${escapeHtml(u.id)}">${escapeHtml(u.display_name||u.username)} (${escapeHtml(u.username)})</option>`).join("");
+    $("grantDataset").innerHTML=state.datasets.filter(d=>!d.is_test).map(d=>`<option data-user-content value="${escapeHtml(d.id)}">${escapeHtml(d.name||d.id)}</option>`).join("");
     const userNames=Object.fromEntries(users.map(u=>[u.id,u.display_name||u.username])),datasetNames=Object.fromEntries(state.datasets.map(d=>[d.id,d.name||d.id]));
-    $("grantRows").innerHTML=grants.length?grants.map(g=>`<tr><td>${escapeHtml(userNames[g.user_id]||g.user_id)}</td><td>${escapeHtml(datasetNames[g.dataset_id]||g.dataset_id)}</td><td>${g.permission_role==="editor"?"修改权限":"录入权限"}</td><td>${escapeHtml(g.business_start_date)} 至 ${escapeHtml(g.business_end_date)}</td><td>${escapeHtml(new Date(g.starts_at).toLocaleString("zh-CN"))} 至 ${escapeHtml(new Date(g.ends_at).toLocaleString("zh-CN"))}</td><td><button class="danger-link" data-delete-grant="${escapeHtml(g.id)}">删除</button></td></tr>`).join(""):'<tr><td colspan="6">暂无临时权限。</td></tr>';
+    $("grantRows").innerHTML=grants.length?grants.map(g=>`<tr><td>${userHtml(userNames[g.user_id]||g.user_id)}</td><td>${userHtml(datasetNames[g.dataset_id]||g.dataset_id)}</td><td>${g.permission_role==="editor"?"修改权限":"录入权限"}</td><td>${escapeHtml(g.business_start_date)} 至 ${escapeHtml(g.business_end_date)}</td><td>${escapeHtml(new Date(g.starts_at).toLocaleString(state.language==="en"?"en-US":"zh-CN"))} 至 ${escapeHtml(new Date(g.ends_at).toLocaleString(state.language==="en"?"en-US":"zh-CN"))}</td><td><button class="danger-link" data-delete-grant="${escapeHtml(g.id)}">删除</button></td></tr>`).join(""):'<tr><td colspan="6">暂无临时权限。</td></tr>';
     $("grantRows").querySelectorAll("[data-delete-grant]").forEach(button=>button.onclick=()=>safely(async()=>{await api(`/temporary-permissions/${encodeURIComponent(button.dataset.deleteGrant)}`,{method:"DELETE"});await loadTemporaryPermissionsV4();}));
   }
   async function createTemporaryPermissionV4(){
@@ -257,7 +247,7 @@
   const now=new Date(),later=new Date(now.getTime()+2*3600000),today=isoDate(now);
   for(const id of ["grantBusinessStart","grantBusinessEnd"])if($(id))$(id).value=today;
   if($("grantStartsAt"))$("grantStartsAt").value=localDatetime(now);if($("grantEndsAt"))$("grantEndsAt").value=localDatetime(later);
-  $("cashMonthFilter")?.addEventListener("change",renderCashLedgerV4);$("saveCashBaselineV4")?.addEventListener("click",()=>safely(saveCashBaselineV4));$("addCashItemV4")?.addEventListener("click",openCashItemV4);
+  $("cashMonthFilter")?.addEventListener("change",renderCashLedgerV4);$("addCashItemV4")?.addEventListener("click",openCashItemV4);
   $("auditFilterMode")?.addEventListener("change",()=>{const mode=$("auditFilterMode").value;$("auditFilterMonth").classList.toggle("hidden",mode!=="month");$("auditFilterDay").classList.toggle("hidden",mode!=="day");});
   $("auditFilterButton")?.addEventListener("click",()=>safely(loadChangeLogs));$("createGrantButton")?.addEventListener("click",()=>safely(createTemporaryPermissionV4));
   $("ledgerDate")?.addEventListener("change",applyScheduledUi);$("foodDate")?.addEventListener("change",applyScheduledUi);$("spiceDate")?.addEventListener("change",applyScheduledUi);$("dishDate")?.addEventListener("change",applyScheduledUi);

@@ -16,14 +16,18 @@ function storeReplace(text){
 }
 function applyStoreNames(root=document.getElementById("appView")){
   if(!root)return;
-  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-  const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
   for(const node of nodes){
-    const parent=node.parentElement;if(!parent||["SCRIPT","STYLE"].includes(parent.tagName))continue;
-    if(!v26OriginalTexts.has(node))v26OriginalTexts.set(node,node.nodeValue||"");
-    node.nodeValue=storeReplace(v26OriginalTexts.get(node));
+    const parent=node.parentElement;if(!parent||parent.closest("script,style,textarea,[data-user-content]")||typeof v8UserContent==="function"&&v8UserContent(node))continue;
+    const current=node.nodeValue||"",saved=v26OriginalTexts.get(node);
+    const source=saved&&saved.output===current?saved.source:current;
+    if(!/A店|B店/.test(source))continue;
+    const display=state.language==="en"&&typeof v8TranslateValue==="function"&&!/^[AB]店$/.test(source.trim())?v8TranslateValue(source):source;
+    const next=storeReplace(display);
+    v26OriginalTexts.set(node,{source,output:next});
+    if(current!==next)node.nodeValue=next;
   }
-  document.querySelectorAll("[data-store-placeholder]").forEach(node=>{node.placeholder=storeReplace(node.dataset.storePlaceholder||"");});
+  document.querySelectorAll("[data-store-placeholder]").forEach(node=>{const source=node.dataset.storePlaceholder||"";const next=storeReplace(state.language==="en"&&typeof v8TranslateValue==="function"?v8TranslateValue(source):source);if(node.placeholder!==next)node.placeholder=next;});
 }
 function yesterdayIso(){const d=new Date();d.setDate(d.getDate()-1);return isoDate(d);}
 
@@ -80,7 +84,7 @@ function renderStoreSettings(){
 }
 function refreshV26DatasetTargets(){
   // 演示账本可作为“整套内部 Excel 覆盖”的目标；后端会保留它原有的账本名称。
-  for(const id of ["overwriteTargetDataset","copyTargetDataset"]){const select=$(id);if(!select)continue;const current=select.value;select.innerHTML=state.datasets.filter(d=>d.id!==state.dataset?.id).map(d=>`<option value="${escapeHtml(d.id)}">${escapeHtml(d.name||d.id)}</option>`).join("");if([...select.options].some(o=>o.value===current))select.value=current;}
+  for(const id of ["overwriteTargetDataset","copyTargetDataset"]){const select=$(id);if(!select)continue;const current=select.value;select.innerHTML=state.datasets.filter(d=>d.id!==state.dataset?.id).map(d=>`<option data-user-content value="${escapeHtml(d.id)}">${escapeHtml(d.name||d.id)}</option>`).join("");if([...select.options].some(o=>o.value===current))select.value=current;}
 }
 async function saveStoreNamesV26(){
   const context=v26StoreContext();if(!context.datasetId)throw new Error("尚未选择账本。");v26StoreSettingsRevision++;
@@ -151,20 +155,20 @@ async function syncMissingWechatMonthV26(){const month=($("ledgerDate")?.value||
 syncWechatBill=function(){return syncMissingWechatMonthV26();};
 
 function storeTotalsFor(metrics){return{a:metrics.reduce((s,m)=>s+num(m?.storeA),0),b:metrics.reduce((s,m)=>s+num(m?.storeB),0)};}
-function injectStoreRows(cardId,a,b,sdMetrics=null){const list=$(cardId)?.querySelector(".metric-list");if(!list)return;list.querySelectorAll(".v26-store-row").forEach(n=>n.remove());const first=list.firstElementChild;const valueA=sdMetrics?metricMoneySd(a,sdMetrics,"storeA"):money(a),valueB=sdMetrics?metricMoneySd(b,sdMetrics,"storeB"):money(b);const html=`<div class="metric-row v26-store-row"><span>${escapeHtml(storeName("A"))}收入</span><strong>${valueA}</strong></div><div class="metric-row v26-store-row"><span>${escapeHtml(storeName("B"))}收入</span><strong>${valueB}</strong></div>`;if(first)first.insertAdjacentHTML("afterend",html);else list.insertAdjacentHTML("beforeend",html);}
+function injectStoreRows(cardId,a,b,sdMetrics=null){const list=$(cardId)?.querySelector(".metric-list");if(!list)return;list.querySelectorAll(".v26-store-row").forEach(n=>n.remove());const first=list.firstElementChild;const valueA=sdMetrics?metricMoneySd(a,sdMetrics,"storeA"):money(a),valueB=sdMetrics?metricMoneySd(b,sdMetrics,"storeB"):money(b);const html=`<div class="metric-row v26-store-row"><span>${userHtml(storeName("A"))}收入</span><strong>${valueA}</strong></div><div class="metric-row v26-store-row"><span>${userHtml(storeName("B"))}收入</span><strong>${valueB}</strong></div>`;if(first)first.insertAdjacentHTML("afterend",html);else list.insertAdjacentHTML("beforeend",html);}
 const v26DashboardBase=renderDashboard;
 renderDashboard=function(){v26DashboardBase();const c=selectedContext(),all=dataDayMetrics().filter(m=>m.date<=isoDate(new Date())),week=all.filter(m=>{const d=parseDate(m.date);return d>=c.weekStart&&d<=c.weekEnd;}),month=all.filter(m=>m.date.startsWith(`${c.year}-${String(c.month).padStart(2,"0")}`)),year=all.filter(m=>m.date.startsWith(`${c.year}-`));injectStoreRows("dayCard",c.day?.storeA||0,c.day?.storeB||0,c.monthAverageMetrics||c.monthMetrics);let t=storeTotalsFor(week);injectStoreRows("weekCard",t.a,t.b);t=storeTotalsFor(month);injectStoreRows("monthCard",t.a,t.b);t=storeTotalsFor(year);injectStoreRows("yearCard",t.a,t.b);applyStoreNames();};
 
 renderHistory=function(){
   const month=$("historyMonth").value||($("selectedDate").value||"").slice(0,7);if(!month)return;const table=$("historyRows")?.closest("table");if(!table)return;
-  table.querySelector("thead tr").innerHTML=`<th>日期</th><th>总收入</th><th>${escapeHtml(storeName("A"))}收入</th><th>${escapeHtml(storeName("B"))}收入</th><th>新客</th><th>总客数</th><th>食材总价格</th><th>佐料明细</th><th>当日总固定成本</th><th>其它明细</th><th>当日备注</th><th>毛利润（毛利率）</th><th>净利润（净利率）</th>`;
-  const items=state.days.filter(row=>String(row.日期).startsWith(month));const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${money(m.storeA)}</td><td>${money(m.storeB)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(detailCellDisplay(row.其他明细))}</td><td>${escapeHtml(row.当日备注||"")}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
+  table.querySelector("thead tr").innerHTML=`<th>日期</th><th>总收入</th><th>${userHtml(storeName("A"))}收入</th><th>${userHtml(storeName("B"))}收入</th><th>新客</th><th>总客数</th><th>食材总价格</th><th>佐料明细</th><th>当日总固定成本</th><th>其它明细</th><th>当日备注</th><th>毛利润（毛利率）</th><th>净利润（净利率）</th>`;
+  const items=state.days.filter(row=>String(row.日期).startsWith(month));const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${money(m.storeA)}</td><td>${money(m.storeB)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${userHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${userHtml(detailCellDisplay(row.其他明细))}</td><td>${userHtml(row.当日备注||"")}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
   const fixed=fixedBreakdown(Number(month.slice(0,4)),Number(month.slice(5,7)));const fixedRow=`<tr class="month-summary-row"><td colspan="13"> ${month} 本月共享固定成本汇总 · 人工: ${money(fixed.labour)} · 房租: ${money(fixed.rent)} · 水费: ${money(fixed.water)} · 电费: ${money(fixed.electric)} · 煤气: ${money(fixed.gas)} · 其它: ${money(fixed.other)}</td></tr>`;const blanks=Array.from({length:Math.max(0,25-items.length)},()=>'<tr class="blank-row">'+Array.from({length:13},(_,i)=>`<td>${i===0?'&nbsp;':''}</td>`).join("")+'</tr>').join("");$("historyRows").innerHTML=fixedRow+rows+blanks;applyStoreNames();
 };
 
 async function bulkDeleteRangeV26(){
   const start=$("bulkDeleteStart").value,end=$("bulkDeleteEnd").value;if(!start||!end)throw new Error("请选择开始和结束日期。");if(end<start)throw new Error("结束日期不能早于开始日期。");
-  if(!confirm(`确定删除 ${start} 至 ${end} 的全部日数据吗？菜品、采购明细和当天固定支出都会一起删除。`))return;const typed=prompt('这是不可逆操作。请输入“删除”再次确认：','');if(typed!=="删除")return;
+  if(!confirm(`确定删除 ${start} 至 ${end} 的全部日数据吗？菜品、采购明细和当天固定支出都会一起删除。`))return;const typed=prompt('这是不可逆操作。请输入“删除”再次确认：','');if(typed!==(state.language==="en"?"DELETE":"删除"))return;
   const result=await api(`/datasets/${encodeURIComponent(state.dataset.id)}/records/bulk-delete`,{method:"POST",body:JSON.stringify({start_date:start,end_date:end,delete_month_records:false,delete_inventory_in_range:true})});$("bulkDeleteResult").textContent=`已删除 ${result.deleted_days} 天数据；清除 ${result.inventory_rows_removed} 条库存时间记录。`;await loadCloudData({datasetId:state.dataset.id});
 }
 async function bulkDeleteMonthV26(){

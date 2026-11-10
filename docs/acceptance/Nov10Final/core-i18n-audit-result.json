@@ -1,0 +1,21 @@
+{
+  "source": "web/i18n-extra-en.js",
+  "sha256": "e4e02efc3afa668b919af4324b710d8b3545782a98cdcfd2bc7bbd69c8d38fdd",
+  "labels": 304,
+  "anchored_message_templates": 30,
+  "anchored_fragments": 10,
+  "chinese_passthrough_checks": 304,
+  "source_files_audited": [
+    "app.js",
+    "pro.js",
+    "v8.js",
+    "v28.js",
+    "sep04.js",
+    "sep05.js",
+    "sep07.js",
+    "oct29.js",
+    "index.html"
+  ],
+  "method": "Acorn extraction of literals/templates and HTMLParser text/placeholder/title/aria-label/data-label scan, manual UI/data classification, independent VM catalog checks",
+  "limitations": "Static catalog checks do not prove every runtime dialog is reached; parent browser tests verify render integration and protected user-content nodes."
+}

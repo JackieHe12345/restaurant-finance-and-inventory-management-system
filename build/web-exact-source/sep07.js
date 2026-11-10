@@ -62,6 +62,7 @@
       if(!output || !output.isConnected){
         output=document.createElement("span");
         output.className="readonly-value";
+        output.setAttribute("data-user-content","");
         output.setAttribute("aria-live","off");
         control.insertAdjacentElement("afterend",output);
         control.__sep07ReadOnlyOutput=output;
@@ -82,9 +83,10 @@
     const english=state.language === "en", writable=hasWritePermission(), readOnly=isPresentationReadOnly();
     button.disabled=!writable;
     button.setAttribute("aria-pressed",String(readOnly));
-    button.title=!writable
+    const title=!writable
       ? (english ? "This account does not have permission to edit." : "当前账号没有修改权限。")
       : (readOnly ? (english ? "Switch to editable mode" : "切换至可修改模式") : (english ? "Switch to read-only mode" : "切换至只读模式"));
+    if(button.title!==title)button.title=title;
     const label=!writable
       ? (english ? "Read-only mode" : "只读模式")
       : (readOnly ? (english ? "Editable mode" : "可修改模式") : (english ? "Read-only mode" : "只读模式"));

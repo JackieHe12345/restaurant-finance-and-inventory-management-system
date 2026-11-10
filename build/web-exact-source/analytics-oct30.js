@@ -1,4 +1,4 @@
-/* v1.0.1 — task-oriented analytics. All amounts remain Exact decimals. */
+/* v1.0.2 — evidence-led analytics workspace. Amounts remain Exact decimals. */
 (function(root){
   'use strict';
   const E=root.Exact, ZERO=()=>E.decimal(0);
@@ -12,19 +12,19 @@
   ];
   const fixedFields={labour:['人工总额'],rent:['房租总额'],water:['水费支出','水电费'],electric:['电费支出'],gas:['煤气费'],fixedOther:['其它固定成本']};
   const dailyFields={food:'food',spice:'spice',fees:'fees',dailyUtilities:'waterDaily',other:'other'};
-  const ctx={month:'',view:'overview',basis:'monthly',category:'all',metric:'net',search:'',page:1,dataset:'',lastRows:[],lastHeaders:[],installed:false};
+  const ctx={month:'',view:'overview',basis:'monthly',category:'all',metric:'net',search:'',page:1,dataset:'',lastRows:[],lastHeaders:[],totalColumns:[],countColumns:[],sortColumn:0,sortDirection:1,chartKind:'line',installed:false};
   const txt=(zh,en)=>typeof state!=='undefined'&&state.language==='en'?en:zh;
   const esc=v=>escapeHtml(String(v??''));
   const amount=v=>E.decimal(v??0);
   const sum=values=>E.sum(values);
   const add=(a,b)=>E.calculate.add(a,b),sub=(a,b)=>E.calculate.sub(a,b),div=(a,b)=>E.calculate.div(a,b);
   const label=key=>{const c=COSTS.find(c=>c[0]===key);return c?txt(c[1],c[2]):txt('全部费用','All expenses');};
-  const formatMoney=v=>v===null?'—':amount(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const formatCount=v=>v===null?'—':amount(v).toLocaleString('zh-CN',{maximumFractionDigits:2});
+  const formatMoney=v=>v===null?'—':amount(v).toLocaleString(txt('zh-CN','en-US'),{minimumFractionDigits:2,maximumFractionDigits:2});
+  const formatCount=v=>v===null?'—':amount(v).toLocaleString(txt('zh-CN','en-US'),{maximumFractionDigits:2});
   const monthValid=m=>/^\d{4}-(0[1-9]|1[0-2])$/.test(m||'');
   function monthShift(m,n){const [y,v]=m.split('-').map(Number),d=new Date(y,v-1+n,1);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;}
-  function costCategory(v){const s=String(v||'').trim();if(/人工|工资|薪资|劳务/.test(s))return'labour';if(/房租|物业|租金/.test(s))return'rent';if(/煤气|燃气/.test(s))return'gas';if(/电费/.test(s))return'electric';if(/水费|水电/.test(s))return'water';return'fixedOther';}
-  function expenseRecords(month){const rows=[];for(const record of state.records||[]){if(record.is_deleted||String(record.record_type||record.type)!=='day')continue;const payload=unpackPayload(record);for(const item of payload.fixed_expenses||[]){const date=normalizeDateKey(item.日期||record.record_key||'');if(!date.startsWith(month+'-'))continue;rows.push({date,category:costCategory(item.类别),description:String(item.明细||item.说明||item.类别||''),amount:amount(item.金额??item.amount??0),source:txt('逐笔固定支出','Itemized fixed expense'),rawCategory:String(item.类别||'')});}}return rows.sort((a,b)=>a.date.localeCompare(b.date));}
+  function costCategory(v){const s=String(v||'').trim();if(/人工|工资|薪资|劳务|labou?r|wages?|salary/i.test(s))return'labour';if(/房租|物业|租金|rent|property/i.test(s))return'rent';if(/煤气|燃气|gas/i.test(s))return'gas';if(/电费|electricity/i.test(s))return'electric';if(/水费|水电|water|utilities/i.test(s))return'water';return'fixedOther';}
+  function expenseRecords(month){const rows=[];for(const record of state.records||[]){if(record.is_deleted||String(record.record_type||record.type)!=='day')continue;const payload=unpackPayload(record);for(const item of payload.fixed_expenses||[]){const date=normalizeDateKey(item.日期||record.record_key||'');if(!date.startsWith(month+'-'))continue;rows.push({date,category:costCategory(item.类别),description:String(item.明细||item.说明||(item.类别?label(costCategory(item.类别)):'')),amount:amount(item.金额??item.amount??0),source:txt('逐笔固定支出','Itemized fixed expense'),rawCategory:String(item.类别||'')});}}return rows.sort((a,b)=>a.date.localeCompare(b.date));}
   function monthlyModel(month){
     const metrics=(state.days||[]).map(dayMetrics).filter(v=>v&&v.date.startsWith(month+'-')).sort((a,b)=>a.date.localeCompare(b.date));
     const fixed=state.months.get(month)||state.months.get(month.replace('-','/'))||{};
@@ -66,19 +66,20 @@
       <section class="oa-filter analytics-controls"><div class="oa-period"><button id="oaPrevious" type="button" aria-label="上个月">‹</button><label><span id="oaMonthLabel"></span><input id="oaMonth" type="month"></label><button id="oaNext" type="button" aria-label="下个月">›</button><button id="oaThisMonth" class="soft" type="button"></button></div><div id="oaCoverage" class="oa-coverage"></div></section>
       <nav class="oa-tabs" aria-label="统计主题"><button type="button" data-oa-view="overview"></button><button type="button" data-oa-view="costs"></button><button type="button" data-oa-view="customers"></button><button type="button" id="oaIngredients"></button><button type="button" id="oaAdvancedLink"></button></nav>
       <div id="oaCostControls" class="oa-cost-controls analytics-controls"><label><span id="oaBasisLabel"></span><select id="oaBasis"><option value="monthly"></option><option value="itemized"></option></select></label><label><span id="oaCategoryLabel"></span><select id="oaCategory"></select></label><p id="oaBasisHelp"></p></div>
-      <section id="oaKpis" class="oa-kpis" aria-live="polite"></section>
-      <section class="oa-chart-grid"><article class="oa-panel oa-primary"><header><div><small id="oaTrendEyebrow"></small><h2 id="oaTrendTitle"></h2></div><label id="oaMetricWrap" class="analytics-controls"><span class="oa-sr-only">选择趋势指标</span><select id="oaMetric"></select></label></header><div id="oaTrend" class="oa-chart"></div><p class="oa-note" id="oaTrendNote"></p></article><article class="oa-panel oa-secondary"><header><div><small id="oaCompareEyebrow"></small><h2 id="oaCompareTitle"></h2></div></header><div id="oaCompare" class="oa-chart"></div><p class="oa-note" id="oaCompareNote"></p></article></section>
+      <div class="oa-basis-banner"><span id="oaViewBasis"></span><span id="oaCompareBasis"></span></div><section id="oaKpis" class="oa-kpis" aria-live="polite"></section><section id="oaInsights" class="oa-insights" aria-label=""></section>
+      <section class="oa-chart-grid"><article class="oa-panel oa-primary"><header><div><small id="oaTrendEyebrow"></small><h2 id="oaTrendTitle"></h2></div><div class="oa-chart-controls"><label id="oaMetricWrap" class="analytics-controls"><span id="oaMetricLabel" class="oa-sr-only"></span><select id="oaMetric"></select></label><label id="oaStyleWrap" class="analytics-controls"><span id="oaStyleLabel" class="oa-sr-only"></span><select id="oaChartKind"><option value="line"></option><option value="bar"></option></select></label></div></header><div id="oaTrendStats" class="oa-chart-stats"></div><div id="oaTrend" class="oa-chart"></div><p class="oa-note" id="oaTrendNote"></p></article><article class="oa-panel oa-secondary"><header><div><small id="oaCompareEyebrow"></small><h2 id="oaCompareTitle"></h2></div></header><div id="oaCompare" class="oa-chart"></div><p class="oa-note" id="oaCompareNote"></p></article></section>
       <section id="oaCostBreakdown" class="oa-panel"><header><div><small id="oaCostEyebrow"></small><h2 id="oaCostTitle"></h2></div><button type="button" id="oaAllCosts" class="soft"></button></header><div id="oaCostRows" class="oa-cost-rows"></div></section>
-      <section class="oa-panel oa-detail-panel"><header><div><small id="oaDetailEyebrow"></small><h2 id="oaDetailTitle"></h2></div><label class="analytics-controls oa-search"><span class="oa-sr-only">搜索明细</span><input id="oaSearch" type="search"></label></header><p id="oaTableHelp" class="oa-note"></p><div class="oa-table-scroll"><table class="oa-table"><thead id="oaHead"></thead><tbody id="oaRows"></tbody></table></div><footer class="oa-table-footer"><span id="oaTableCount"></span><div><button type="button" id="oaPagePrevious">‹</button><span id="oaPageLabel"></span><button type="button" id="oaPageNext">›</button></div></footer></section>
+      <section class="oa-panel oa-detail-panel"><header><div><small id="oaDetailEyebrow"></small><h2 id="oaDetailTitle"></h2></div><label class="analytics-controls oa-search"><span id="oaSearchLabel" class="oa-sr-only"></span><input id="oaSearch" type="search"></label></header><p id="oaTableHelp" class="oa-note"></p><div class="oa-table-scroll"><table class="oa-table"><thead id="oaHead"></thead><tbody id="oaRows"></tbody><tfoot id="oaTotals"></tfoot></table></div><footer class="oa-table-footer"><span id="oaTableCount"></span><div><button type="button" id="oaPagePrevious">‹</button><span id="oaPageLabel"></span><button type="button" id="oaPageNext">›</button></div></footer></section>
       <details class="oa-method"><summary id="oaMethodTitle"></summary><p id="oaMethodText"></p></details>`);
     $('oaPrevious').onclick=()=>changeMonth(monthShift(ctx.month,-1));$('oaNext').onclick=()=>changeMonth(monthShift(ctx.month,1));
     $('oaMonth').onchange=()=>{if(monthValid($('oaMonth').value))changeMonth($('oaMonth').value);else $('oaMonth').value=ctx.month;};
     $('oaThisMonth').onclick=()=>changeMonth(isoDate(new Date()).slice(0,7));
-    page.querySelectorAll('[data-oa-view]').forEach(b=>b.onclick=()=>{ctx.view=b.dataset.oaView;ctx.category='all';ctx.page=1;ctx.search='';ctx.metric=ctx.view==='customers'?'customers':'net';render();});
+    page.querySelectorAll('[data-oa-view]').forEach(b=>b.onclick=()=>{ctx.view=b.dataset.oaView;ctx.category='all';ctx.page=1;ctx.search='';ctx.metric=ctx.view==='customers'?'customers':'net';ctx.sortColumn=0;ctx.sortDirection=1;render();});
     $('oaBasis').onchange=()=>{ctx.basis=$('oaBasis').value;ctx.page=1;render();};
     $('oaCategory').onchange=()=>{ctx.category=$('oaCategory').value;ctx.page=1;render();};
     $('oaMetric').onchange=()=>{ctx.metric=$('oaMetric').value;render();};
-    $('oaAllCosts').onclick=()=>{ctx.view='costs';ctx.category='all';ctx.page=1;render();};
+    $('oaChartKind').onchange=()=>{ctx.chartKind=$('oaChartKind').value==='bar'?'bar':'line';render();};
+    $('oaAllCosts').onclick=()=>{ctx.view='costs';ctx.category='all';ctx.page=1;ctx.sortColumn=0;ctx.sortDirection=1;render();};
     $('oaSearch').oninput=()=>{ctx.search=$('oaSearch').value;ctx.page=1;renderTable();};
     $('oaPagePrevious').onclick=()=>{ctx.page=Math.max(1,ctx.page-1);renderTable();};$('oaPageNext').onclick=()=>{ctx.page++;renderTable();};
     $('oaExport').onclick=exportCsv;
@@ -93,7 +94,33 @@
     const display=value===null?'—':kind==='money'?formatMoney(value):kind==='rate'?formatCount(value)+'%':formatCount(value);
     const comparable=value!==null&&previous!==null,difference=comparable?sub(value,previous):null;
     const delta=comparable?`${E.cmp(difference,0)>0?'+':''}${kind==='money'?formatMoney(difference):formatCount(difference)}${kind==='rate'?txt(' 个百分点',' pp'):''}`:txt('暂无可比数据','No comparison data');
-    return`<article class="oa-kpi"><span>${esc(title)}</span><strong class="${value!==null&&E.cmp(value,0)<0?'oa-negative':''}">${esc(display)}${kind==='money'?'<em>元</em>':''}</strong><small>${esc(note||txt('较上月已记账数据','vs recorded data last month'))}<b>${esc(delta)}</b></small></article>`;
+    return`<article class="oa-kpi"><span>${esc(title)}</span><strong class="${value!==null&&E.cmp(value,0)<0?'oa-negative':''}">${esc(display)}${kind==='money'?'<em>'+txt('元','CNY')+'</em>':''}</strong><small>${esc(note||txt('较上月已记账数据','vs recorded data last month'))}<b>${esc(delta)}</b></small></article>`;
+  }
+  function renderTrendStats(values,formatter,scope){
+    const available=values.filter(v=>v!==null&&v!==undefined),ordered=available.slice().sort((a,b)=>E.cmp(a,b));
+    const stats=[[txt('平均值','Mean'),available.length?div(sum(available),available.length):null],[txt('最低值','Low'),ordered[0]??null],[txt('最高值','High'),ordered[ordered.length-1]??null]];
+    $('oaTrendStats').innerHTML=stats.map(([name,value])=>`<div><span>${esc(name)}</span><strong>${value===null?'—':esc(formatter(value))}</strong></div>`).join('')+`<small>${available.length} ${esc(scope)}</small>`;
+  }
+  function renderInsights(model){
+    const card=(eyebrow,value,note)=>`<article class="oa-insight"><span>${esc(eyebrow)}</span><strong>${esc(value)}</strong><p>${esc(note)}</p></article>`;
+    const fullDays=daysInMonth(Number(ctx.month.slice(0,4)),Number(ctx.month.slice(5))),knownDays=model.metrics.length;
+    let html=card(txt('数据覆盖','DATA COVERAGE'),`${knownDays} / ${fullDays}`,txt('已录入日期 / 日历天数；空白日期不视为零。','Recorded dates / calendar days. Missing dates are not treated as zero.'));
+    if(ctx.view==='customers'){
+      const available=model.metrics.filter(m=>E.cmp(m.customers,0)>0),top=available.slice().sort((a,b)=>E.cmp(b.customers,a.customers))[0];
+      html+=card(txt('客流最高日','BUSIEST RECORDED DAY'),top?`${top.date} · ${formatCount(top.customers)}`:'—',txt('仅对已录入且客数大于零的日期排序。','Ranks recorded days with a positive customer count.'));
+      html+=card(txt('客流记录完整性','CUSTOMER DATA'),`${available.length} / ${knownDays}`,txt('有客数的日期 / 已录入日期；客单价只在总客数大于零时计算。','Days with customers / recorded days. Average spend requires a positive customer count.'));
+    }else{
+      const values=ctx.view==='costs'&&ctx.basis==='itemized'?model.itemized:model.costs,total=sum(Object.values(values)),top=COSTS.map(c=>({key:c[0],value:values[c[0]]})).filter(c=>E.cmp(c.value,0)>0).sort((a,b)=>E.cmp(b.value,a.value))[0];
+      html+=card(txt('最大费用类别','LARGEST EXPENSE'),top?`${label(top.key)} · ${formatMoney(top.value)}`:'—',top&&E.cmp(total,0)>0?`${txt('占所选口径总额','Share of the selected basis')}: ${formatCount(E.calculate.mul(div(top.value,total),100))}%`:txt('暂无可比的正数费用记录。','No comparable positive expense values.'));
+      if(ctx.view==='costs'){
+        const comparable=model.fixedKnown&&model.expenses.length>0,difference=comparable?sub(model.fixedTotal,model.itemizedTotal):null;
+        html+=card(txt('固定支出核对差额','FIXED-EXPENSE RECONCILIATION'),difference===null?'—':`${E.cmp(difference,0)>0?'+':''}${formatMoney(difference)}`,txt('整月固定支出 − 已录入逐笔固定支出；仅用于核对，不重复加总。','Full monthly fixed expenses minus itemized fixed entries. For reconciliation only; never added together.'));
+      }else{
+        const profitable=model.metrics.filter(m=>E.cmp(m.net,0)>0).length;
+        html+=card(txt('已录入盈利日','PROFITABLE RECORDED DAYS'),knownDays?`${profitable} / ${knownDays}`:'—',txt('按日核算净利润大于零的日期；沿用固定成本按日分摊口径。','Recorded days with positive daily net profit, using the existing daily fixed-cost allocation.'));
+      }
+    }
+    $('oaInsights').innerHTML=html;
   }
   function render(){
     install();if(!ctx.installed)return;
@@ -101,7 +128,12 @@
     if(!monthValid(ctx.month))ctx.month=defaultMonth();
     const model=getModel(ctx.month),previous=getModel(monthShift(ctx.month,-1));ctx.model=model;
     setText('oaTitle',txt('经营分析','Business analytics'));setText('oaSubtitle',txt('从经营结果到每笔费用，按月查看、对比与追溯。','Review monthly performance, compare costs and trace their sources.'));
-    setText('oaExport',txt('导出当前明细 CSV','Export detail CSV'));setText('oaMonthLabel',txt('分析月份','Month'));setText('oaThisMonth',txt('本月','This month'));$('oaMonth').value=ctx.month;
+    setText('oaExport',txt('导出当前明细 CSV','Export detail CSV'));
+    $('oaPrevious').setAttribute('aria-label',txt('上个月','Previous month'));$('oaNext').setAttribute('aria-label',txt('下个月','Next month'));
+    $('oaPagePrevious').setAttribute('aria-label',txt('上一页明细','Previous detail page'));$('oaPageNext').setAttribute('aria-label',txt('下一页明细','Next detail page'));
+    document.querySelector('#pageStats .oa-tabs').setAttribute('aria-label',txt('统计主题','Analysis topics'));
+    setText('oaMetricLabel',txt('选择分析指标','Analysis metric'));setText('oaStyleLabel',txt('图表类型','Chart style'));setText('oaSearchLabel',txt('搜索明细','Search details'));
+    $('oaChartKind').options[0].textContent=txt('折线图','Line chart');$('oaChartKind').options[1].textContent=txt('柱状图','Bar chart');$('oaChartKind').value=ctx.chartKind;$('oaStyleWrap').hidden=ctx.view==='costs';setText('oaMonthLabel',txt('分析月份','Month'));$('oaMonth').lang=txt('zh-CN','en-US');setText('oaThisMonth',txt('本月','This month'));$('oaMonth').value=ctx.month;
     setText('oaCoverage',`${ctx.month} · ${txt('已记账','Recorded')} ${model.metrics.length} ${txt('天','days')} / ${daysInMonth(Number(ctx.month.slice(0,4)),Number(ctx.month.slice(5)))} ${txt('天','days')}`);
     const labels={overview:txt('经营概览','Overview'),costs:txt('费用分析','Expenses'),customers:txt('客流分析','Customers')};document.querySelectorAll('[data-oa-view]').forEach(b=>{b.textContent=labels[b.dataset.oaView];b.classList.toggle('active',b.dataset.oaView===ctx.view);b.setAttribute('aria-pressed',String(b.dataset.oaView===ctx.view));});
     setText('oaIngredients',txt('食材采购与消耗','Purchasing & usage'));setText('oaAdvancedLink',txt('自由分析','Custom analysis'));setText('oaAdvancedSummary',txt('自由分析 · 多月份、星期筛选、食材采购与消耗、库存明细','Custom analysis · months, weekdays, purchasing, usage and inventory'));
@@ -109,6 +141,8 @@
     $('oaBasis').options[0].textContent=txt('月度支出汇总','Monthly expense totals');$('oaBasis').options[1].textContent=txt('逐笔固定支出','Itemized fixed expenses');$('oaBasis').value=ctx.basis;
     $('oaCategory').innerHTML=`<option value="all">${txt('全部费用','All expenses')}</option>`+COSTS.map(c=>`<option value="${c[0]}">${esc(label(c[0]))}</option>`).join('');$('oaCategory').value=ctx.category;
     setText('oaBasisHelp',ctx.basis==='monthly'?txt('日常支出取自日流水；人工、房租等取月度固定成本保存值。逐笔记录不再重复加总。','Daily costs come from the ledger; labour and rent use saved monthly totals. Itemized entries are not added again.'):txt('仅统计逐笔固定支出记录的日期与金额。未录入流水不代表没有发生支出。','Only dated fixed-expense entries are included. Missing entries do not mean no spending occurred.'));
+    setText('oaViewBasis',ctx.view==='costs'?(ctx.basis==='monthly'?txt('口径 · 日常支出 + 整月固定支出','BASIS · Daily expenses + full monthly fixed expenses'):txt('口径 · 仅逐笔固定支出','BASIS · Itemized fixed expenses only')):txt('口径 · 已录入日期；固定成本按日分摊','BASIS · Recorded dates; fixed costs allocated by day'));
+    setText('oaCompareBasis',`${txt('对比月份','COMPARISON')} · ${monthShift(ctx.month,-1)}`);
     const present=(m,key)=>metricValue(m,key);
     if(ctx.view==='costs'){
       const v=costValue(model,ctx.category,ctx.basis),p=costValue(previous,ctx.category,ctx.basis);
@@ -118,6 +152,7 @@
     }else{
       $('oaKpis').innerHTML=kpi(txt('营业收入','Revenue'),present(model,'revenue'),present(previous,'revenue'))+kpi(txt('已记账日净利润','Net profit • recorded days'),present(model,'net'),present(previous,'net'))+kpi(txt('已记账日成本','Cost • recorded days'),present(model,'total'),present(previous,'total'))+kpi(txt('净利率','Net margin'),model.margin,previous.margin,'rate');
     }
+    renderInsights(model);
     const year=ctx.month.slice(0,4),months=Array.from({length:12},(_,i)=>`${year}-${String(i+1).padStart(2,'0')}`),yearModels=months.map(getModel);
     $('oaMetricWrap').hidden=ctx.view==='costs';
     const metricOptions=ctx.view==='customers'?[['customers',txt('总客人数','Customers')],['fresh',txt('新客人数','New customers')],['ticket',txt('平均客单价','Average spend')]]:[['net',txt('净利润','Net profit')],['revenue',txt('营业收入','Revenue')],['gross',txt('毛利润','Gross profit')],['total',txt('总成本','Total cost')]];
@@ -130,7 +165,7 @@
     if(ctx.view==='costs'){
       const values=yearModels.map(m=>costValue(m,ctx.category,ctx.basis));
       if(ctx.basis==='monthly'){
-        setText('oaTrendTitle',`${year} · ${label(ctx.category)}`);chart($('oaTrend'),{labels:months,series:[{name:label(ctx.category),values,color:'#315dc5'}],kind:'bar',format:formatMoney});
+        setText('oaTrendTitle',`${year} · ${label(ctx.category)}`);renderTrendStats(values,formatMoney,txt('已有月份','available months'));chart($('oaTrend'),{labels:months,series:[{name:label(ctx.category),values,color:'#315dc5'}],kind:'bar',format:formatMoney});
         setText('oaTrendNote',txt('月度汇总按整月保存值展示，不虚构每天的人工、房租支出。','Monthly totals use whole-month saved amounts, without fabricating daily labour or rent payments.'));
         setText('oaCompareTitle',txt('本月固定支出 · 两种口径','Monthly fixed expenses · two bases'));
         const fixedKeys=Object.keys(fixedFields).filter(k=>ctx.category==='all'||ctx.category===k);
@@ -138,24 +173,27 @@
         setText('oaCompareNote',txt('两列是核对关系，不相加；差异通常表示尚未逐笔补齐或月度汇总未更新。','These columns are for reconciliation, not addition. Differences may reflect incomplete itemization or outdated monthly totals.'));
       }else{
         const selected=model.expenses.filter(r=>ctx.category==='all'||r.category===ctx.category),dates=[...new Set(selected.map(r=>r.date))];
-        setText('oaTrendTitle',txt('逐笔支出日期分布','Dated expense entries'));chart($('oaTrend'),{labels:dates,series:[{name:label(ctx.category),values:dates.map(d=>sum(selected.filter(r=>r.date===d).map(r=>r.amount))),color:'#1b8a79'}],kind:'bar',format:formatMoney});
+        const dailyTotals=dates.map(d=>sum(selected.filter(r=>r.date===d).map(r=>r.amount)));renderTrendStats(dailyTotals,formatMoney,txt('支出日期','expense dates'));
+        setText('oaTrendTitle',txt('逐笔支出日期分布','Dated expense entries'));chart($('oaTrend'),{labels:dates,series:[{name:label(ctx.category),values:dailyTotals,color:'#1b8a79'}],kind:'bar',format:formatMoney});
         setText('oaCompareTitle',`${year} · ${label(ctx.category)}`);chart($('oaCompare'),{labels:months,series:[{name:label(ctx.category),values,color:'#315dc5'}],kind:'bar',format:formatMoney});
       }
     }else{
       const days=daysInMonth(Number(year),Number(ctx.month.slice(5))),lookup=new Map(model.metrics.map(m=>[m.date,m]));
       const dates=Array.from({length:days},(_,i)=>`${ctx.month}-${String(i+1).padStart(2,'0')}`);
       const dailyValue=m=>ctx.metric==='fresh'?m.newCustomers:ctx.metric==='ticket'?(E.cmp(m.customers,0)>0?div(m.revenue,m.customers):null):m[ctx.metric];
-      setText('oaTrendTitle',metricLabel);chart($('oaTrend'),{labels:dates,series:[{name:metricLabel,values:dates.map(d=>lookup.has(d)?dailyValue(lookup.get(d)):null),color:ctx.view==='customers'?'#1b8a79':'#315dc5'}],kind:'line',format:isCount?formatCount:formatMoney});
+      const dailyValues=dates.map(d=>lookup.has(d)?dailyValue(lookup.get(d)):null);renderTrendStats(dailyValues,isCount?formatCount:formatMoney,txt('已有日期','available days'));
+      setText('oaTrendTitle',metricLabel);chart($('oaTrend'),{labels:dates,series:[{name:metricLabel,values:dailyValues,color:ctx.view==='customers'?'#1b8a79':'#315dc5'}],kind:ctx.chartKind,format:isCount?formatCount:formatMoney});
       setText('oaCompareTitle',`${year} · ${metricLabel}`);chart($('oaCompare'),{labels:months,series:[{name:metricLabel,values:yearModels.map(m=>metricValue(m,ctx.metric)),color:'#7c96ca'}],kind:'bar',format:isCount?formatCount:formatMoney});
     }
-    $('oaCostBreakdown').hidden=ctx.view==='customers';setText('oaCostEyebrow',txt('费用结构','EXPENSE BREAKDOWN'));setText('oaCostTitle',txt('点选类别，查看金额与来源','Select a category to inspect its sources'));setText('oaAllCosts',txt('查看全部费用','View all expenses'));
+    $('oaCostBreakdown').hidden=ctx.view==='customers';setText('oaCostEyebrow',txt('费用结构','EXPENSE BREAKDOWN'));setText('oaCostTitle',txt('费用构成与占比','Expense composition'));setText('oaAllCosts',txt('查看全部费用','View all expenses'));
     const basis=ctx.view==='costs'?ctx.basis:'monthly',values=basis==='itemized'?model.itemized:model.costs,total=sum(Object.values(values)),max=E.math.max(1,...Object.values(values));
     $('oaCostRows').innerHTML=COSTS.map(c=>({key:c[0],color:c[3],value:values[c[0]]})).sort((a,b)=>E.cmp(b.value,a.value)).map(c=>{const share=E.cmp(total,0)>0?E.calculate.mul(div(c.value,total),100):ZERO(),width=E.toNumber(E.calculate.mul(div(E.abs(c.value),max),100));return`<button type="button" class="oa-cost-row ${ctx.category===c.key&&ctx.view==='costs'?'selected':''}" data-oa-cost="${c.key}" aria-pressed="${ctx.category===c.key&&ctx.view==='costs'}"><span>${esc(label(c.key))}</span><i class="oa-cost-track"><i style="width:${Math.max(0,Math.min(100,width))}%;background:${c.color}"></i></i><strong>${costKnown(model,c.key,basis)?formatMoney(c.value):'—'}</strong><small>${costKnown(model,c.key,basis)?formatCount(share)+'%':'—'}</small><b aria-hidden="true">›</b></button>`;}).join('');
-    $('oaCostRows').querySelectorAll('[data-oa-cost]').forEach(b=>b.onclick=()=>{ctx.view='costs';ctx.category=b.dataset.oaCost;ctx.page=1;ctx.search='';render();$('oaDetailTitle').scrollIntoView({block:'center',behavior:'smooth'});});
+    $('oaCostRows').querySelectorAll('[data-oa-cost]').forEach(b=>b.onclick=()=>{ctx.view='costs';ctx.category=b.dataset.oaCost;ctx.page=1;ctx.search='';ctx.sortColumn=0;ctx.sortDirection=1;render();$('oaDetailTitle').scrollIntoView({block:'center',behavior:'smooth'});});
     setText('oaDetailEyebrow',txt('可追溯明细','SOURCE DETAILS'));setText('oaDetailTitle',ctx.view==='costs'?`${label(ctx.category)} · ${ctx.basis==='monthly'?txt('汇总来源','Summary sources'):txt('支出流水','Expense entries')}`:ctx.view==='customers'?txt('每日客流明细','Daily customer details'):txt('每日经营明细','Daily performance'));
     $('oaSearch').placeholder=txt('搜索日期、类别、说明','Search date, category or description');$('oaSearch').value=ctx.search;
     setText('oaTableHelp',ctx.view==='costs'?txt('月度汇总与逐笔支出分别查看。金额来自当前账本，导出包含搜索后的全部明细。','Monthly totals and itemized expenses are separate. Export includes all filtered rows from the current ledger.'):txt('成本与净利润沿用原账本的日核算口径；仅汇总已录入的日期。','Cost and profit follow the existing daily ledger calculation and include recorded dates only.'));
     buildTable(model);renderTable();
+    $('oaInsights').setAttribute('aria-label',txt('数据观察','Data observations'));
     setText('oaMethodTitle',txt('查看统计口径与数据说明','Calculation and data notes'));
     setText('oaMethodText',txt('经营概览：收入、成本、利润按日流水汇总；日成本包含按当月天数分摊的固定支出。费用分析：月度支出汇总使用日流水采购、手续费、其他支出，加上月度人工、房租、水电煤气等保存值，固定费用不按已记账天数折算。逐笔固定支出只展示 fixed_expenses 明细，与月度汇总分开核对，绝不重复加总。水电“实际使用／预计”用于原有成本构成，月度支出视图使用支出金额。空缺日期、没有分母的比例显示为空，不能据此认定没有业务。采购金额与FIFO出库成本是不同口径，出库批次及成本请在库存管理查看。','Overview aggregates recorded daily revenue, costs and profit, including the existing daily fixed-cost allocation. Monthly expenses combine daily purchases and expenses with full saved monthly fixed amounts. Itemized fixed expenses are reconciled separately and never added twice. The expense view uses paid amounts rather than expected utility usage. Missing dates and ratios without a denominator remain blank. Purchases and FIFO issue costs are distinct; inspect issue batches in Inventory.'));
   }
@@ -163,24 +201,34 @@
     if(ctx.view==='costs'){
       ctx.lastHeaders=[txt('日期／月份','Date / month'),txt('类别','Category'),txt('说明','Description'),txt('金额（元）','Amount (CNY)'),txt('来源','Source')];
       const rows=(ctx.basis==='itemized'?model.expenses:model.sources).filter(r=>ctx.category==='all'||r.category===ctx.category);
-      ctx.lastRows=rows.map(r=>[r.date,label(r.category),r.description,r.amount,r.source]);
+      ctx.lastRows=rows.map(r=>[r.date,label(r.category),r.description,r.amount,r.source]);ctx.totalColumns=[3];ctx.countColumns=[];
     }else if(ctx.view==='customers'){
       ctx.lastHeaders=[txt('日期','Date'),txt('总客数','Customers'),txt('新客','New'),txt('老客','Returning'),txt('新客占比','New share'),txt('客单价（元）','Average spend (CNY)')];
-      ctx.lastRows=model.metrics.map(m=>[m.date,amount(m.customers),amount(m.newCustomers),amount(m.oldCustomers),E.cmp(m.customers,0)>0?formatCount(E.calculate.mul(div(m.newCustomers,m.customers),100))+'%':'—',E.cmp(m.customers,0)>0?div(m.revenue,m.customers):null]);
+      ctx.lastRows=model.metrics.map(m=>[m.date,amount(m.customers),amount(m.newCustomers),amount(m.oldCustomers),E.cmp(m.customers,0)>0?formatCount(E.calculate.mul(div(m.newCustomers,m.customers),100))+'%':'—',E.cmp(m.customers,0)>0?div(m.revenue,m.customers):null]);ctx.totalColumns=[1,2,3];ctx.countColumns=[1,2,3];
     }else{
       ctx.lastHeaders=[txt('日期','Date'),txt('营业收入（元）','Revenue (CNY)'),txt('总成本（元）','Cost (CNY)'),txt('净利润（元）','Net profit (CNY)'),txt('净利率','Net margin'),txt('总客数','Customers')];
-      ctx.lastRows=model.metrics.map(m=>[m.date,m.revenue,m.total,m.net,E.cmp(m.revenue,0)!==0?formatCount(E.calculate.mul(div(m.net,m.revenue),100))+'%':'—',amount(m.customers)]);
+      ctx.lastRows=model.metrics.map(m=>[m.date,m.revenue,m.total,m.net,E.cmp(m.revenue,0)!==0?formatCount(E.calculate.mul(div(m.net,m.revenue),100))+'%':'—',amount(m.customers)]);ctx.totalColumns=[1,2,3,5];ctx.countColumns=[5];
     }
   }
-  function matchingRows(){const q=ctx.search.trim().toLowerCase();return q?ctx.lastRows.filter(row=>row.some(v=>String(v??'').toLowerCase().includes(q))):ctx.lastRows;}
-  function renderTable(){if(!$('oaRows'))return;const rows=matchingRows(),size=20,pages=Math.max(1,Math.ceil(rows.length/size));ctx.page=Math.min(pages,Math.max(1,ctx.page));
-    $('oaHead').innerHTML='<tr>'+ctx.lastHeaders.map(h=>`<th scope="col">${esc(h)}</th>`).join('')+'</tr>';
-    $('oaRows').innerHTML=rows.slice((ctx.page-1)*size,ctx.page*size).map(row=>'<tr>'+row.map((v,i)=>`<td class="${E.is(v)?'oa-number':''}" ${i===2&&ctx.view==='costs'?'title="'+esc(v)+'"':''}>${E.is(v)?formatMoney(v):esc(v===null?'—':v)}</td>`).join('')+'</tr>').join('')||`<tr><td colspan="${ctx.lastHeaders.length}" class="oa-empty">${esc(ctx.search?txt('没有匹配的明细，请调整搜索内容。','No matching rows. Adjust the search.'):ctx.view==='costs'&&ctx.basis==='itemized'?txt('尚未录入这类逐笔支出。可切换“月度支出汇总”查看月度保存值。','No itemized entries for this category. Switch to monthly totals to inspect saved amounts.'):txt('所选月份暂无对应记录。','No corresponding records for this month.'))}</td></tr>`;
-    setText('oaTableCount',`${rows.length} ${txt('条明细','rows')}${ctx.search?txt('（已筛选）',' (filtered)'):''}`);setText('oaPageLabel',`${ctx.page} / ${pages}`);$('oaPagePrevious').disabled=ctx.page<=1;$('oaPageNext').disabled=ctx.page>=pages;
+  function compareCells(left,right,direction){
+    const missing=v=>v===null||v===undefined||v==='—';
+    if(missing(left)||missing(right))return missing(left)===missing(right)?0:missing(left)?1:-1;
+    const numeric=v=>E.is(v)?v:typeof v==='string'&&/^-?[\d,.]+%$/.test(v)?amount(v.replace(/[,%]/g,'')):null;
+    const a=numeric(left),b=numeric(right);
+    return (a!==null&&b!==null?E.cmp(a,b):String(left).localeCompare(String(right),txt('zh-CN','en-US')))*direction;
+  }
+  function matchingRows(){const q=ctx.search.trim().toLowerCase(),rows=q?ctx.lastRows.filter(row=>row.some(v=>String(v??'').toLowerCase().includes(q))):ctx.lastRows;return rows.slice().sort((a,b)=>compareCells(a[ctx.sortColumn],b[ctx.sortColumn],ctx.sortDirection));}
+  function renderTable(){if(!$('oaRows'))return;if(ctx.sortColumn>=ctx.lastHeaders.length)ctx.sortColumn=0;const rows=matchingRows(),size=20,pages=Math.max(1,Math.ceil(rows.length/size));ctx.page=Math.min(pages,Math.max(1,ctx.page));
+    if(ctx.sortColumn>=ctx.lastHeaders.length)ctx.sortColumn=0;
+    $('oaHead').innerHTML='<tr>'+ctx.lastHeaders.map((h,i)=>`<th scope="col" aria-sort="${ctx.sortColumn===i?(ctx.sortDirection===1?'ascending':'descending'):'none'}"><button type="button" data-oa-sort="${i}" title="${esc(txt('按此列排序','Sort by this column'))}">${esc(h)}<span aria-hidden="true">${ctx.sortColumn===i?(ctx.sortDirection===1?'↑':'↓'):'↕'}</span></button></th>`).join('')+'</tr>';
+    $('oaHead').querySelectorAll('[data-oa-sort]').forEach(button=>button.onclick=()=>{const column=Number(button.dataset.oaSort);ctx.sortDirection=ctx.sortColumn===column?-ctx.sortDirection:1;ctx.sortColumn=column;ctx.page=1;renderTable();});
+    $('oaRows').innerHTML=rows.slice((ctx.page-1)*size,ctx.page*size).map(row=>'<tr>'+row.map((v,i)=>`<td class="${E.is(v)?'oa-number':''} ${E.is(v)&&E.cmp(v,0)<0?'oa-cell-negative':''}" ${i===2&&ctx.view==='costs'?'data-user-content title="'+esc(v)+'"':''}>${E.is(v)?(ctx.countColumns.includes(i)?formatCount(v):formatMoney(v)):esc(v===null?'—':v)}</td>`).join('')+'</tr>').join('')||`<tr><td colspan="${ctx.lastHeaders.length}" class="oa-empty">${esc(ctx.search?txt('没有匹配的明细，请调整搜索内容。','No matching rows. Adjust the search.'):ctx.view==='costs'&&ctx.basis==='itemized'?txt('尚未录入这类逐笔支出。可切换“月度支出汇总”查看月度保存值。','No itemized entries for this category. Switch to monthly totals to inspect saved amounts.'):txt('所选月份暂无对应记录。','No corresponding records for this month.'))}</td></tr>`;
+    $('oaTotals').innerHTML=rows.length?'<tr>'+ctx.lastHeaders.map((_,i)=>i===0?`<th scope="row">${esc(ctx.search?txt('筛选后合计','Filtered total'):txt('全部明细合计','All rows total'))}</th>`:`<td class="oa-number">${ctx.totalColumns.includes(i)?(ctx.countColumns.includes(i)?formatCount(sum(rows.map(r=>r[i]))):formatMoney(sum(rows.map(r=>r[i])))):'—'}</td>`).join('')+'</tr>':'';
+    setText('oaTableCount',`${rows.length} ${txt('条明细','rows')}${ctx.search?txt('（已筛选）',' (filtered)'):''} · ${txt('点列名排序，合计覆盖全部筛选结果','Click headers to sort. Totals include all filtered rows.')}`);setText('oaPageLabel',`${ctx.page} / ${pages}`);$('oaPagePrevious').disabled=ctx.page<=1;$('oaPageNext').disabled=ctx.page>=pages;
   }
   function csvCell(value){if(E.is(value))return value.toFixed(2);let text=String(value??'');if(/^\s*[=+\-@]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"';}
   function exportCsv(){const rows=matchingRows(),csv='\ufeff'+[ctx.lastHeaders,...rows].map(row=>row.map(csvCell).join(',')).join('\r\n'),blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${ctx.month}-${ctx.view}-${ctx.basis}-${ctx.category}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  root.Oct30Analytics={open(options={}){install();ctx.dataset=String(state.dataset?.id||'');if(monthValid(options.month))ctx.month=options.month;ctx.view=['overview','costs','customers'].includes(options.view)?options.view:'overview';ctx.category=options.category&&COSTS.some(c=>c[0]===options.category)?options.category:'all';ctx.page=1;ctx.search='';showPage('stats');syncLegacyMonth();render();},render,model:monthlyModel,costValue,expenseRecords,category:costCategory};
+  root.Oct30Analytics={open(options={}){install();ctx.dataset=String(state.dataset?.id||'');if(monthValid(options.month))ctx.month=options.month;ctx.view=['overview','costs','customers'].includes(options.view)?options.view:'overview';ctx.category=options.category&&COSTS.some(c=>c[0]===options.category)?options.category:'all';ctx.page=1;ctx.search='';ctx.sortColumn=0;ctx.sortDirection=1;showPage('stats');syncLegacyMonth();render();},render,model:monthlyModel,costValue,expenseRecords,category:costCategory};
   if(typeof renderStats==='function'){const previous=renderStats;renderStats=function(){previous();render();};}
   install();
 })(typeof window!=='undefined'?window:globalThis);

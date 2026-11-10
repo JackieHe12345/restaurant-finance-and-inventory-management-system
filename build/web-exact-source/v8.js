@@ -1,7 +1,7 @@
 "use strict";
 
 /* v8 compatibility layer: shared dates, compact chart labels, complete picker tools and English UI. */
-const V8_UNIT_EN={"斤":"500 g","公斤":"Kg","千克":"Kg","克":"g","两":"50 g","袋":"Pack","盒":"Box","个":"Pc","只":"Pc","条":"Pc","件":"Pc","颗":"Pc","根":"Pc","瓶":"Bottle","箱":"Carton","份":"Serving","把":"Bunch","扎":"Bunch","碗":"Bowl","盘":"Plate","升":"L","打":"Dozen"};
+const V8_UNIT_EN={"斤":"500 g","公斤":"kg","千克":"kg","克":"g","两":"50 g","袋":"Pack","盒":"Box","个":"Pc","只":"Pc","条":"Pc","件":"Pc","颗":"Pc","根":"Pc","瓶":"Bottle","箱":"Carton","份":"Serving","把":"Bunch","扎":"Bunch","碗":"Bowl","盘":"Plate","升":"L","打":"Dozen","毫升":"mL","斤两":"jin/liang"};
 const V8_TEXT_EN=new Map(Object.entries({
   "选择日期":"Date","选择月份":"Month","选择日":"Date","选择年":"Year","前一天":"Previous day","后一天":"Next day","今天":"Today","关闭":"Close","搜索":"Search","清空搜索":"Clear search",
   "录入／编辑当日流水":"Enter / edit daily record","收入（Revenue）":"Revenue","总客人数":"Total customers","新客人数量":"New customers","当日备注":"Daily notes","食材明细及金额":"Ingredient details and amount","佐料明细及金额":"Seasoning details and amount","其它明细及金额":"Other details and amount","选择食材":"Select ingredients","选择佐料":"Select seasonings","覆盖当日记录（完整替换原有数据）":"Save daily record (replace existing data)","撤销未保存的所有修改":"Discard unsaved changes",
@@ -17,11 +17,12 @@ const V8_TEXT_EN=new Map(Object.entries({
   "未选择":"None selected","可修改":"Editable","只读账号":"Read only","食材种类":"Ingredient types","佐料种类":"Seasoning types","总金额":"Total amount","当前显示合计":"Displayed total","本月实际支出合计":"Monthly payments","成本计算：水费":"Cost basis: water","电费":"Electricity","固定成本口径合计":"Fixed-cost basis total","逐笔记录":"Entries",
   "食材成本":"Ingredient Cost","食材成本（包括佐料）":"Ingredient Cost (including seasonings)","食材成本（包含佐料）":"Ingredient Cost (including seasonings)","佐料成本":"Seasoning Cost","总成本":"Total Cost","日均总成本":"Average total cost","每日收入":"Daily Revenue","每日毛利润":"Daily Gross Profit","每日净利润":"Daily Net Profit","每日食材成本":"Daily Ingredient Cost","每日佐料成本":"Daily Seasoning Cost","每日总成本":"Daily Total Cost","当前选择":"Current selection","月度／食材对比":"Monthly / ingredient comparison"
 }));
+for(const [zh,en] of Object.entries(globalThis.SYSTEM_EN || {}))V8_TEXT_EN.set(zh,en);
 const v8OriginalText=new WeakMap();
 const v8OriginalPlaceholder=new WeakMap();
 
 function v8DisplayUnit(unit){return state.language==="en"?(V8_UNIT_EN[unit]||unit):unit;}
-function v8TranslateValue(text){const raw=String(text??""),trimmed=raw.trim();if(!trimmed)return raw;let translated=V8_TEXT_EN.get(trimmed);if(!translated){
+function v8TranslateValue(text){const raw=String(text??""),trimmed=raw.trim();if(!trimmed)return raw;let translated=V8_TEXT_EN.get(trimmed);if(!translated&&globalThis.translateSystemPattern)translated=globalThis.translateSystemPattern(trimmed);if(!translated){
   translated=trimmed
     .replace(/ · 所选日期明细趋势$/," · Selected-date trend")
     .replace(/^(\d{1,2})月$/,(_,month)=>["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(month)-1]||month)
@@ -36,18 +37,34 @@ function v8TranslateValue(text){const raw=String(text??""),trimmed=raw.trim();if
   if(translated===trimmed&&V8_UNIT_EN[trimmed])translated=V8_UNIT_EN[trimmed];
 }
 if(translated===trimmed)return raw;return raw.replace(trimmed,translated);}
+// Translate only system presentation. Inputs, ledger names, free text and
+// explicitly marked user cells are never translated or written back to data.
+function v8UserContent(node){return !!node?.parentElement?.closest("[data-user-content],textarea,[contenteditable='true'],#datasetSelect,#newUserDatasets,#newUserDefaultDataset,#grantUser,#grantDataset,#overwriteTargetDataset,#copyTargetDataset,#accountLabel,#workbookDatasetName,#storeSettingsDataset,#currentDatasetId");}
 function v8TranslateTree(root=document){
-  if(state.language!=="en"){document.querySelectorAll("*").forEach(()=>{});return;}
-  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
-  for(const node of nodes){const parent=node.parentElement;if(!parent||parent.matches("script,style")||parent.closest("[data-user-content]"))continue;const next=v8TranslateValue(node.nodeValue);if(next!==node.nodeValue){if(!v8OriginalText.has(node))v8OriginalText.set(node,node.nodeValue);node.nodeValue=next;}}
-  root.querySelectorAll?.("input[placeholder],textarea[placeholder]").forEach(node=>{const next=v8TranslateValue(node.placeholder);if(next!==node.placeholder){if(!v8OriginalPlaceholder.has(node))v8OriginalPlaceholder.set(node,node.placeholder);node.placeholder=next;}});
+  globalThis.syncSystemMonthControls?.();
+  const english=state.language==="en",walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  for(const node of nodes){
+    const parent=node.parentElement;if(!parent||parent.matches("script,style")||v8UserContent(node))continue;
+    if(typeof v26OriginalTexts!=="undefined"&&v26OriginalTexts.has(node))continue;
+    const current=node.nodeValue,old=v8OriginalText.get(node),source=old&&old.output===current?old.source:current;
+    const next=english?v8TranslateValue(source):source;
+    if(parent.tagName==="OPTION"&&!parent.hasAttribute("value"))parent.setAttribute("value",source);
+    if(next!==current)node.nodeValue=next;
+    if(next!==source||old)v8OriginalText.set(node,{source,output:next});
+  }
+  root.querySelectorAll?.("[placeholder],[title],[aria-label],[data-label]").forEach(node=>{
+    if(node.closest("[data-user-content]")&&!node.matches(".ledger-detail-summary")||node.hasAttribute("data-store-placeholder"))return;
+    let saved=v8OriginalPlaceholder.get(node);if(!saved){saved={};v8OriginalPlaceholder.set(node,saved);}
+    for(const name of ["placeholder","title","aria-label","data-label"]){
+      if(!node.hasAttribute(name)||name==="title"&&node.hasAttribute("data-user-title"))continue;
+      const current=node.getAttribute(name),old=saved[name],source=old&&old.output===current?old.source:current,next=english?v8TranslateValue(source):source;
+      if(next!==current)node.setAttribute(name,next);saved[name]={source,output:next};
+    }
+  });
 }
-function v8RestoreChinese(){
-  const walker=document.createTreeWalker(document,NodeFilter.SHOW_TEXT);while(walker.nextNode()){const node=walker.currentNode;if(v8OriginalText.has(node))node.nodeValue=v8OriginalText.get(node);}
-  document.querySelectorAll("input[placeholder],textarea[placeholder]").forEach(node=>{if(v8OriginalPlaceholder.has(node))node.placeholder=v8OriginalPlaceholder.get(node);});
-}
+function v8RestoreChinese(){v8TranslateTree(document);}
 
-proUnitOptions=function(value=""){return [...new Set(["",...proUnits(),value])].map(item=>`<option value="${escapeHtml(item)}" ${item===value?"selected":""}>${escapeHtml(v8DisplayUnit(item))}</option>`).join("");};
+proUnitOptions=function(value=""){return [...new Set(["",...proUnits(),value])].map(item=>`<option data-user-content value="${escapeHtml(item)}" ${item===value?"selected":""}>${escapeHtml(v8DisplayUnit(item))}</option>`).join("");};
 
 function v8PickerItems(host,checkedOnly=true){return [...host.querySelectorAll("tbody tr")].filter(tr=>!checkedOnly||tr.querySelector("[data-pick-check]").checked).map(tr=>({name:tr.querySelector("[data-pick-name]").textContent.trim(),quantity:tr.querySelector('[data-pick="quantity"]').value,unit:tr.querySelector('[data-pick="unit"]').value,price:tr.querySelector('[data-pick="price"]').value,total:tr.querySelector('[data-pick="total"]').value,note:tr.querySelector('[data-pick="note"]').value}));}
 openItemPicker=function(category,current,callback,title=""){
@@ -58,7 +75,7 @@ openItemPicker=function(category,current,callback,title=""){
     const name=item.name;
     return `<tr><td><input data-pick-check type="checkbox" ${selected?"checked":""}></td><td class="picker-name-cell" data-pick-name data-user-content>${escapeHtml(name)}</td><td><input data-pick="quantity" type="number" step="any" value="${escapeHtml(item.quantity??"")}"></td><td><select data-pick="unit">${proUnitOptions(item.unit)}</select></td><td><input data-pick="price" type="number" step="0.000001" value="${entered(item.price)?num(item.price).toFixed(6):""}"></td><td><input data-pick="total" type="number" step="0.01" value="${entered(item.total)?num(item.total).toFixed(2):""}"></td><td><textarea data-pick="note">${escapeHtml(item.note||"")}</textarea></td></tr>`;
   }).join("");
-  $("proModalHost").innerHTML=`<div class="selector-backdrop"><section class="selector-dialog"><header><h2>${escapeHtml(heading)}</h2><button class="pro-button" data-close-modal>${en?"Close":"关闭"}</button></header><div class="modal-body"><div class="picker-search-row"><input data-picker-search placeholder="${en?`Search ${categoryLabel}s`:"搜索食材或佐料"}"><button class="pro-button" data-clear-search>${en?"Clear search":"清空搜索"}</button></div><div class="desktop-table-wrap"><table class="desktop-table selector-table"><thead><tr><th></th><th>${en?(category==="食材"?"Ingredient":"Seasoning"):`${category}名称`}</th><th>${en?"Quantity":"数量"}</th><th>${en?"Unit":"单位"}</th><th>${en?"Unit price (CNY)":"单价（元）"}</th><th>${en?"Total (CNY)":"总价（元）"}</th><th>${en?"Notes":"备注"}</th></tr></thead><tbody>${rows}</tbody></table></div></div><footer><button data-select-all class="pro-button"> ${en?"Select all":"全选"}</button><span class="selector-add-inline"><input data-add-word-input aria-label="${en?`New ${categoryLabel} name`:`新增${category}名称`}" placeholder="${en?`New ${categoryLabel} name`:`新增${category}名称`}"><button data-add-word class="pro-button">＋ ${en?"Add":"新增"}</button></span><button data-rename-word class="pro-button"> ${en?"Rename selected word":"重命名勾选词条"}</button><button data-manage-units-modal class="pro-button"> ${en?"Manage units":"管理单位"}</button><button data-delete-words class="pro-button red"> ${en?"Delete selected words":"删除勾选词条"}</button><button data-confirm-picker class="pro-button green confirm"> ${en?"Confirm":"确认带回"}</button></footer></section></div>`;
+  $("proModalHost").innerHTML=`<div class="selector-backdrop"><section class="selector-dialog"><header><h2 data-user-content>${escapeHtml(heading)}</h2><button class="pro-button" data-close-modal>${en?"Close":"关闭"}</button></header><div class="modal-body"><div class="picker-search-row"><input data-picker-search placeholder="${en?`Search ${categoryLabel}s`:"搜索食材或佐料"}"><button class="pro-button" data-clear-search>${en?"Clear search":"清空搜索"}</button></div><div class="desktop-table-wrap"><table class="desktop-table selector-table"><thead><tr><th></th><th>${en?(category==="食材"?"Ingredient":"Seasoning"):`${category}名称`}</th><th>${en?"Quantity":"数量"}</th><th>${en?"Unit":"单位"}</th><th>${en?"Unit price (CNY)":"单价（元）"}</th><th>${en?"Total (CNY)":"总价（元）"}</th><th>${en?"Notes":"备注"}</th></tr></thead><tbody>${rows}</tbody></table></div></div><footer><button data-select-all class="pro-button"> ${en?"Select all":"全选"}</button><span class="selector-add-inline"><input data-add-word-input aria-label="${en?`New ${categoryLabel} name`:`新增${category}名称`}" placeholder="${en?`New ${categoryLabel} name`:`新增${category}名称`}"><button data-add-word class="pro-button">＋ ${en?"Add":"新增"}</button></span><button data-rename-word class="pro-button"> ${en?"Rename selected word":"重命名勾选词条"}</button><button data-manage-units-modal class="pro-button"> ${en?"Manage units":"管理单位"}</button><button data-delete-words class="pro-button red"> ${en?"Delete selected words":"删除勾选词条"}</button><button data-confirm-picker class="pro-button green confirm"> ${en?"Confirm":"确认带回"}</button></footer></section></div>`;
   const host=$("proModalHost"),initialSelection=JSON.stringify(v8PickerItems($("proModalHost"),true)),preserveUnchanged=state.activePage==="ledger"&&["ledgerFoodDetail","ledgerSpiceDetail"].some(id=>$(id)?.value===current),reopen=()=>openItemPicker(category,serializeItems(v8PickerItems(host,true)),callback,title);
   host.querySelector("[data-close-modal]").addEventListener("click",closeProModal);host.querySelector("[data-select-all]").addEventListener("click",()=>host.querySelectorAll("[data-pick-check]").forEach(i=>i.checked=true));
   const search=host.querySelector("[data-picker-search]"),filter=()=>{const term=search.value.trim().toLocaleLowerCase();host.querySelectorAll("tbody tr").forEach(tr=>tr.hidden=!!term&&!tr.querySelector("[data-pick-name]").textContent.toLocaleLowerCase().includes(term));};search.addEventListener("input",filter);host.querySelector("[data-clear-search]").addEventListener("click",()=>{search.value="";filter();search.focus();});
@@ -109,5 +126,7 @@ applyLanguage=function(){if(state.language!=="en")v8RestoreChinese();v8BaseApply
 const v8BaseRenderStats=renderStats;renderStats=function(){v8BaseRenderStats();if(state.language==="en")v8TranslateTree($("pageStats"));};
 const v8BaseRenderDashboard=renderDashboard;renderDashboard=function(){v8BaseRenderDashboard();if(state.language==="en")v8TranslateTree($("pageOverview"));};
 
-const v8Observer=new MutationObserver(records=>{if(state.language!=="en")return;for(const record of records)for(const node of record.addedNodes)if(node.nodeType===Node.ELEMENT_NODE)v8TranslateTree(node);});v8Observer.observe(document.body,{childList:true,subtree:true});
+let v8TranslationQueued=false;
+const v8Observer=new MutationObserver(()=>{if(v8TranslationQueued)return;v8TranslationQueued=true;queueMicrotask(()=>{v8TranslationQueued=false;v8TranslateTree(document);if(typeof applyStoreNames==="function")applyStoreNames();});});
+v8Observer.observe(document.body,{childList:true,characterData:true,attributes:true,attributeFilter:["placeholder","title","aria-label","data-label"],subtree:true});
 v8SyncDate($("selectedDate")?.value||isoDate(new Date()));applyLanguage();

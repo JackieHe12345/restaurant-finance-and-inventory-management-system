@@ -64,7 +64,7 @@ from .inventory_balance import guard_inventory_balance, canonical_daily_rows, ca
 from .name_corrections import router as name_correction_router
 
 
-app = FastAPI(title="餐饮成本管家云端 API", version="v1.0.1")
+app = FastAPI(title="餐饮成本管家云端 API", version="v1.0.2")
 app.router.route_class = ExactMoneyRoute
 app.include_router(name_correction_router)
 

@@ -1,0 +1,181 @@
+{
+  "syntheticData": true,
+  "networkBlocked": true,
+  "scenes": [
+    {
+      "label": "custom-business-detail",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "custom-business-average",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "purchase-picker",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "purchase-unit",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "purchase-monthlyTotal",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "purchase-monthlyQuantity",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "purchase-monthlyAverageUnit",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "consumption-picker",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "usage-daily",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "usage-monthlyTotal",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "usage-monthlyAverage",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "usage-cumulative",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "purchase-picker",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "mobile-purchasing-375",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "consumption-picker",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "mobile-usage-375",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "mobile-custom-375",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "mobile-custom-average-375",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "purchase-picker",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "mobile-purchasing-320",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "consumption-picker",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "mobile-usage-320",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "mobile-custom-320",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    },
+    {
+      "label": "mobile-custom-average-320",
+      "untranslated": [],
+      "attributes": [],
+      "controlOverflow": [],
+      "pageOverflow": false
+    }
+  ],
+  "checks": [
+    "English ISO month presentation and canonical month change events",
+    "All purchasing/usage metrics and English CSV retain user names, custom units and dish names equal to system labels",
+    "All source payloads remain unchanged by analysis, language selection and export"
+  ],
+  "errors": [],
+  "passed": true
+}

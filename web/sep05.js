@@ -1,4 +1,4 @@
-/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.2: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 
 /* Sep05V1: cache-safe inventory consumption and desktop-quality dashboard line. */

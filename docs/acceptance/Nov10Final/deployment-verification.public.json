@@ -1,0 +1,36 @@
+{
+  "version": "v1.0.2",
+  "release_date": "2026 Nov 10",
+  "build_revision": "20261110-analytics-english-final",
+  "deployment_verified_at_utc": "2026-11-10T16:04:19.027042+00:00",
+  "status": "passed",
+  "bundle_sha256": "b45544b1409f61317dadefc7a1ae3c947b7873794c10cc1c2fd874e1483d8086",
+  "public_assets_verified": 38,
+  "public_asset_hashes_match_release": true,
+  "database_preservation_checks": {
+    "business_records_unchanged": true,
+    "entry_timing_counts_unchanged": true,
+    "runtime_env_unchanged": true,
+    "test_login_setting_unchanged": true,
+    "correction_rows_unchanged": true,
+    "protected_tables_unchanged": true,
+    "account_dataset_counts_unchanged": true,
+    "audit_retention_only": true
+  },
+  "audit_rows_unchanged": true,
+  "service_health": "ok",
+  "runtime_configuration_preserved": true,
+  "nginx_site_restored_exactly": true,
+  "temporary_write_gates_removed": true,
+  "fresh_database_backup_validated_with_pg_restore_list": true,
+  "program_rollback_backup_retained": true,
+  "private_details_omitted": [
+    "server identity",
+    "addresses",
+    "credentials",
+    "production record counts",
+    "record identifiers",
+    "database contents",
+    "backup paths"
+  ]
+}

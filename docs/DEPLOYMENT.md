@@ -1,10 +1,10 @@
 # restaurant-finance-and-inventory-management-system deployment guide
 
-> The v1.0.1 source is available in this repository and in `Nov07.zip` under `Nov07/source/`. When using the ZIP, work directly in that directory instead of cloning again. Start with `00_交接必读.md` in the ZIP. See [the detailed changelog](../CHANGELOG.md) for changes dated 2026 Nov 07.
+> This guide applies to V1.0.2 on `main`, build `20261110-analytics-english-final`. The preceding V1.0.1 source is preserved on `old/V1.0.1`. See [release status](RELEASE_STATUS_v1.0.2.md) for actual verification and [the handoff](../PROJECT_HANDOFF.md) for system context.
 
 [Back to README](../README.md) · English | [简体中文](DEPLOYMENT.zh-CN.md)
 
-This guide covers `v1.0.1`. Use the Docker Compose configuration at the repository root for a new instance. An existing native Ubuntu installation has a separate upgrade procedure based on a release archive. These two procedures use different directory layouts, environments and commands.
+This guide covers `v1.0.2`. Use the Docker Compose configuration at the repository root for a new instance. An existing native Ubuntu installation has a separate upgrade procedure based on a release archive. These two procedures use different directory layouts, environments and commands.
 
 The host paths below are installation conventions, not production credentials. The instructions explain how to install and verify an instance; they do not certify an existing production deployment.
 
@@ -15,8 +15,7 @@ Install Git, Docker Engine, Docker Compose v2, Python 3 and curl on the host, an
 Business-script sources live in `build/web-exact-source/`. Maintain the shared decimal runtime `web/money.js` and HTML/CSS assets directly in `web/`; the compiler does not generate or duplicate them.
 
 ```bash
-git clone https://github.com/JackieHe12345/restaurant-finance-and-inventory-management-system.git
-cd restaurant-finance-and-inventory-management-system
+cd /path/to/Nov10/source
 ```
 
 The root `.env.example` configures Compose; `backend/.env.example` configures a directly launched Python API. They serve different purposes. The following command creates a private configuration from the root template and generates separate values for the database password, JWT secret and initial administrator password:
@@ -46,7 +45,7 @@ docker compose ps
 curl --fail http://127.0.0.1:8080/api/v1/health
 ```
 
-The first build and API startup can take some time. If the health check initially fails, inspect `docker compose logs --tail=100 backend` and retry after the service starts. A successful response reports `status` as `ok` and `version` as `v1.0.1`.
+The first build and API startup can take some time. If the health check initially fails, inspect `docker compose logs --tail=100 backend` and retry after the service starts. A successful response reports `status` as `ok` and `version` as `v1.0.2`.
 
 Open <http://127.0.0.1:8080> and sign in with the administrator configured in `.env`. Create an independent book, then create other accounts and assign their book memberships. Startup creates the initial administrator only when that username does not already exist. Changing `ADMIN_PASSWORD` in `.env` does not reset an existing database account's password.
 
@@ -159,12 +158,12 @@ For a native installation, use your PostgreSQL backup procedure and also preserv
 First complete the browser build, API regression tests and FIFO contract checks listed in the README. Then run this from the repository root:
 
 ```bash
-python3 build/make_release.py --output dist/restaurant-cloud-v1.0.1-deploy.tar.gz
+python3 build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
 ```
 
 The path shown is also the default output path. The packager creates the archive exclusively and refuses to overwrite an existing file. Use a new output filename when rebuilding.
 
-The archive root is `restaurant-cloud-v1.0.1/`, containing:
+The archive root is `restaurant-cloud-v1.0.2/`, containing:
 
 ```text
 api/app/                           Python API source
@@ -183,9 +182,9 @@ All three scripts are at the release root. A matching `.sha256` checksum file is
 Upload the archive and its `.sha256` file to the target host, then verify and extract them from their containing directory:
 
 ```bash
-sha256sum -c restaurant-cloud-v1.0.1-deploy.tar.gz.sha256
+sha256sum -c restaurant-cloud-v1.0.2-deploy.tar.gz.sha256
 mkdir restaurant-finance-release-check
-tar -xzf restaurant-cloud-v1.0.1-deploy.tar.gz -C restaurant-finance-release-check
+tar -xzf restaurant-cloud-v1.0.2-deploy.tar.gz -C restaurant-finance-release-check
 ```
 
 On macOS, the equivalent checksum command is `shasum -a 256 -c ...`. Extract into a new, empty directory. The upgrade script accepts the extracted release root, not the Git checkout or the `.tar.gz` file.
@@ -202,7 +201,7 @@ On macOS, the equivalent checksum command is `shasum -a 256 -c ...`. Extract int
 | Browser files | `/var/www/restaurant-web` |
 | Nginx upload/cache snippet | `/etc/nginx/conf.d/restaurant-cloud-upload.conf` |
 | Running systemd service | `restaurant-cloud.service` |
-| Program backup and default evidence directory | `/opt/restaurant-cloud/backups/v1.0.1-UTCSTAMP-UNIQUE/` |
+| Program backup and default evidence directory | `/opt/restaurant-cloud/backups/v1.0.2-UTCSTAMP-UNIQUE/` |
 
 This script cannot update Compose containers. The API, browser, backup and staging directories must be on the same filesystem so that directory renames can switch the installation. The existing API and browser paths must be physical directories. The installed requirements file and Nginx snippet must match the release byte for byte. If they differ, the script stops; review dependency or Nginx changes separately first.
 
@@ -211,8 +210,8 @@ The script uses the existing Python environment, including `python-dotenv`, SQLA
 Confirm that a usable database backup exists, then pause writes from other clients, background tasks and external database connections. The post-upgrade checks require protected business records to match the pre-upgrade baseline. Normal business writes during deployment can therefore cause verification to fail.
 
 ```bash
-sudo bash /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1/deploy_from_home_ubuntu.sh \
-  --release-dir /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1 \
+sudo bash /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2/deploy_from_home_ubuntu.sh \
+  --release-dir /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2 \
   --base-url http://127.0.0.1
 ```
 
@@ -237,14 +236,14 @@ The upgrade script already runs these checks. You can also run them separately t
 ### Release files and HTTP
 
 ```bash
-sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1/verify_release_files.py \
-  --release-dir /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1 \
+sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2/verify_release_files.py \
+  --release-dir /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2 \
   --api-dir /opt/restaurant-cloud/api \
   --web-dir /var/www/restaurant-web \
   --nginx-conf /etc/nginx/conf.d/restaurant-cloud-upload.conf \
   --base-url http://127.0.0.1 \
   --api-base-url http://127.0.0.1:8000 \
-  --expected-version v1.0.1 \
+  --expected-version v1.0.2 \
   --evidence-dir /opt/restaurant-cloud/backups/manual-release-check-001
 ```
 
@@ -252,18 +251,24 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 
 `--base-url` is the browser entry point. `--api-base-url` is an API address that exposes `/openapi.json` directly. The Compose Nginx configuration does not proxy `/openapi.json`, so its web address cannot be used for that argument. The native upgrade wrapper uses the default API address, `127.0.0.1:8000`.
 
+### Same-version build revisions
+
+A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261110-analytics-english-final"` and uses `v1.0.2-20261110-analytics-english-final` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
+
+See [release status](RELEASE_STATUS_v1.0.2.md) for the verified current deployment. An earlier v1.0.2 was also deployed on Nov 10; the complete distribution's `PROJECT_HANDOFF.md` records that historical baseline and generic upgrade layout. Actual server identities and existing backup locations are documented only in the owner distribution's `私人运维资料/PRIVATE_OPERATIONS.txt`. Recheck live state and create a new backup before deploying the final tar.
+
 ### PostgreSQL evidence before and after an upgrade
 
 Pause business writes before running `before`. Keep writes paused after the upgrade while running `after`. Use the same evidence directory for both:
 
 ```bash
-sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1/verify_deployment.py before \
+sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2/verify_deployment.py before \
   --env-file /opt/restaurant-cloud/.env.runtime \
   --app-dir /opt/restaurant-cloud/api \
   --evidence-dir /opt/restaurant-cloud/backups/manual-db-check-001
 
 # Run after updating the application:
-sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.1/verify_deployment.py after \
+sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2/verify_deployment.py after \
   --env-file /opt/restaurant-cloud/.env.runtime \
   --app-dir /opt/restaurant-cloud/api \
   --evidence-dir /opt/restaurant-cloud/backups/manual-db-check-001

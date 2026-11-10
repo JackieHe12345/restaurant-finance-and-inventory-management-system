@@ -1,0 +1,8 @@
+PASS sorts monetary values beyond binary float precision
+PASS sorts percentage magnitudes numerically and keeps missing values last
+PASS trend statistics preserve exact decimals, missing values and observed zero
+PASS English KPI currency and zero/missing comparisons are explicit
+PASS expense reconciliation observes separate bases without double counting
+PASS all five dashboard backgrounds are neutral
+PASS English chart scales use K/M/B and preserve explicit user series names
+{"version":"v1.0.2","checks":7,"passed":true}

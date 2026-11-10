@@ -1,4 +1,4 @@
-/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.2: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 
 /* Sep01V1: two-store naming, shared-cost reporting and data-management tools.
@@ -17,14 +17,18 @@ function storeReplace(text){
 }
 function applyStoreNames(root=document.getElementById("appView")){
   if(Exact.truth(Exact.not(root)))return;
-  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-  const nodes=[];while(Exact.truth(walker.nextNode()))nodes.push(walker.currentNode);
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),nodes=[];while(Exact.truth(walker.nextNode()))nodes.push(walker.currentNode);
   for(const node of nodes){
-    const parent=node.parentElement;if(Exact.truth(Exact.or(()=>(Exact.not(parent)), ()=>(["SCRIPT","STYLE"].includes(parent.tagName)))))continue;
-    if(Exact.truth(Exact.not(v26OriginalTexts.has(node))))v26OriginalTexts.set(node,Exact.or(()=>(node.nodeValue), ()=>("")));
-    node.nodeValue=storeReplace(v26OriginalTexts.get(node));
+    const parent=node.parentElement;if(Exact.truth(Exact.or(()=>(Exact.or(()=>(Exact.not(parent)), ()=>(parent.closest("script,style,textarea,[data-user-content]")))), ()=>(Exact.and(()=>(Exact.seq(typeof v8UserContent, "function")), ()=>(v8UserContent(node)))))))continue;
+    const current=Exact.or(()=>(node.nodeValue), ()=>("")),saved=v26OriginalTexts.get(node);
+    const source=(Exact.truth(Exact.and(()=>(saved), ()=>(Exact.seq(saved.output, current)))) ? saved.source : current);
+    if(Exact.truth(Exact.not(/A店|B店/.test(source))))continue;
+    const display=(Exact.truth(Exact.and(()=>(Exact.and(()=>(Exact.seq(state.language, "en")), ()=>(Exact.seq(typeof v8TranslateValue, "function")))), ()=>(Exact.not(/^[AB]店$/.test(source.trim()))))) ? v8TranslateValue(source) : source);
+    const next=storeReplace(display);
+    v26OriginalTexts.set(node,{source,output:next});
+    if(Exact.truth(Exact.sneq(current, next)))node.nodeValue=next;
   }
-  document.querySelectorAll("[data-store-placeholder]").forEach(node=>{node.placeholder=storeReplace(Exact.or(()=>(node.dataset.storePlaceholder), ()=>("")));});
+  document.querySelectorAll("[data-store-placeholder]").forEach(node=>{const source=Exact.or(()=>(node.dataset.storePlaceholder), ()=>(""));const next=storeReplace((Exact.truth(Exact.and(()=>(Exact.seq(state.language, "en")), ()=>(Exact.seq(typeof v8TranslateValue, "function")))) ? v8TranslateValue(source) : source));if(Exact.truth(Exact.sneq(node.placeholder, next)))node.placeholder=next;});
 }
 function yesterdayIso(){const d=new Date();d.setDate(Exact.sub(d.getDate(), 1));return isoDate(d);}
 
@@ -81,7 +85,7 @@ function renderStoreSettings(){
 }
 function refreshV26DatasetTargets(){
   // 演示账本可作为“整套内部 Excel 覆盖”的目标；后端会保留它原有的账本名称。
-  for(const id of ["overwriteTargetDataset","copyTargetDataset"]){const select=$(id);if(Exact.truth(Exact.not(select)))continue;const current=select.value;select.innerHTML=state.datasets.filter(d=>Exact.sneq(d.id, state.dataset?.id)).map(d=>`<option value="${escapeHtml(d.id)}">${escapeHtml(Exact.or(()=>(d.name), ()=>(d.id)))}</option>`).join("");if(Exact.truth([...select.options].some(o=>Exact.seq(o.value, current))))select.value=current;}
+  for(const id of ["overwriteTargetDataset","copyTargetDataset"]){const select=$(id);if(Exact.truth(Exact.not(select)))continue;const current=select.value;select.innerHTML=state.datasets.filter(d=>Exact.sneq(d.id, state.dataset?.id)).map(d=>`<option data-user-content value="${escapeHtml(d.id)}">${escapeHtml(Exact.or(()=>(d.name), ()=>(d.id)))}</option>`).join("");if(Exact.truth([...select.options].some(o=>Exact.seq(o.value, current))))select.value=current;}
 }
 async function saveStoreNamesV26(){
   const context=v26StoreContext();if(Exact.truth(Exact.not(context.datasetId)))throw new Error("尚未选择账本。");v26StoreSettingsRevision++;
@@ -152,20 +156,20 @@ async function syncMissingWechatMonthV26(){const month=(Exact.or(()=>($("ledgerD
 syncWechatBill=function(){return syncMissingWechatMonthV26();};
 
 function storeTotalsFor(metrics){return{a:metrics.reduce((s,m)=>Exact.add(s, Exact.decimal(Exact.currency(m?.storeA))),0),b:metrics.reduce((s,m)=>Exact.add(s, Exact.decimal(Exact.currency(m?.storeB))),0)};}
-function injectStoreRows(cardId,a,b,sdMetrics=null){const list=$(cardId)?.querySelector(".metric-list");if(Exact.truth(Exact.not(list)))return;list.querySelectorAll(".v26-store-row").forEach(n=>n.remove());const first=list.firstElementChild;const valueA=(Exact.truth(sdMetrics) ? metricMoneySd(a,sdMetrics,"storeA") : money(a)),valueB=(Exact.truth(sdMetrics) ? metricMoneySd(b,sdMetrics,"storeB") : money(b));const html=`<div class="metric-row v26-store-row"><span>${escapeHtml(storeName("A"))}收入</span><strong>${valueA}</strong></div><div class="metric-row v26-store-row"><span>${escapeHtml(storeName("B"))}收入</span><strong>${valueB}</strong></div>`;if(Exact.truth(first))first.insertAdjacentHTML("afterend",html);else list.insertAdjacentHTML("beforeend",html);}
+function injectStoreRows(cardId,a,b,sdMetrics=null){const list=$(cardId)?.querySelector(".metric-list");if(Exact.truth(Exact.not(list)))return;list.querySelectorAll(".v26-store-row").forEach(n=>n.remove());const first=list.firstElementChild;const valueA=(Exact.truth(sdMetrics) ? metricMoneySd(a,sdMetrics,"storeA") : money(a)),valueB=(Exact.truth(sdMetrics) ? metricMoneySd(b,sdMetrics,"storeB") : money(b));const html=`<div class="metric-row v26-store-row"><span>${userHtml(storeName("A"))}收入</span><strong>${valueA}</strong></div><div class="metric-row v26-store-row"><span>${userHtml(storeName("B"))}收入</span><strong>${valueB}</strong></div>`;if(Exact.truth(first))first.insertAdjacentHTML("afterend",html);else list.insertAdjacentHTML("beforeend",html);}
 const v26DashboardBase=renderDashboard;
 renderDashboard=function(){v26DashboardBase();const c=selectedContext(),all=dataDayMetrics().filter(m=>Exact.lte(m.date, isoDate(new Date()))),week=all.filter(m=>{const d=parseDate(m.date);return Exact.and(()=>(Exact.gte(d, c.weekStart)), ()=>(Exact.lte(d, c.weekEnd)));}),month=all.filter(m=>m.date.startsWith(`${c.year}-${String(c.month).padStart(2,"0")}`)),year=all.filter(m=>m.date.startsWith(`${c.year}-`));injectStoreRows("dayCard",Exact.or(()=>(c.day?.storeA), ()=>(0)),Exact.or(()=>(c.day?.storeB), ()=>(0)),Exact.or(()=>(c.monthAverageMetrics), ()=>(c.monthMetrics)));let t=storeTotalsFor(week);injectStoreRows("weekCard",t.a,t.b);t=storeTotalsFor(month);injectStoreRows("monthCard",t.a,t.b);t=storeTotalsFor(year);injectStoreRows("yearCard",t.a,t.b);applyStoreNames();};
 
 renderHistory=function(){
   const month=Exact.or(()=>($("historyMonth").value), ()=>((Exact.or(()=>($("selectedDate").value), ()=>(""))).slice(0,7)));if(Exact.truth(Exact.not(month)))return;const table=$("historyRows")?.closest("table");if(Exact.truth(Exact.not(table)))return;
-  table.querySelector("thead tr").innerHTML=`<th>日期</th><th>总收入</th><th>${escapeHtml(storeName("A"))}收入</th><th>${escapeHtml(storeName("B"))}收入</th><th>新客</th><th>总客数</th><th>食材总价格</th><th>佐料明细</th><th>当日总固定成本</th><th>其它明细</th><th>当日备注</th><th>毛利润（毛利率）</th><th>净利润（净利率）</th>`;
-  const items=state.days.filter(row=>String(row.日期).startsWith(month));const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${money(m.storeA)}</td><td>${money(m.storeB)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(detailCellDisplay(row.其他明细))}</td><td>${escapeHtml(Exact.or(()=>(row.当日备注), ()=>("")))}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
+  table.querySelector("thead tr").innerHTML=`<th>日期</th><th>总收入</th><th>${userHtml(storeName("A"))}收入</th><th>${userHtml(storeName("B"))}收入</th><th>新客</th><th>总客数</th><th>食材总价格</th><th>佐料明细</th><th>当日总固定成本</th><th>其它明细</th><th>当日备注</th><th>毛利润（毛利率）</th><th>净利润（净利率）</th>`;
+  const items=state.days.filter(row=>String(row.日期).startsWith(month));const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${money(m.storeA)}</td><td>${money(m.storeB)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${userHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${userHtml(detailCellDisplay(row.其他明细))}</td><td>${userHtml(Exact.or(()=>(row.当日备注), ()=>("")))}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
   const fixed=fixedBreakdown(Exact.toNumber(month.slice(0,4)),Exact.toNumber(month.slice(5,7)));const fixedRow=`<tr class="month-summary-row"><td colspan="13"> ${month} 本月共享固定成本汇总 · 人工: ${money(fixed.labour)} · 房租: ${money(fixed.rent)} · 水费: ${money(fixed.water)} · 电费: ${money(fixed.electric)} · 煤气: ${money(fixed.gas)} · 其它: ${money(fixed.other)}</td></tr>`;const blanks=Array.from({length:Exact.math.max(0,Exact.sub(25, items.length))},()=>Exact.add(Exact.add('<tr class="blank-row">', Array.from({length:13},(_,i)=>`<td>${(Exact.truth(Exact.seq(i, 0)) ? '&nbsp;' : '')}</td>`).join("")), '</tr>')).join("");$("historyRows").innerHTML=Exact.add(Exact.add(fixedRow, rows), blanks);applyStoreNames();
 };
 
 async function bulkDeleteRangeV26(){
   const start=$("bulkDeleteStart").value,end=$("bulkDeleteEnd").value;if(Exact.truth(Exact.or(()=>(Exact.not(start)), ()=>(Exact.not(end)))))throw new Error("请选择开始和结束日期。");if(Exact.truth(Exact.lt(end, start)))throw new Error("结束日期不能早于开始日期。");
-  if(Exact.truth(Exact.not(confirm(`确定删除 ${start} 至 ${end} 的全部日数据吗？菜品、采购明细和当天固定支出都会一起删除。`))))return;const typed=prompt('这是不可逆操作。请输入“删除”再次确认：','');if(Exact.truth(Exact.sneq(typed, "删除")))return;
+  if(Exact.truth(Exact.not(confirm(`确定删除 ${start} 至 ${end} 的全部日数据吗？菜品、采购明细和当天固定支出都会一起删除。`))))return;const typed=prompt('这是不可逆操作。请输入“删除”再次确认：','');if(Exact.truth(Exact.sneq(typed, (Exact.truth(Exact.seq(state.language, "en")) ? "DELETE" : "删除"))))return;
   const result=await api(`/datasets/${encodeURIComponent(state.dataset.id)}/records/bulk-delete`,{method:"POST",body:JSON.stringify({start_date:start,end_date:end,delete_month_records:false,delete_inventory_in_range:true})});$("bulkDeleteResult").textContent=`已删除 ${result.deleted_days} 天数据；清除 ${result.inventory_rows_removed} 条库存时间记录。`;await loadCloudData({datasetId:state.dataset.id});
 }
 async function bulkDeleteMonthV26(){

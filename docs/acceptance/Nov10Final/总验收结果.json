@@ -1,0 +1,70 @@
+{
+  "version": "v1.0.2",
+  "build_revision": "20261110-analytics-english-final",
+  "status": "passed",
+  "test_data": "Synthetic fixtures only; browser test HTTP network blocked.",
+  "production_deployment": false,
+  "real_ledger_modified": false,
+  "browser_acceptance": {
+    "fixed_english_pages_dialogs_permissions": 48,
+    "enhanced_analytics_layouts": 36,
+    "dashboard_layouts": 16,
+    "chart_cases": 36,
+    "inventory_scenes": 23,
+    "advanced_analytics_scenes": 24,
+    "javascript_errors": 0,
+    "untranslated_fixed_text_in_audited_english_scenes": 0,
+    "horizontal_document_overflows_in_audited_scenes": 0,
+    "language_switch_preserves_user_values_and_persisted_data": true,
+    "canonical_cash_and_fixed_expense_write_values_verified": true,
+    "closed_month_actuals_and_automatic_rollover_verified": true
+  },
+  "native_acceptance": {
+    "status": "passed",
+    "version": "v1.0.2",
+    "native_language": "Chinese (no English mode; existing web English mode is handled separately)",
+    "source_tests": 46,
+    "new_analytics_tests": 6,
+    "packaged_architectures_tested": [
+      "arm64",
+      "x86_64 via Rosetta"
+    ],
+    "packaged_modules_constructed": 12,
+    "universal_macho_components": 190,
+    "minimum_macos": "15.0",
+    "signature": "ad-hoc; verified, not notarized",
+    "source_sha256": "4baf26d3836f966fb3d860ec8eaf1cd8d7dec6cc4d9dfd70a6d6e327c413d105",
+    "main_bytecode_sha256": "c273c0834db9c1e09ee8071d0b855f432d95733ae03422edb1016c4bf888f381",
+    "changes": [
+      "equal native homepage card styling asserted",
+      "wrapping filters",
+      "scope and record-count banner",
+      "secondary analysis sections collapse without resetting user selections",
+      "one or two chart columns according to available viewport width",
+      "muted grids, clean axes and zero reference line",
+      "mixed-unit notice",
+      "CSV uses current filters even when table is hidden",
+      "empty export disabled"
+    ],
+    "financial_formulas_unchanged": true,
+    "real_data_or_network_used": false
+  },
+  "unit_test_command_groups": 11,
+  "exact_arithmetic_checks": 232,
+  "fifo_fixtures": 77,
+  "fifo_cross_implementation_comparisons": 1020,
+  "backend_tests": {
+    "rerun_in_this_revision": false,
+    "unchanged_files_verified": 33,
+    "previous_passed_tests": 148,
+    "previous_passed_subtests": 15,
+    "evidence": "web/backend-unchanged-verification.json"
+  },
+  "server_bundle": {
+    "files": 60,
+    "web_assets": 38,
+    "source_and_manifest_hashes_verified": true,
+    "evidence": "server-bundle-verification.json"
+  },
+  "evidence_note": "All detailed reports are beside this file. Final ZIP extraction, signatures and privacy scan are verified separately after archive creation."
+}

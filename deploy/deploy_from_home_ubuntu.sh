@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy v1.0.1 using the existing environment. Never removes backups.
+# Deploy v1.0.2 using the existing environment. Never removes backups.
 set -Eeuo pipefail
 umask 077
 
@@ -11,7 +11,7 @@ sudo bash deploy_from_home_ubuntu.sh --release-dir /home/ubuntu/RELEASE \
 
 Optional: --evidence-dir NEW_DIRECTORY --base-url http://127.0.0.1
 The evidence directory must not already exist. API/web backups are retained in
-/opt/restaurant-cloud/backups/v1.0.1-TIMESTAMP-UNIQUE. No pip install,
+/opt/restaurant-cloud/backups/v1.0.2-TIMESTAMP-UNIQUE. No pip install,
 Nginx changes, backup deletion, or database restore is performed.
 EOF
 }
@@ -49,7 +49,7 @@ venv_python=/opt/restaurant-cloud/.venv/bin/python
 runtime_env=/opt/restaurant-cloud/.env.runtime
 nginx_target=/etc/nginx/conf.d/restaurant-cloud-upload.conf
 service_name=restaurant-cloud.service
-expected_version=v1.0.1
+expected_version=v1.0.2
 backup_root=""
 transaction_started=0
 committed=0
@@ -74,7 +74,7 @@ cmp -s -- "$release_dir/api/requirements.txt" "$api_target/requirements.txt" || 
 # Small standard-library checks; this helper never imports application code.
 guard() {
   "$venv_python" -B - "$@" <<'PY'
-import ast, hashlib, json, os, shutil, stat, sys
+import ast, hashlib, json, os, re, shutil, stat, sys
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -114,6 +114,25 @@ if mode == 'preflight':
                 for kw in node.keywords if kw.arg == 'version' and isinstance(kw.value, ast.Constant)]
     require(versions == [expected], 'API version mismatch')
     web = (root/'web_frontend').resolve()
+    class BuildMetadata(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.builds = []
+        def handle_starttag(self, tag, attrs):
+            if tag == 'html':
+                self.builds.append(dict(attrs))
+    require((web/'index.html').is_file(), 'index.html missing')
+    metadata = BuildMetadata()
+    metadata.feed((web/'index.html').read_text(encoding='utf-8'))
+    metadata.close()
+    require(len(metadata.builds) == 1, 'HTML build marker missing or repeated')
+    build = metadata.builds[0]
+    require(build.get('data-build') == expected, 'HTML build version mismatch')
+    revision = build.get('data-build-revision')
+    require('data-build-revision' not in build or isinstance(revision, str)
+            and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', revision),
+            'Invalid HTML build revision')
+    cache_version = expected + '-' + revision if revision is not None else expected
     expected_assets = {'analytics-oct30.css', 'analytics-oct30.js', 'charts-oct30.js',
                        'dashboard-oct30.js', 'reporting-oct30.css'}
     referenced, references = set(), []
@@ -141,7 +160,7 @@ if mode == 'preflight':
                 require(candidate.is_relative_to(web), f'Asset escapes web directory: {value}')
                 require(candidate.is_file() and candidate.stat().st_size > 0, f'Missing/empty HTML asset: {value}')
                 if candidate.suffix in ('.js', '.css'):
-                    require(parse_qs(url.query).get('v') == [expected], f'Asset cache version mismatch: {value}')
+                    require(parse_qs(url.query).get('v') == [cache_version], f'Asset cache version mismatch: {value}')
                 referenced.add(candidate.name)
                 references.append(str(candidate.relative_to(web)))
         handle_startendtag = handle_starttag
@@ -157,7 +176,7 @@ if mode == 'preflight':
     require(expected_assets <= referenced, 'An Oct30 asset is not referenced by HTML')
     for name in expected_assets:
         require((web/name).is_file() and (web/name).stat().st_size > 0, f'Missing Oct30 asset: {name}')
-    print(json.dumps({'version': expected, 'html_files': len(html_files), 'asset_references': len(references), 'oct30_assets': sorted(expected_assets)}))
+    print(json.dumps({'version': expected, 'cache_version': cache_version, 'html_files': len(html_files), 'asset_references': len(references), 'oct30_assets': sorted(expected_assets)}))
 elif mode == 'compare':
     left, right = manifest(args[0]), manifest(args[1])
     require(left == right, f'Backup verification mismatch: {args[1]}')
@@ -274,7 +293,7 @@ if [[ -e "$backup_parent" || -L "$backup_parent" ]]; then
 else
   mkdir -m 0700 -- "$backup_parent"
 fi
-backup_root="$(mktemp -d "$backup_parent/v1.0.1-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
+backup_root="$(mktemp -d "$backup_parent/v1.0.2-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
 evidence_dir="${evidence_dir:-$backup_root/evidence}"
 [[ "$evidence_dir" == /* ]] || die "evidence directory must be absolute."
 [[ ! -e "$evidence_dir" && ! -L "$evidence_dir" ]] || die "evidence directory already exists."

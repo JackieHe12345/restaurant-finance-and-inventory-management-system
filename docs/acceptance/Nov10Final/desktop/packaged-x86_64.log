@@ -1,0 +1,352 @@
+Matplotlib is building the font cache; this may take a moment.
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+test_B03_low_role_cash_removed_locally_without_cloud_delete (__main__.DesktopAcceptance.test_B03_low_role_cash_removed_locally_without_cloud_delete) ... ok
+test_D001_cloud_apply_checks_snapshot_inside_lock (__main__.DesktopAcceptance.test_D001_cloud_apply_checks_snapshot_inside_lock) ... ok
+test_D001_upload_during_GUI_save_remains_pending (__main__.DesktopAcceptance.test_D001_upload_during_GUI_save_remains_pending) ... ok
+test_D002_cross_year_cash_does_not_follow_active_mirror (__main__.DesktopAcceptance.test_D002_cross_year_cash_does_not_follow_active_mirror) ... ok
+test_D003_stale_cash_update_is_rejected_but_matching_save_works (__main__.DesktopAcceptance.test_D003_stale_cash_update_is_rejected_but_matching_save_works) ... ok
+test_D004_empty_days_month_year_keep_fixed_costs (__main__.DesktopAcceptance.test_D004_empty_days_month_year_keep_fixed_costs) ... ok
+test_D005_total_only_legacy_and_explicit_channel_zero (__main__.DesktopAcceptance.test_D005_total_only_legacy_and_explicit_channel_zero) ... ok
+test_D006_oversize_and_corrupt_json_never_replace_existing_file (__main__.DesktopAcceptance.test_D006_oversize_and_corrupt_json_never_replace_existing_file) ... pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+ok
+test_D007_missing_internal_recovery_never_deletes_other_year (__main__.DesktopAcceptance.test_D007_missing_internal_recovery_never_deletes_other_year) ... ok
+test_D008_clean_reload_binds_snapshot_after_widgets_and_modal_defers (__main__.DesktopAcceptance.test_D008_clean_reload_binds_snapshot_after_widgets_and_modal_defers) ... ok
+test_D008_real_form_handler_rejects_stale_background_editor (__main__.DesktopAcceptance.test_D008_real_form_handler_rejects_stale_background_editor) ... ok
+test_W009_structured_and_legacy_detail_contract (__main__.DesktopAcceptance.test_W009_structured_and_legacy_detail_contract) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.667s
+
+OK
+test_B07_live_sync_same_payload_metadata_and_mixed_upload_priority (__main__.DesktopQtAcceptance.test_B07_live_sync_same_payload_metadata_and_mixed_upload_priority) ... pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+ok
+test_B07_source_order_survives_real_excel_and_new_write_advances_rank (__main__.DesktopQtAcceptance.test_B07_source_order_survives_real_excel_and_new_write_advances_rank) ... pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+ok
+test_D003_cash_alias_migration_checks_loaded_record_hash (__main__.DesktopQtAcceptance.test_D003_cash_alias_migration_checks_loaded_record_hash) ... pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+pandas/core/internals/blocks.py:578: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+ok
+test_W009_derived_amount_survives_purchase_save_and_move (__main__.DesktopQtAcceptance.test_W009_derived_amount_survives_purchase_save_and_move) ... ok
+test_W009_dish_real_widget_summary_keeps_raw_storage (__main__.DesktopQtAcceptance.test_W009_dish_real_widget_summary_keeps_raw_storage) ... ok
+test_W009_entry_text_to_JSON_migration_keeps_original_clocks (__main__.DesktopQtAcceptance.test_W009_entry_text_to_JSON_migration_keeps_original_clocks) ... ok
+test_W009_ledger_real_widgets_display_edit_and_save_losslessly (__main__.DesktopQtAcceptance.test_W009_ledger_real_widgets_display_edit_and_save_losslessly) ... ok
+test_W009_unknown_purchase_quantity_and_known_price_statistics (__main__.DesktopQtAcceptance.test_W009_unknown_purchase_quantity_and_known_price_statistics) ... ok
+test_purchase_actual_refresh_save_and_move_preserves_data (__main__.DesktopQtAcceptance.test_purchase_actual_refresh_save_and_move_preserves_data) ... ok
+test_selector_widget_preserves_duplicates_unknown_and_zero (__main__.DesktopQtAcceptance.test_selector_widget_preserves_duplicates_unknown_and_zero) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.892s
+
+OK
+test_closed_month_does_not_need_older_forecast_baseline (__main__.MonthlyHeadlines.test_closed_month_does_not_need_older_forecast_baseline) ... ok
+test_completed_calendar_days_and_real_prior_cost (__main__.MonthlyHeadlines.test_completed_calendar_days_and_real_prior_cost) ... ok
+test_day_one_zero_revenue_and_future_remain_unavailable (__main__.MonthlyHeadlines.test_day_one_zero_revenue_and_future_remain_unavailable) ... ok
+test_first_of_next_month_switches_to_actual_including_year_boundary (__main__.MonthlyHeadlines.test_first_of_next_month_switches_to_actual_including_year_boundary) ... ok
+test_missing_prior_month_never_uses_current_cost (__main__.MonthlyHeadlines.test_missing_prior_month_never_uses_current_cost) ... ok
+test_month_boundary_and_leap_month_days (__main__.MonthlyHeadlines.test_month_boundary_and_leap_month_days) ... ok
+test_negative_profit_zero_and_missing_comparisons (__main__.MonthlyHeadlines.test_negative_profit_zero_and_missing_comparisons) ... ok
+test_no_finished_day_is_unavailable (__main__.MonthlyHeadlines.test_no_finished_day_is_unavailable) ... ok
+test_recorded_zero_cost_is_known_but_absent_month_is_missing (__main__.MonthlyHeadlines.test_recorded_zero_cost_is_known_but_absent_month_is_missing) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.006s
+
+OK
+test_cash_correction_removed_manual_force_kept_unlocked (__main__.MonthlyWidgets.test_cash_correction_removed_manual_force_kept_unlocked) ... ok
+test_closed_month_actual_net_matches_full_report_and_more_stats (__main__.MonthlyWidgets.test_closed_month_actual_net_matches_full_report_and_more_stats) ... ok
+test_forecast_formula_keeps_wrapped_height_and_scroll_reachability (__main__.MonthlyWidgets.test_forecast_formula_keeps_wrapped_height_and_scroll_reachability) ... This plugin does not support propagateSizeHints()
+ok
+test_headline_order_amount_margin_and_responsive_layout (__main__.MonthlyWidgets.test_headline_order_amount_margin_and_responsive_layout) ... This plugin does not support propagateSizeHints()
+ok
+test_historical_lock_remains_while_new_force_can_be_deleted (__main__.MonthlyWidgets.test_historical_lock_remains_while_new_force_can_be_deleted) ... ok
+test_native_date_ticks_do_not_collide_at_small_and_large_widths (__main__.MonthlyWidgets.test_native_date_ticks_do_not_collide_at_small_and_large_widths) ... ok
+test_open_native_views_refresh_at_midnight_without_cloud_changes (__main__.MonthlyWidgets.test_open_native_views_refresh_at_midnight_without_cloud_changes) ... ok
+test_report_note_spaces_and_break_even_label (__main__.MonthlyWidgets.test_report_note_spaces_and_break_even_label) ... ok
+test_today_only_data_never_creates_a_zero_revenue_loss_forecast (__main__.MonthlyWidgets.test_today_only_data_never_creates_a_zero_revenue_loss_forecast) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 2.687s
+
+OK
+test_filters_wrap_and_charts_reflow_without_changing_selections (__main__.AnalyticsWidgets.test_filters_wrap_and_charts_reflow_without_changing_selections) ... This plugin does not support propagateSizeHints()
+ok
+test_flow_controls_do_not_overlap (__main__.AnalyticsWidgets.test_flow_controls_do_not_overlap) ... This plugin does not support propagateSizeHints()
+ok
+test_hidden_table_export_uses_current_filters_and_empty_resets (__main__.AnalyticsWidgets.test_hidden_table_export_uses_current_filters_and_empty_resets) ... ok
+test_mixed_units_notice_and_source_record_count (__main__.AnalyticsWidgets.test_mixed_units_notice_and_source_record_count) ... ok
+test_plot_keeps_exact_source_points_and_zero_reference (__main__.AnalyticsWidgets.test_plot_keeps_exact_source_points_and_zero_reference) ... findfont: Failed to find font weight semibold, now using 400.
+findfont: Failed to find font weight semibold, now using 700.
+ok
+test_secondary_sections_collapse_without_resetting_selection (__main__.AnalyticsWidgets.test_secondary_sections_collapse_without_resetting_selection) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.880s
+
+OK
+{
+  "source": "/BUILD_USER/Documents/Codex/2026-11-10/li-m/work/nov10-enhanced/Nov10/source/desktop/restaurant_cost_manager.py",
+  "source_sha256": "4baf26d3836f966fb3d860ec8eaf1cd8d7dec6cc4d9dfd70a6d6e327c413d105",
+  "passed": true,
+  "tests": 12,
+  "failures": 0,
+  "errors": 0,
+  "results": {
+    "B03": {
+      "private_cache_removed": true,
+      "no_cloud_mutation": true
+    },
+    "D001": {
+      "uploaded_revisions": [
+        2,
+        3
+      ],
+      "latest_local_pending_until_acknowledged": true
+    },
+    "D002": {
+      "balance_2025_mirror": "275.00",
+      "balance_2026_mirror": "275.00",
+      "future_ignored": true
+    },
+    "D003": {
+      "stale_blocked": true,
+      "remote_transaction_retained": true,
+      "matching_hash_save": true
+    },
+    "D004": {
+      "week_fixed": "700.00",
+      "fixed_only_month_and_year": "-3100.00",
+      "zero_days_not_active": true,
+      "future_month_ignored": true
+    },
+    "D005": {
+      "total_only": "1000.00",
+      "legacy_total": "123.45",
+      "explicit_channel_zero": "0.00"
+    },
+    "D006": {
+      "oversize_rejected": true,
+      "malformed_json_rejected": true,
+      "readback_mismatch_rejected": true,
+      "old_file_bytes_unchanged": true
+    },
+    "D007": {
+      "cloud_deletions": [],
+      "restored_years": [
+        2025,
+        2026
+      ]
+    },
+    "D008": {
+      "before_form": {
+        "日期": "2026-10-02",
+        "收益": "1000.00",
+        "食材成本": "10.00",
+        "食材明细": "米 1斤 10.00",
+        "当日备注": "原备注",
+        "总现金": "",
+        "总线上": "",
+        "A店收入": "",
+        "B店收入": "",
+        "手续费": "",
+        "新客人数量": "",
+        "总客人数": "",
+        "佐料成本": "0.00",
+        "佐料明细": "",
+        "水电": "0.00",
+        "其他": "0.00",
+        "其他明细": "",
+        "A店现金": "",
+        "B店现金": "",
+        "A店微信增加": "",
+        "A店微信自动": "",
+        "A店微信覆盖": "",
+        "A店支付宝增加": "",
+        "A店支付宝覆盖": "",
+        "B店微信增加": "",
+        "B店微信自动": "",
+        "B店微信覆盖": "",
+        "B店支付宝增加": "",
+        "B店支付宝覆盖": "",
+        "学生外卖": "",
+        "A店外卖": "",
+        "B店外卖": ""
+      },
+      "cloud_before_save": {
+        "日期": "2026-10-02",
+        "收益": "1000.00",
+        "食材成本": "20.00",
+        "食材明细": "米 1斤 20.00",
+        "当日备注": "原备注",
+        "总现金": "",
+        "总线上": "",
+        "A店收入": "",
+        "B店收入": "",
+        "手续费": "",
+        "新客人数量": "",
+        "总客人数": "",
+        "佐料成本": "0.00",
+        "佐料明细": "",
+        "水电": "0.00",
+        "其他": "0.00",
+        "其他明细": "",
+        "A店现金": "",
+        "B店现金": "",
+        "A店微信增加": "",
+        "A店微信自动": "",
+        "A店微信覆盖": "",
+        "A店支付宝增加": "",
+        "A店支付宝覆盖": "",
+        "B店微信增加": "",
+        "B店微信自动": "",
+        "B店微信覆盖": "",
+        "B店支付宝增加": "",
+        "B店支付宝覆盖": "",
+        "学生外卖": "",
+        "A店外卖": "",
+        "B店外卖": ""
+      },
+      "user_changed_field": "当日备注",
+      "after_save": {
+        "A店外卖": "",
+        "A店微信增加": "",
+        "A店微信自动": "",
+        "A店微信覆盖": "",
+        "A店支付宝增加": "",
+        "A店支付宝覆盖": "",
+        "A店收入": "",
+        "A店现金": "",
+        "B店外卖": "",
+        "B店微信增加": "",
+        "B店微信自动": "",
+        "B店微信覆盖": "",
+        "B店支付宝增加": "",
+        "B店支付宝覆盖": "",
+        "B店收入": "",
+        "B店现金": "",
+        "佐料成本": "0.00",
+        "佐料明细": "",
+        "其他": "0.00",
+        "其他明细": "",
+        "学生外卖": "",
+        "当日备注": "原备注",
+        "总客人数": "",
+        "总现金": "",
+        "总线上": "",
+        "手续费": "",
+        "收益": "1000.00",
+        "新客人数量": "",
+        "日期": "2026-10-02",
+        "水电": "0.00",
+        "食材成本": "20.00",
+        "食材明细": "米 1斤 20.00"
+      },
+      "ui_refreshed": false,
+      "conflict_error": "stale editor rejected",
+      "records_saved": 0,
+      "events": [
+        "user_edits_old_form",
+        "云端数据已写入本地缓存；当前有未保存输入，暂不覆盖画面。",
+        "conflict_warning:这些记录已被网页或其它设备修改，本次本地保存没有覆盖它们：\n  - day/2026-10-02\n\n请等待软件自动刷新后重新输入。"
+      ],
+      "negative_control_original_editor_baseline_blocks_save": true,
+      "executed_original_handlers": [
+        "MainWindow._refresh_cloud_files_in_background",
+        "LedgerTab.get_form_data",
+        "LedgerTab.save_record(mode=overwrite)",
+        "_commit_user_sheet_to_internal"
+      ]
+    },
+    "W009": {
+      "json_and_text_supported": true,
+      "comma_names_notes_blank_and_zero_preserved": true
+    }
+  }
+}

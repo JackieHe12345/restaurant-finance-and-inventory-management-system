@@ -1,12 +1,12 @@
 # restaurant-finance-and-inventory-management-system
 
-> v1.0.1 源码保存在本仓库及 `Nov07.zip` 的 `Nov07/source/` 中。从 ZIP 接手时直接使用该目录，无须再次克隆；先读 ZIP 内 `00_交接必读.md`。2026 Nov 07 的详细改动见[中文版修改日志](CHANGELOG%20(%E4%B8%AD%E6%96%87).md)。
+> 本仓库 `main` 为 **v1.0.2**，构建修订 **`20261110-analytics-english-final`**。升级前的 V1.0.1 提交保留在 `old/V1.0.1`；发布提交说明为 `V1.0.2`。从 [交接必读](00_交接必读.md)、[工程技术详解](docs/ENGINEERING_REFERENCE.zh-CN.md) 和 [发布/部署状态](docs/RELEASE_STATUS_v1.0.2.md) 开始。
 
 [English README](README.md) · [English deployment guide](docs/DEPLOYMENT.md) · [中文部署指南](docs/DEPLOYMENT.zh-CN.md)
 
 `restaurant-finance-and-inventory-management-system` 将餐饮日常记账、采购、库存出入库、固定支出、现金余额和经营统计放在同一个系统中。一套账本可以分别记录 A/B 店的收入渠道；多套独立账本各自保存记录，并通过账号与账本的绑定关系控制访问。网页端和 Python 桌面端通过云端 API 交换记录，也支持 Excel 工作簿导入导出。
 
-本仓库源码版本为 `v1.0.1`，包含网页、FastAPI 后端、桌面端源码、构建工具和测试。使用这些文件可以搭建一套独立实例，数据库和凭据由安装者自己创建。仓库不包含生产账本、商户私钥或打包后的 macOS 应用。
+本次交付的源码版本为 `v1.0.2`，包含网页、FastAPI 后端、桌面端源码、构建工具和测试。使用这些文件可以搭建一套独立实例，数据库和凭据由安装者自己创建。仓库不包含生产账本、商户私钥或打包后的 macOS 应用。
 
 ## 主要实现
 
@@ -19,7 +19,7 @@
 | 同一天的 JSON 记录里，每个字段和明细有不同的可修改期限 | 服务端单独记录收入、客数和明细项目的首次保存时间，不依赖整张记录的更新时间 | `backend/app/models.py`、`backend/app/main.py`、`backend/tests/test_dataset_api.py` |
 | 月度固定费用和逐笔付款容易重复加总 | 统计界面将月度保存值与逐笔固定支出分为两种口径，同时提供分类和来源明细 | `build/web-exact-source/analytics-oct30.js`、`web/analytics-oct30.css` |
 
-当前 API 回归测试通过 148 项测试和 15 个子测试；网页金额与业务检查通过 232 项断言。FIFO 契约包含 77 组 fixture、1,020 个流水/余额检查：**成本和批次分摊在网页与桌面端之间逐项比较，数量余额再与 API 比较**。API 没有第三套 FIFO 成本引擎。
+Nov07 v1.0.1 基线的 API 回归曾通过 148 项测试和 15 个子测试；本段统计是历史结果，本次结果见 `docs/acceptance/Nov10Final/`。网页金额与业务检查通过 232 项断言。FIFO 契约包含 77 组 fixture、1,020 个流水/余额检查：**成本和批次分摊在网页与桌面端之间逐项比较，数量余额再与 API 比较**。API 没有第三套 FIFO 成本引擎。
 
 ## 系统的使用范围
 
@@ -177,7 +177,13 @@ JWT 标识账号，API 会重新读取账号并检查是否启用。非管理员
 
 ## 报表和核算口径
 
-仪表盘先展示所选月份的收入、总成本、利润和客数。月度成本包含整月固定成本；日明细按原有的日分摊规则核算。完整旧报表保留在展开区域中。
+首页从左到右为五项：日均收入、日均毛利润（毛利率）、预计月底盈亏、日均净利润（净利率）、净利润（净利率）。预测括号说明另起一行，各项下方均有与上月对应指标的金额变化比较，窄屏按同一顺序排列。
+
+当前月日均收入和毛利累计至昨日，除以已过自然天数。实际月净利润包含已录入的今日收支以及整月已保存固定支出；日均净利润用该实际月净利润除以已过自然天数。两个净利率都用实际月净利润除以同月收入，月初无已过天数或比率分母为零时显示不可用。历史月份使用整月。
+
+当前月预计盈亏为截至昨日的日均收入乘本月天数，再减上月总成本。从下个月 1 日开始，历史月的预测金额显示该月实际净利润，跨年同样处理，主页与完整月报使用同一规则。客户端独立检查本地日期，保持打开跨过午夜时约 5 秒内刷新；网页恢复可见时重新检查，原生客户端弹窗期间延后、读取失败时重试。用户所选期间保持不变，不回写或冻结账本。未来月份不可用。
+
+毛利润仍为收入减食材、佐料和手续费，日结水电和其他支出继续在净利润中扣除。本版没有重新分类包装耗材或话费。完整日、周、月、年报表保留。精确标签、完整需求与公式见[完整项目交接说明](项目交接说明.md)。
 
 统计工作区提供经营、费用和客流视图。查看人工费用时，选择月份，进入费用分析，再选择“人工”类别；来源表可以搜索并导出 CSV。费用有两种口径：
 
@@ -186,7 +192,7 @@ JWT 标识账号，API 会重新读取账号并检查是否启用。非管理员
 
 采购支出和 FIFO 出库成本回答的是不同问题。费用视图沿用账本的采购/支出口径，批次耗用成本在库存模块查看。因此，月度利润并不能直接被描述为按 FIFO 销货成本计算的利润。
 
-图表使用 SVG，跟随容器宽度重绘，未录入日期保留空缺，点按或键盘聚焦可以查看数值。网页适配手机、平板和电脑，较宽的表格在自身区域内横向滚动。
+图表使用 SVG，跟随容器宽度重绘，未录入日期保留空缺。共用横坐标测量实际文字宽度、在保留期间上下文时缩短日期/月标签、按空间换行类别文字，并预留末尾标签位置后安排其余刻度。减少可见刻度不删除数据点；悬停、点按或键盘仍能查看完整日期、类别和精确金额。ResizeObserver 在容器变化时重新布局。网页适配手机、平板和电脑，较宽表格在自身区域内横向滚动。
 
 ## Excel 与微信账单
 
@@ -194,13 +200,12 @@ JWT 标识账号，API 会重新读取账号并检查是否启用。非管理员
 
 `wechat_pay.py`、`wechat_sync.py` 实现商户交易账单获取、解析和门店渠道映射。订单、退款、结算和手续费都使用金额辅助函数，凭据来自部署环境。当前 API 启动路径刻意不启动旧版调度线程，因此源码中保留调度代码不代表已经启用每日自动导入。
 
-## 克隆、构建与测试
+## 构建与测试交付源码
 
 使用 Python 3.12 和当前 Node.js LTS。网页构建只需要 `build/js-transform` 下的 Acorn；API 测试不需要连接生产数据库。
 
 ```bash
-git clone https://github.com/JackieHe12345/restaurant-finance-and-inventory-management-system.git
-cd restaurant-finance-and-inventory-management-system
+cd /path/to/Nov10/source
 
 python3.12 -m venv .venv
 . .venv/bin/activate
@@ -208,6 +213,8 @@ python -m pip install -r build/test-requirements.txt
 
 npm ci --prefix build/js-transform
 node build/compile_exact_web.cjs
+node web/test_v1_0_2_dashboard.js
+node web/test_v1_0_2_charts.js
 node build/test_exact_web.cjs
 node web/test_inventory_v2.js
 node web/test_oct29_frontend.js
@@ -225,7 +232,7 @@ python -m pip install -r desktop/requirements.txt
 python build/test_fifo_contract.py
 ```
 
-`node` 需在 `PATH` 中，也可通过 `NODE_BINARY` 指定绝对路径。契约测试使用 Qt offscreen 模式。源码测试使用 macOS 上的 Python 3.12。完整v1.0.1包内的App要求macOS 15或更高版本；源码依赖wheel有各自的系统要求。源码导入了 `fcntl`，本仓库不声称支持 Windows。在有图形会话的电脑上，可用 `python desktop/restaurant_cost_manager.py` 启动原生界面。
+`node` 需在 `PATH` 中，也可通过 `NODE_BINARY` 指定绝对路径。契约测试使用 Qt offscreen 模式。源码测试使用 macOS 上的 Python 3.12。完整v1.0.2包内的App要求macOS 15或更高版本；源码依赖wheel有各自的系统要求。源码导入了 `fcntl`，本仓库不声称支持 Windows。在有图形会话的电脑上，可用 `python desktop/restaurant_cost_manager.py` 启动原生界面。
 
 ## 搭建独立实例
 
@@ -251,14 +258,16 @@ curl --fail http://127.0.0.1:8080/api/v1/health
 检查通过后，从仓库生成服务器发布包：
 
 ```bash
-python build/make_release.py --output dist/restaurant-cloud-v1.0.1-deploy.tar.gz
+python build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
 ```
 
-压缩包根目录为 `restaurant-cloud-v1.0.1/`，包含 `api/`、`web_frontend/`、`VERSION`、Nginx 资料和部署/核验脚本，不包含数据库和运行密钥。打包器拒绝覆盖已有输出，再次构建时应另选路径。
+压缩包根目录为 `restaurant-cloud-v1.0.2/`，包含 `api/`、`web_frontend/`、`VERSION`、Nginx 资料和部署/核验脚本，不包含数据库和运行密钥。打包器拒绝覆盖已有输出，再次构建时应另选路径。
 
 `deploy/verify_release_files.py` 比较已安装 API/静态文件与指定发布目录，并检查 API 健康、版本和必要路由。`deploy/verify_deployment.py` 在 PostgreSQL 只读事务中生成业务记录摘要，对比升级前后证据，不打印账本内容。后者检查的是升级是否保留数据，不能代替完整交互验收。文档中的命令为两者显式指定私有证据目录。
 
-| 检查 | 当前结果 | 覆盖范围 |
+下表保留 Nov07 v1.0.1 历史结果，不表示 Nov10 重新执行后仍为这些统计；本次实际核验见 `docs/acceptance/Nov10Final/`。
+
+| 检查 | 历史结果（Nov07） | 覆盖范围 |
 | --- | --- | --- |
 | API pytest | 148 项通过，15 个子测试通过 | 账本访问、金额、库存校验、品名更正、Excel 和微信相关回归 |
 | 网页精确金额检查 | 232 项通过 | 十进制计算、字段规范化、编辑器合计、旧明细和 FIFO 金额守恒 |
@@ -268,7 +277,7 @@ python build/make_release.py --output dist/restaurant-cloud-v1.0.1-deploy.tar.gz
 | 桌面回归 | 12个方法及10个Qt测试通过 | 现金别名、同步、结构化明细及真实Excel读写 |
 | 报表布局 | 20种组合通过 | 中英文、5种宽度、普通及放大文字 |
 
-以上是当前源码的本地自动化结果，不代表已验证每一种浏览器或实机，也不等于原生安装包和生产部署已经验收。
+以上是 Nov07 源码的历史本地自动化结果，不代表已验证每一种浏览器或实机，也不等于原生安装包和生产部署已经验收。
 
 ## 仓库结构
 
@@ -291,7 +300,7 @@ docs/DEPLOYMENT.md         内容对应的英文部署指南
 compose.yaml              独立本地 PostgreSQL/API/Nginx 实例
 README.md                 英文文档
 README (中文).md          中文文档
-VERSION                   v1.0.1
+VERSION                   v1.0.2
 ```
 
 ## 当前边界
@@ -305,10 +314,34 @@ VERSION                   v1.0.1
 MIT，见 [LICENSE](LICENSE)。
 
 
-## v1.0.1 完整交付包
+## v1.0.2 完整交付包
 
-完整ZIP另外包含重新构建的双架构macOS App、服务器部署tar.gz、逐项修复说明、测试构建证据和修复前审查底稿。打包App要求macOS 15或更新版本，使用本地ad-hoc签名，未经Apple公证。保留的运行库实际版本为Python 3.12.10、PySide6 6.11.2、pandas 2.3.3、Matplotlib 3.11.1、openpyxl 3.1.5，与新安装的源码测试环境有区别。
+完整ZIP另外包含重新构建的双架构macOS App、服务器部署tar.gz、当前更新说明和合成测试构建证据。修复前审查、旧 Nov07/Nov10 证据及版本说明 01–05 仅在 For自己包的 `私人运维资料/历史开发证据/` 提供。打包App要求macOS 15或更新版本，使用本地ad-hoc签名，未经Apple公证。保留的运行库实际版本为Python 3.12.10、PySide6 6.11.2、pandas 2.3.3、Matplotlib 3.11.1、openpyxl 3.1.5，与新安装的源码测试环境有区别。
 
-新增回归入口：`python build/test_v1_0_1_desktop.py`、`QT_QPA_PLATFORM=offscreen python build/test_v1_0_1_desktop_qt.py`、`node web/test_v1_0_1_regressions.js`以及`(cd backend && PYTHONPATH=.:tests python -m pytest -q tests)`。桌面构建/核验工具是`build/rebuild_macos_app.py`、`build/verify_macos_app.py`及单独离线测试用的`build/qa_packaged_desktop.py`；完整命令见ZIP内版本说明。重新构建桌面可直接用本包v1.0.1 App作为运行库，配合macOS Python3.12，无须另找Oct30附件；命令及独立输出目录见ZIP构建说明。`build/OCT30_ACCEPTANCE_RESULT.json`是历史验收文件，本版结果另见v1.0.1核验文件。
+延续的历史回归入口：`python build/test_v1_0_1_desktop.py`、`QT_QPA_PLATFORM=offscreen python build/test_v1_0_1_desktop_qt.py`、`node web/test_v1_0_1_regressions.js`以及`(cd backend && PYTHONPATH=.:tests python -m pytest -q tests)`。桌面构建/核验工具是`build/rebuild_macos_app.py`、`build/verify_macos_app.py`及单独离线测试用的`build/qa_packaged_desktop.py`；完整命令见ZIP内版本说明。重新构建桌面可直接用本包v1.0.2 App作为运行库，配合macOS Python3.12，无须另找Oct30附件；命令及独立输出目录见ZIP构建说明。`build/OCT30_ACCEPTANCE_RESULT.json`是历史验收文件，本版结果另见 `docs/acceptance/Nov10Final/`。
 
 ZIP源码目录不含`.git`、已安装依赖及凭据。解压后若要运行`build/make_release.py`，先在源码目录执行`git init`和`git add .`建立本地跟踪；此打包器有意只接受已跟踪的运行源码。再按上文安装锁定的构建/测试依赖。不要把密钥或用户账本放进源码树。
+
+
+### v1.0.2 专项回归与最终修订
+
+重新编译网页脚本后，执行 `node web/test_v1_0_2_dashboard.js` 和 `node web/test_v1_0_2_charts.js`，验证五项指标、净利率、月界与独立日期刷新、精确文案、图表数据及键盘查看。执行 `QT_QPA_PLATFORM=offscreen python3.12 build/test_v1_0_2_desktop.py` 和 `QT_QPA_PLATFORM=offscreen python3.12 build/test_v1_0_2_desktop_qt.py`，验证原生金额、控件、月份切换及现金锁定保护。
+
+`build/qa_web_browser.cjs` 使用 Playwright/Chromium 离线加载实际发布网页与合成数据，保存布局、缩放及交互证据。将 `QA_OUTPUT_DIR` 指向新的绝对目录，可按环境设置 `PLAYWRIGHT_MODULE`、`CHROME_EXECUTABLE`、`RELEASE_SOURCE_ROOT`。当前构建命令和运行环境说明见 `版本说明/06_Nov10V1.0.2更新说明.md`，最终证据在 `docs/acceptance/Nov10Final/`。
+
+最终交付修订为 `20261110-analytics-english-final`。网页资源查询参数包含该修订以更新缓存，软件/API版本仍为 v1.0.2。实际发布和部署核验结果见 [发布状态](docs/RELEASE_STATUS_v1.0.2.md)；须比较哈希，不能只看版本号。[项目交接说明](项目交接说明.md) 记载通用服务器布局、升级边界及财务公式；原主机身份、真实备份和凭据只放在私密分发的 `私人运维资料/`。
+
+完整 ZIP 使用 `build/make_complete_package.py` 生成。它刷新清单，保留 UTF-8 文件名、Unix 符号链接与权限，拒绝依赖/缓存目录并输出 ZIP 的 SHA256；输出必须是分发目录之外的新路径。它只打包已构建产物，不编译源码、不部署服务器、不调整账本。
+
+
+### 完整工程参考与两种隐私包
+
+继续开发前阅读 [工程技术详解](docs/ENGINEERING_REFERENCE.zh-CN.md) 和根目录[项目交接说明](项目交接说明.md)，包括 API、数据表、翻译边界和构建/部署验证。网页版英文模式翻译固定系统界面，保留用户输入原值；原生桌面本版仍是中文。无隐私 ZIP 与 For自己 ZIP 使用相同软件版本，只有后者增加 `私人运维资料/`，服务器软件 tar 都不含私人文件。具体目录、扫描范围和本次测试结果以最终发布证据为准，不能从历史通过数推断。
+
+### 本次最终统计工作流
+
+计算口径/环比条明确所选范围与上月关系。三个观察卡呈现有记录日期覆盖、最大费用，以及视角相关指标：有记录日中的盈利天数、月固定保存值减逐笔值的差额，或最忙客流日/客流覆盖。指标趋势支持折线和柱状，显示精确均值/最小/最大及观察数量。明细按列排序、保留金额符号，合计覆盖跨页全部筛选结果，CSV 遵循筛选/排序。这些是透明的数据观察，不是新增预测或财务分类。
+
+原生中文“更多统计”提供所选范围/来源数提示、可换行筛选、可折叠采购/耗用/方法区，以及随宽度改变的一列或两列图表。混选金额/人数/比率时提示；表格隐藏时也可导出当前筛选，空数据禁用导出。财务和存储合同不变。
+
+英文运行层由 `web/i18n-en.js`、`i18n-inventory-en.js`、`i18n-backend-en.js`、`i18n-extra-en.js` 四个直接维护的字典组成，在 v8 之前载入；配合动态原文/输出元数据、`data-user-content` 排除、只读投影保护和稳定 option 原值。API 错误/结构化审计翻译以及新浏览器验收入口详见工程技术详解。

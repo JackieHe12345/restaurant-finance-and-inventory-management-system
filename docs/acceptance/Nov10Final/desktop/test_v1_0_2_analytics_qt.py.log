@@ -1,0 +1,17 @@
+Matplotlib is building the font cache; this may take a moment.
+test_filters_wrap_and_charts_reflow_without_changing_selections (__main__.AnalyticsWidgets.test_filters_wrap_and_charts_reflow_without_changing_selections) ... qt.qpa.fonts: Populating font family aliases took 48 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support propagateSizeHints()
+ok
+test_flow_controls_do_not_overlap (__main__.AnalyticsWidgets.test_flow_controls_do_not_overlap) ... This plugin does not support propagateSizeHints()
+ok
+test_hidden_table_export_uses_current_filters_and_empty_resets (__main__.AnalyticsWidgets.test_hidden_table_export_uses_current_filters_and_empty_resets) ... ok
+test_mixed_units_notice_and_source_record_count (__main__.AnalyticsWidgets.test_mixed_units_notice_and_source_record_count) ... ok
+test_plot_keeps_exact_source_points_and_zero_reference (__main__.AnalyticsWidgets.test_plot_keeps_exact_source_points_and_zero_reference) ... findfont: Failed to find font weight semibold for Arial Unicode MS, now using 400.
+findfont: Failed to find font weight semibold for DejaVu Sans, now using 700.
+ok
+test_secondary_sections_collapse_without_resetting_selection (__main__.AnalyticsWidgets.test_secondary_sections_collapse_without_resetting_selection) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.414s
+
+OK

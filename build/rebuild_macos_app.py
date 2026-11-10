@@ -31,7 +31,7 @@ def sha(data):
 
 
 def bundle_version(version):
-    """Map the product label (v1.0.1) to Apple's numeric bundle version."""
+    """Map the product label (v1.0.2) to Apple's numeric bundle version."""
     numeric = version.removeprefix('v')
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', numeric):
         raise ValueError('Use a three-part numeric version, optionally prefixed with v')
@@ -155,7 +155,7 @@ def main():
     parser.add_argument('--runtime-app', type=Path, required=True)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--version', default='v1.0.1')
+    parser.add_argument('--version', default='v1.0.2')
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
     try:

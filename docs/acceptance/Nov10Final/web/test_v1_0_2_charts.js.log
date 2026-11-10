@@ -1,0 +1,6 @@
+PASS month axis abbreviates dates while all original point labels remain accessible
+PASS daily and cross-year dates retain full exact readout labels
+PASS all six fixed categories are wrapped instead of being dropped
+PASS missing observations and decimal amounts are preserved
+PASS empty and one-point charts have usable states
+{"version":"v1.0.2","checks":5,"passed":true}

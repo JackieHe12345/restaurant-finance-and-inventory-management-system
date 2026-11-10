@@ -64,7 +64,7 @@ def execute():
     sys.modules[m.__name__] = m
     exec(code, m.__dict__)
     sys.excepthook = sys.__excepthook__
-    assert m.APP_VERSION == 'v1.0.1'
+    assert m.APP_VERSION == 'v1.0.2'
     result['versions'] = dict(app=m.APP_VERSION, python=sys.version, pandas=m.pd.__version__,
                               matplotlib=m.matplotlib.__version__)
     from PySide6 import __version__ as qt_version
@@ -117,7 +117,7 @@ def execute():
     assert m.money_text(m._inventory_fifo_average_price(movement)) == '16.67'
     result['fifo_example'] = {'cost':'50.00','average':'16.67'}
     app = m.QApplication.instance() or m.QApplication([])
-    app.setApplicationName('v1.0.1 isolated QA')
+    app.setApplicationName('v1.0.2 isolated QA')
     m.apply_py_charm_run_style(app)
     snapshot = dict(configured=True, connected=True, role='admin', username='offline-qa', dataset_id=ds,
                     datasets=[{'id':ds,'name':'离线合成验收账本'}], temporary_permissions=[], conflicts=[],
@@ -159,7 +159,8 @@ def execute():
     assert not messages, messages
     result['qt_modules'] = names
     window.tabs.setCurrentIndex(0)
-    app.processEvents()
+    for _ in range(6):
+        app.processEvents()
     window.grab().save(str(qa/'main-window.png'))
     window.hide()
     result['qt_offscreen'] = '12 modules constructed and switched'
@@ -170,7 +171,7 @@ def execute():
         import unittest
         unittest.__path__.append(str(Path(os.environ['V101_QA_STDLIB'])/'unittest'))
         result['test_support'] = 'unittest.mock from host Python3.12 standard library; app dependencies unchanged'
-    for script in ('test_v1_0_1_desktop.py', 'test_v1_0_1_desktop_qt.py'):
+    for script in ('test_v1_0_1_desktop.py', 'test_v1_0_1_desktop_qt.py', 'test_v1_0_2_desktop.py', 'test_v1_0_2_desktop_qt.py', 'test_v1_0_2_analytics_qt.py'):
         sys.argv = [str(root/'build'/script)]
         try:
             runpy.run_path(sys.argv[0], run_name='__main__')

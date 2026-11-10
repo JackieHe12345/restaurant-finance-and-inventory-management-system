@@ -1,0 +1,16 @@
+test_B07_live_sync_same_payload_metadata_and_mixed_upload_priority (__main__.DesktopQtAcceptance.test_B07_live_sync_same_payload_metadata_and_mixed_upload_priority) ... ok
+test_B07_source_order_survives_real_excel_and_new_write_advances_rank (__main__.DesktopQtAcceptance.test_B07_source_order_survives_real_excel_and_new_write_advances_rank) ... ok
+test_D003_cash_alias_migration_checks_loaded_record_hash (__main__.DesktopQtAcceptance.test_D003_cash_alias_migration_checks_loaded_record_hash) ... ok
+test_W009_derived_amount_survives_purchase_save_and_move (__main__.DesktopQtAcceptance.test_W009_derived_amount_survives_purchase_save_and_move) ... qt.qpa.fonts: Populating font family aliases took 60 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+ok
+test_W009_dish_real_widget_summary_keeps_raw_storage (__main__.DesktopQtAcceptance.test_W009_dish_real_widget_summary_keeps_raw_storage) ... ok
+test_W009_entry_text_to_JSON_migration_keeps_original_clocks (__main__.DesktopQtAcceptance.test_W009_entry_text_to_JSON_migration_keeps_original_clocks) ... ok
+test_W009_ledger_real_widgets_display_edit_and_save_losslessly (__main__.DesktopQtAcceptance.test_W009_ledger_real_widgets_display_edit_and_save_losslessly) ... ok
+test_W009_unknown_purchase_quantity_and_known_price_statistics (__main__.DesktopQtAcceptance.test_W009_unknown_purchase_quantity_and_known_price_statistics) ... ok
+test_purchase_actual_refresh_save_and_move_preserves_data (__main__.DesktopQtAcceptance.test_purchase_actual_refresh_save_and_move_preserves_data) ... ok
+test_selector_widget_preserves_duplicates_unknown_and_zero (__main__.DesktopQtAcceptance.test_selector_widget_preserves_duplicates_unknown_and_zero) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.616s
+
+OK

@@ -40,7 +40,7 @@ function transform(text){
   if(node.type==='CallExpression'&&node.callee.type==='MemberExpression'&&!node.callee.computed&&node.callee.property.name==='filter'&&node.arguments.length===1&&node.arguments[0].type==='Identifier'&&node.arguments[0].name==='Boolean')return`${render(node.callee)}(Exact.truth)`;
   let output='',cursor=node.start;for(const child of children(node)){if(child.start<cursor)continue;output+=text.slice(cursor,child.start);let value=render(child);if(['IfStatement','WhileStatement','DoWhileStatement','ForStatement'].includes(node.type)&&child===node.test)value=`Exact.truth(${value})`;output+=value;cursor=child.end;}return output+text.slice(cursor,node.end);
  }
- return '/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */\n'+render(ast);
+ return '/* v1.0.2: Decimal-safe business expressions; source and rebuild tool accompany this release. */\n'+render(ast);
 }
 let files=0;for(const name of fs.readdirSync(source).filter(name=>name.endsWith('.js'))){const result=(name==='inventory-fifo.js'?"if(typeof module!=='undefined' && module.exports && !globalThis.Exact) require('./money.js');\n":'')+transform(fs.readFileSync(path.join(source,name),'utf8'));acorn.parse(result,{ecmaVersion:'latest'});fs.writeFileSync(path.join(target,name),result);files++;}
 console.log(JSON.stringify({files,source,target}));

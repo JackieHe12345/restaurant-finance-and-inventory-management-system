@@ -41,7 +41,7 @@ const context = vm.createContext({
   isCanonicalDate: value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")),
   isoDate: date => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`,
 });
-for (const name of ["isCashForceEntryV4", "isCashEntryLockedV4", "cashSignedAmountV4", "cashEntryTimeV4", "chronologicalCashEntriesV4", "cashRowsWithBalanceV4", "cashLoanHistoryV4", "responseMoneyV4", "renderCashLedgerV4", "saveCashBaselineV4", "openCashItemV4", "deleteCashItemV4"]) {
+for (const name of ["isCashForceEntryV4", "isCashEntryLockedV4", "cashSignedAmountV4", "cashEntryTimeV4", "chronologicalCashEntriesV4", "cashRowsWithBalanceV4", "cashLoanHistoryV4", "responseMoneyV4", "renderCashLedgerV4", "openCashItemV4", "deleteCashItemV4"]) {
   vm.runInContext(functionSource(cashJs, name), context);
 }
 
@@ -84,18 +84,23 @@ assert.equal(currency(Exact.sum(Array.from(loanHistory, row=>row.amount))),"155.
 assert.equal(currency(Exact.sum(Array.from(loanHistory).filter(row=>row.date.startsWith("2026-")).map(row=>row.amount))),"125.00","year fallback includes pre-opening loans");
 assert.equal(currency(Exact.sum(Array.from(loanHistory).filter(row=>row.date.startsWith("2026-09")).map(row=>row.amount))),"60.00","month fallback uses payload transaction dates");
 
-assert.match(html, /data-build="v1.0.1"/);
+const releaseVersion = fs.readFileSync(path.join(root, '../VERSION'), 'utf8').trim();
+const revision = html.match(/data-build-revision="([^"]+)"/)?.[1];
+assert.ok(revision, 'a same-version rebuild must identify its cache revision');
+assert.equal(revision, '20261110-analytics-english-final');
+assert.ok(html.includes(`data-build="${releaseVersion}"`));
 // Asset count may grow; every current local stylesheet/script must exist and
 // use the current version, including the decimal runtime and adaptive layout.
 const assets = [...html.matchAll(/(?:src|href)="([^"?]+\.(?:css|js))(?:\?v=([^" ]+))?"/g)];
 assert.ok(assets.length > 0);
 for (const [, asset, version] of assets) {
-  assert.equal(version, "v1.0.1", `cache key for ${asset}`);
+  assert.equal(version, `${releaseVersion}-${revision}`, `cache key for ${asset}`);
   assert.ok(fs.existsSync(path.join(root, asset)), `missing asset ${asset}`);
 }
 assert.ok(html.indexOf("money.js") < html.indexOf("app.js"));
 assert.ok(assets.some(match => match[1] === "adaptive.css"));
-assert.match(html, /修正后余额<input id="cashOpeningBalanceV4"/);
+assert.doesNotMatch(html, /余额校正|cashOpeningBalanceV4|cashOpeningDateV4|saveCashBaselineV4/);
+assert.match(html, /id="cashResultV4"[^>]*role="status"/);
 assert.match(html, /<small>上月结余<\/small><strong id="cashPreviousMonthBalance"/);
 assert.ok(html.indexOf("cashLoanMonth") < html.indexOf("cashLoanYear") && html.indexOf("cashLoanYear") < html.indexOf("cashLoanTotal"), "loan summaries must be month/year/cumulative");
 assert.doesNotMatch(html, /cashFlowSummary|基准日之后现金流/);
@@ -106,7 +111,8 @@ assert.doesNotMatch(cashJs, /payload\.base_balance\s*=\s*payload\.opening_balanc
 
 for (const line of [
   "(本月截至目前的日均收入 x 本月总天数)",
-  "平本需要 日均收入（“收入”指“Revenue”）增加",
+  "平本 需要 日均收入 增加",
+  "(根据 上月总成本 和 本月收入预测 计算)",
   "( (预计月底盈亏/本月毛利率) / 本月天数 )",
 ]) assert.ok(appJs.includes(line), `missing exact forecast line: ${line}`);
 // Long translated labels/formulas must wrap within a report card.
@@ -122,21 +128,15 @@ async function checkCashEditingAndRendering() {
   const modal = {querySelector: selector => modalFields[selector] ||= {value:""}, remove(){this.removed=true;}};
   Object.assign(context, {
     $: field, cashPayloadV4:()=>payload,
-    money:currency, escapeHtml: value=>String(value), uuid:()=>"new-cash-row",
+    // This cash arithmetic fixture runs in Chinese; presentation helpers preserve its fixed/user strings.
+    money:currency, escapeHtml: value=>String(value), systemMessage:value=>String(value), userHtml:value=>String(value), uuid:()=>"new-cash-row",
     safely: fn=>fn(), confirm:()=>true,
     saveCashPayloadV4:async value=>{saved=value;},
     document:{activeElement:null, createElement:()=>modal, body:{appendChild(){}}},
   });
-  field("cashOpeningBalanceV4").value="40.005";
-  field("cashOpeningDateV4").value="2026-10-29";
-  await context.saveCashBaselineV4();
-  assert.equal(saved.base_balance,"10.00","balance corrections retain the original baseline");
-  const locked=saved.transactions[0];
-  assert.equal(currency(locked.amount),"40.01","correction input rounds half up");
-  assert.equal(locked.type,"余额强制修改");assert.equal(locked.description,"余额强制修改");
-  assert.equal(locked.mode,"force");assert.equal(locked.system_locked,true);
-  assert.equal(locked.created_at,"2026-10-29T12:00:00.000Z");
-  await assert.rejects(context.deleteCashItemV4(locked.id),/不能删除/);
+  // Historical locked corrections remain protected after their creation UI is removed.
+  payload.transactions.push({id:"historical-locked",date:"2026-10-28",type:"余额强制修改",amount:"40.01",mode:"force",system_locked:true});
+  await assert.rejects(context.deleteCashItemV4("historical-locked"),/不能删除/);
 
   for (const [type,mode] of [["余额强制修改","force"],["其它现金收入","delta"]]) {
     context.openCashItemV4();
@@ -148,6 +148,12 @@ async function checkCashEditingAndRendering() {
     assert.equal(currency(item.amount),"0.11");assert.equal(item.mode,mode);
     assert.equal(item.system_locked,false,"items added through the item editor stay deletable");
     assert.equal(modal.removed,true);
+    assert.equal(saved.base_balance,"10.00","adding a correction retains the original baseline");
+    assert.equal(item.created_at,"2026-10-29T12:00:00.000Z");
+    if(mode==="force"){
+      await context.deleteCashItemV4(item.id);
+      assert.ok(!saved.transactions.some(row=>row.id===item.id),"manual forced balance remains deletable");
+    }
   }
   payload={opening_balance:"10.00",transactions:[
     {id:"income",date:"2026-10-29",type:"其它现金收入",amount:"0.10"},
@@ -168,4 +174,4 @@ async function checkCashEditingAndRendering() {
   for(const [id,value] of [["cashCurrentBalance","0.30"],["cashPreviousMonthBalance","0.10"],["cashLoanMonth","0.01"],["cashLoanYear","0.02"],["cashLoanTotal","0.03"]])assert.equal(field(id).textContent,value,`server-authoritative ${id}`);
   assert.throws(()=>Exact.decimal("0.1")+Exact.decimal("0.2"),/禁止/);
 }
-checkCashEditingAndRendering().then(()=>console.log("v1.0.1 cash/history/cache/forecast regression checks passed.")).catch(error=>{console.error(error);process.exitCode=1;});
+checkCashEditingAndRendering().then(()=>console.log("v1.0.2 cash/history/cache/forecast regression checks passed.")).catch(error=>{console.error(error);process.exitCode=1;});

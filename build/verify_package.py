@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only verification of an extracted complete v1.0.1 distribution."""
+"""Read-only verification of an extracted complete v1.0.2 distribution."""
 import argparse
 import hashlib
 import json

@@ -61,7 +61,7 @@ def main():
     p.add_argument('--app',type=Path,required=True)
     p.add_argument('--source',type=Path,required=True)
     p.add_argument('--runtime-app',type=Path)
-    p.add_argument('--version',default='v1.0.1')
+    p.add_argument('--version',default='v1.0.2')
     p.add_argument('--report',type=Path,required=True)
     a=p.parse_args()
     info=plistlib.loads((a.app/'Contents/Info.plist').read_bytes())

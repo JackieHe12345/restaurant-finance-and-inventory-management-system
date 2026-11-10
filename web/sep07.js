@@ -1,4 +1,4 @@
-/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.2: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 
 /* Sep11V1: mobile/tablet presentation mode and immediate audit-row deletion. */
@@ -63,6 +63,7 @@
       if(Exact.truth(Exact.or(()=>(Exact.not(output)), ()=>(Exact.not(output.isConnected))))){
         output=document.createElement("span");
         output.className="readonly-value";
+        output.setAttribute("data-user-content","");
         output.setAttribute("aria-live","off");
         control.insertAdjacentElement("afterend",output);
         control.__sep07ReadOnlyOutput=output;
@@ -83,7 +84,8 @@
     const english=Exact.seq(state.language, "en"), writable=hasWritePermission(), readOnly=isPresentationReadOnly();
     button.disabled=Exact.not(writable);
     button.setAttribute("aria-pressed",String(readOnly));
-    button.title=(Exact.truth(Exact.not(writable)) ? (Exact.truth(english) ? "This account does not have permission to edit." : "当前账号没有修改权限。") : (Exact.truth(readOnly) ? (Exact.truth(english) ? "Switch to editable mode" : "切换至可修改模式") : (Exact.truth(english) ? "Switch to read-only mode" : "切换至只读模式")));
+    const title=(Exact.truth(Exact.not(writable)) ? (Exact.truth(english) ? "This account does not have permission to edit." : "当前账号没有修改权限。") : (Exact.truth(readOnly) ? (Exact.truth(english) ? "Switch to editable mode" : "切换至可修改模式") : (Exact.truth(english) ? "Switch to read-only mode" : "切换至只读模式")));
+    if(Exact.truth(Exact.sneq(button.title, title)))button.title=title;
     const label=(Exact.truth(Exact.not(writable)) ? (Exact.truth(english) ? "Read-only mode" : "只读模式") : (Exact.truth(readOnly) ? (Exact.truth(english) ? "Editable mode" : "可修改模式") : (Exact.truth(english) ? "Read-only mode" : "只读模式")));
     if(Exact.truth(Exact.sneq(button.textContent, label)))button.textContent=label;
   }

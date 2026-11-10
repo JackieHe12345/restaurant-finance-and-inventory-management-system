@@ -1,0 +1,302 @@
+{
+  "revision": "20261110-analytics-english-final",
+  "syntheticData": true,
+  "networkBlocked": true,
+  "layouts": [
+    {
+      "lang": "en",
+      "width": 1600,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 1600,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 1600,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 1024,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 1024,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 1024,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 768,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 768,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 768,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 430,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 430,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 430,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 375,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 375,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 375,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 320,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 320,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "en",
+      "width": 320,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 1600,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 1600,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 1600,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 1024,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 1024,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 1024,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 768,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 768,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 768,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 430,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 430,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 430,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 375,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 375,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 375,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 320,
+      "view": "overview",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 320,
+      "view": "costs",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    },
+    {
+      "lang": "zh",
+      "width": 320,
+      "view": "customers",
+      "pageOverflow": false,
+      "overflow": [],
+      "englishSystemChinese": []
+    }
+  ],
+  "checks": [
+    "All five homepage cards use the same background and border",
+    "Chart style controls preserve observations and selected metric",
+    "Exact amount sorting, filtered totals, user-authored Chinese text and filtered CSV export"
+  ],
+  "errors": [],
+  "passed": true
+}

@@ -31,6 +31,7 @@ function percent(value, base) { return base ? `${(value / base * 100).toFixed(1)
 function num(value) { return Exact.decimal(value); }
 function entered(value) { return value !== null && value !== undefined && String(value).trim() !== "" && !["nan","none"].includes(String(value).toLowerCase()); }
 function escapeHtml(text) { return String(text ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c])); }
+function userHtml(value){ return `<span data-user-content>${escapeHtml(value)}</span>`; }
 function isoDate(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; }
 function parseDate(text) { const [y,m,d] = text.split("-").map(Number); return new Date(y,m-1,d); }
 function daysInMonth(year, month) { return new Date(year, month, 0).getDate(); }
@@ -47,7 +48,7 @@ async function api(path, options = {}) {
   if (!response.ok) {
     if (response.status === 401 && state.token===requestToken && !["/auth/login","/auth/test-login"].includes(path)) logout(true);
     const detail = payload?.detail;
-    const detailMessage = typeof detail === "string" ? detail : (detail?.message || "");
+    const detailMessage = typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map(item=>item.msg||"").filter(Boolean).join("; ") : (detail?.message || "");
     const error = new Error(detailMessage || `请求失败（${response.status}）`);error.status=response.status;error.detail=detail;throw error;
   }
   return payload;
@@ -446,7 +447,7 @@ function renderCurrentDatasetAdmin(){
 function renderDatasetSwitcher() {
   const select=$("datasetSelect"), admin=currentRole()==="admin", show=admin || state.datasets.length>1;
   $("datasetSelectWrap").classList.toggle("hidden",!show);
-  select.innerHTML=state.datasets.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name||item.id)}</option>`).join("");
+  select.innerHTML=state.datasets.map(item=>`<option data-user-content value="${escapeHtml(item.id)}">${escapeHtml(item.name||item.id)}</option>`).join("");
   if(state.dataset)select.value=state.dataset.id;
   $("workbookDatasetName").textContent=state.dataset?.name||state.dataset?.id||"—";
   renderCurrentDatasetAdmin();
@@ -633,6 +634,36 @@ function selectedContext() {
   return {dateText,target,year,month,day,week:aggregate(weekMetrics,weekElapsed,weekAverageMetrics),monthSummary:aggregate(monthMetrics,monthElapsed,monthAverageMetrics),yearSummary:aggregate(yearMetrics,yearElapsed,yearAverageMetrics),monthMetrics,monthAverageMetrics,yearMetrics,weekMetrics,monthElapsedDays:monthElapsed,weekElapsedDays:weekElapsed,yearElapsedDays:yearElapsed,weekStart,weekEnd};
 }
 
+/* v1.0.2: share the homepage/report forecast basis and preserve missing data. */
+function monthOverviewMetricsV102(year,month) {
+  const key=`${year}-${String(month).padStart(2,"0")}`,today=isoDate(new Date()),
+    cutoff=isoDate(new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate()-1));
+  const items=dataDayMetrics().filter(item=>item.date.startsWith(key)&&item.date<=today),
+    averageItems=items.filter(item=>item.date<=cutoff),elapsed=periodElapsedDays(year,month);
+  const known=key<=today.slice(0,7)&&(items.length>0||state.months.has(key)),hasRevenue=items.length>0,hasAverage=averageItems.length>0,
+    revenue=Exact.sum(items.map(item=>item.revenue)),variable=Exact.sum(items.map(item=>item.variable)),
+    total=Exact.add(variable,fixedBreakdown(year,month).spentTotal),net=known?Exact.sub(revenue,total):null;
+  return {key,known,hasRevenue,hasAverage,items,revenue,total,net,elapsed,
+    avgRevenue:hasAverage&&elapsed>0?Exact.div(Exact.sum(averageItems.map(item=>item.revenue)),elapsed):null,
+    avgGross:hasAverage&&elapsed>0?Exact.div(Exact.sum(averageItems.map(item=>item.gross)),elapsed):null,
+    avgNet:known&&elapsed>0?Exact.div(net,elapsed):null,
+    netMargin:known&&Exact.cmp(revenue,0)!==0?Exact.mul(Exact.div(net,revenue),100):null};
+}
+function monthForecastV102(year,month) {
+  const current=monthOverviewMetricsV102(year,month),previousDate=new Date(year,month-2,1),
+    previous=monthOverviewMetricsV102(previousDate.getFullYear(),previousDate.getMonth()+1),
+    closed=current.key<isoDate(new Date()).slice(0,7),
+    revenue=closed?(current.known?current.revenue:null):current.hasAverage?Exact.mul(current.avgRevenue,daysInMonth(year,month)):null;
+  // At the next month's local calendar boundary, replace the estimate with
+  // this month's actual result. No historical write or close-out job is needed.
+  return {current,previous,closed,revenue,net:closed?current.net:current.hasAverage&&previous.known?Exact.sub(revenue,previous.total):null};
+}
+function refreshCalendarBoundaryV102() {
+  const today=isoDate(new Date()),previous=state.dashboardCalendarDate;
+  state.dashboardCalendarDate=today;
+  if(previous&&previous!==today&&state.token)renderDashboard();
+}
+
 function row(label, value, cls="") { return `<div class="metric-row ${cls}"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`; }
 function forecastRow(title, formula, value, cls="", formulaFirst=false) {
   const titleMarkup=`<span class="forecast-title">${escapeHtml(title)}</span>`, formulaMarkup=`<small class="forecast-formula">${escapeHtml(formula)}</small>`;
@@ -645,26 +676,24 @@ function renderCard(id, rows) { $(id).querySelector(".metric-list").innerHTML = 
 function renderDashboard() {
   const c = selectedContext();
   $("dayTitle").textContent = c.dateText; $("weekTitle").textContent = `${isoDate(c.weekStart).slice(5)} ${state.language==="en"?"to":"至"} ${isoDate(c.weekEnd).slice(5)}`; $("monthTitle").textContent = state.language==="en"?`${c.year}-${String(c.month).padStart(2,"0")}`:`${c.year} 年 ${c.month} 月`; $("yearTitle").textContent = state.language==="en"?String(c.year):`${c.year} 年`;
-  const d=c.day, monthDays=daysInMonth(c.year,c.month), elapsed=Math.max(1,c.monthElapsedDays||c.monthSummary?.elapsedDays||1), dailyRevenue=c.monthSummary?c.monthSummary.avgRevenue:0, expectedMonthRevenue=dailyRevenue*monthDays;
-  const previousDate=new Date(c.year,c.month-2,1), previousMonthKey=`${previousDate.getFullYear()}-${String(previousDate.getMonth()+1).padStart(2,"0")}`, previousMonthMetrics=dataDayMetrics().filter(m=>m.date.startsWith(previousMonthKey));
+  const d=c.day, monthDays=daysInMonth(c.year,c.month), forecast=monthForecastV102(c.year,c.month),expectedMonthRevenue=forecast.revenue,expectedMonthNet=forecast.net;
   const monthPaid=c.monthSummary?fixedBreakdown(c.year,c.month).spentTotal:0, monthTotal=c.monthSummary?c.monthSummary.variable+monthPaid:0, monthNet=c.monthSummary?c.monthSummary.revenue-monthTotal:0;
-  const previousMonthTotalCost=previousMonthMetrics.length?previousMonthMetrics.reduce((sum,item)=>sum+item.variable,0)+fixedBreakdown(previousDate.getFullYear(),previousDate.getMonth()+1).spentTotal:monthTotal, expectedMonthNet=expectedMonthRevenue-previousMonthTotalCost;
   const dish=d?dishCostForDate(d.date):{has:false,cost:0}, displayedGross=dish.has?d.revenue-dish.cost:(d?.gross||0);
   /* Standard deviation is intentionally limited to the three daily revenue
      values. All cost and profit rows stay as ordinary money/profit values. */
   renderCard("dayCard", d ? [row(mt("revenue"),metricMoneySd(d.revenue,c.monthAverageMetrics,"revenue"),"hero"),spacer(),row(mt("fixed"),money(d.fixedDaily)),row(mt("variable"),money(d.variable)),row(mt("total"),money(d.total)),row(state.language==="en"?"Average total cost":"日均总成本",money(d.total)),row(mt("dish"),money(dish.has?dish.cost:0)),spacer(),row(mt("net"),profit(d.net,d.revenue),d.net>=0?"positive":"negative"),spacer(),row(mt("gross"),profit(displayedGross,d.revenue),displayedGross>=0?"positive":"negative"),row(mt("customers"),compactNumber(d.customers)),row(mt("ticket"),money(d.customers?d.revenue/d.customers:0))] : [row(state.language==="en"?"No data for this date":"当天没有经营数据","—")]);
-  const summaryRows=(s,metrics,override={})=>{if(!s)return[row(state.language==="en"?"No operating data":"没有经营数据","—")];const fixedTotal=override.fixedTotal??s.fixed,total=override.total??(s.variable+fixedTotal),net=override.net??(s.revenue-total),avgTotal=override.avgTotal??(total/Math.max(1,s.elapsedDays||s.days));return[row(mt("revenue"),money(s.revenue),"hero"),spacer(),row(mt("fixedTotal"),money(fixedTotal)),row(mt("variable"),money(s.variable)),row(mt("total"),money(total)),row(state.language==="en"?"Average total cost":"日均总成本",money(avgTotal)),spacer(),row(mt("gross"),profit(s.gross,s.revenue),s.gross>=0?"positive":"negative"),row(mt("net"),profit(net,s.revenue),net>=0?"positive":"negative"),spacer(),row(mt("avgRevenue"),money(s.avgRevenue)),row(mt("avgVariable"),money(s.avgVariable)),row(mt("avgGross"),profit(s.avgGross,s.avgRevenue)),row(mt("avgNet"),profit(net/Math.max(1,s.elapsedDays||s.days),s.avgRevenue))];};
+  const summaryRows=(s,metrics,override={})=>{if(!s)return[row(state.language==="en"?"No operating data":"没有经营数据","—")];const fixedTotal=override.fixedTotal??s.fixed,total=override.total??(s.variable+fixedTotal),net=override.net??(s.revenue-total),avgTotal=override.avgTotal??(total/Math.max(1,s.elapsedDays||s.days)),avgNet=override.avgNet===undefined?net/Math.max(1,s.elapsedDays||s.days):override.avgNet,marginText=override.netMargin===null?"—":override.netMargin===undefined?null:`${Exact.decimal(override.netMargin).toFixed(1)}%`,netText=marginText===null?profit(net,s.revenue):`${money(net)} (${marginText})`,avgNetText=avgNet===null?"—":marginText===null?profit(avgNet,s.avgRevenue):`${money(avgNet)} (${marginText})`;return[row(mt("revenue"),money(s.revenue),"hero"),spacer(),row(mt("fixedTotal"),money(fixedTotal)),row(mt("variable"),money(s.variable)),row(mt("total"),money(total)),row(state.language==="en"?"Average total cost":"日均总成本",money(avgTotal)),spacer(),row(mt("gross"),profit(s.gross,s.revenue),s.gross>=0?"positive":"negative"),row(mt("net"),netText,net>=0?"positive":"negative"),spacer(),row(mt("avgRevenue"),money(s.avgRevenue)),row(mt("avgVariable"),money(s.avgVariable)),row(mt("avgGross"),profit(s.avgGross,s.avgRevenue)),row(mt("avgNet"),avgNetText)];};
   renderCard("weekCard",summaryRows(c.week,c.weekMetrics));
   if(c.monthSummary){
     const grossMargin=c.monthSummary.revenue>0?c.monthSummary.gross/c.monthSummary.revenue:0;
-    const breakEvenDailyIncrease=expectedMonthNet<0&&grossMargin>0?Math.abs(expectedMonthNet)/grossMargin/monthDays:0;
+    const breakEvenDailyIncrease=expectedMonthNet===null?null:expectedMonthNet<0&&grossMargin>0?Math.abs(expectedMonthNet)/grossMargin/monthDays:0;
     const forecastRows=[
       spacer(),
-      forecastRow(state.language==="en"?"Monthly revenue forecast":"本月收入预测",state.language==="en"?"(current average daily revenue × total days)":"(本月截至目前的日均收入 x 本月总天数)",money(expectedMonthRevenue),"hero",true),
-      forecastRow(state.language==="en"?"Estimated month-end profit/loss":"预计月底盈亏",state.language==="en"?"(based on previous month total cost and monthly revenue forecast)":"(根据上月总成本和本月收入预测)",money(expectedMonthNet),`hero ${expectedMonthNet>=0?"positive":"negative"}`),
-      forecastRow(state.language==="en"?"Daily Revenue increase needed to break even":"平本需要 日均收入（“收入”指“Revenue”）增加",state.language==="en"?"((estimated month-end profit/loss ÷ monthly gross margin) ÷ days in month)":"( (预计月底盈亏/本月毛利率) / 本月天数 )",money(breakEvenDailyIncrease),"hero")
+      forecastRow(state.language==="en"?"Monthly revenue forecast":"本月收入预测",forecast.closed?(state.language==="en"?"(closed month: actual revenue)":"(已结月：显示实际收入)"):(state.language==="en"?"(current average daily revenue × total days)":"(本月截至目前的日均收入 x 本月总天数)"),expectedMonthRevenue===null?"—":money(expectedMonthRevenue),"hero",true),
+      forecastRow(state.language==="en"?"Estimated month-end profit/loss":"预计月底盈亏",(state.language==="en"?"(based on previous month total cost and monthly revenue forecast)":"(根据 上月总成本 和 本月收入预测 计算)")+(forecast.closed?(state.language==="en"?" · Closed month: actual net profit":" · 已结月：显示实际净利润"):""),expectedMonthNet===null?"—":money(expectedMonthNet),`hero ${expectedMonthNet===null?"":expectedMonthNet>=0?"positive":"negative"}`),
+      forecastRow(state.language==="en"?"Daily Revenue increase needed to break even":"平本 需要 日均收入 增加",state.language==="en"?"((estimated month-end profit/loss ÷ monthly gross margin) ÷ days in month)":"( (预计月底盈亏/本月毛利率) / 本月天数 )",breakEvenDailyIncrease===null?"—":money(breakEvenDailyIncrease),"hero")
     ];
-    renderCard("monthCard",summaryRows(c.monthSummary,c.monthMetrics,{fixedTotal:monthPaid,total:monthTotal,net:monthNet,avgTotal:monthTotal/Math.max(1,c.monthElapsedDays||c.monthSummary.elapsedDays)}).concat(forecastRows));
+    renderCard("monthCard",summaryRows(c.monthSummary,c.monthMetrics,{fixedTotal:monthPaid,total:monthTotal,net:monthNet,avgTotal:monthTotal/Math.max(1,c.monthElapsedDays||c.monthSummary.elapsedDays),avgNet:forecast.current.avgNet,netMargin:forecast.current.netMargin}).concat(forecastRows));
   }else renderCard("monthCard",summaryRows(c.monthSummary,c.monthMetrics));
   const y=c.yearSummary;let yearRows=summaryRows(y,c.yearMetrics);if(y){const paid=Array.from({length:12},(_,i)=>fixedBreakdown(c.year,i+1).spentTotal).reduce((a,b)=>a+b,0),yearTotal=y.variable+paid,yearNet=y.revenue-yearTotal;yearRows=summaryRows(y,c.yearMetrics,{fixedTotal:paid,total:yearTotal,net:yearNet,avgTotal:yearTotal/Math.max(1,c.yearElapsedDays||y.elapsedDays)});yearRows.splice(5,0,row(mt("totalExpense"),money(yearTotal)));const monthCount=Math.max(1,new Set(c.yearMetrics.map(m=>m.date.slice(0,7))).size);yearRows.push(row(mt("monthGross"),profit(y.gross/monthCount,y.revenue/monthCount)));yearRows.push(row(mt("monthNet"),profit(yearNet/monthCount,y.revenue/monthCount)));}
   renderCard("yearCard",yearRows);renderCostDonut(d);renderTrend(c.monthMetrics);renderWeekdays(c.monthMetrics);renderExpenses(c);if(typeof renderCashPosition==="function")renderCashPosition();
@@ -970,7 +999,7 @@ async function saveFixed() {
 function renderHistory(){
   const month=$("historyMonth").value||($("selectedDate").value||"").slice(0,7);if(!month)return;
   const items=state.days.filter(row=>String(row.日期).startsWith(month));
-  const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${escapeHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${escapeHtml(detailCellDisplay(row.其他明细))}</td><td>${escapeHtml(row.当日备注||"")}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
+  const rows=items.map(row=>{const m=dayMetrics(row);return `<tr><td>${escapeHtml(m.date)}</td><td>${money(m.revenue)}</td><td>${compactNumber(m.newCustomers)}</td><td>${compactNumber(m.customers)}</td><td>${money(m.food)}</td><td>${userHtml(detailCellDisplay(row.佐料明细))}</td><td>${money(m.fixedDaily)}</td><td>${userHtml(detailCellDisplay(row.其他明细))}</td><td>${userHtml(row.当日备注||"")}</td><td>${pointValue("gross",m.gross,m.revenue)}</td><td>${pointValue("net",m.net,m.revenue)}</td></tr>`;}).join("");
   const fixed=fixedBreakdown(Number(month.slice(0,4)),Number(month.slice(5,7)));
   const fixedRow=`<tr class="month-summary-row"><td colspan="11"> ${month} ${state.language==="en"?"Fixed cost summary":"本月固定成本汇总"} · ${state.language==="en"?"Labour":"人工"}: ${money(fixed.labour)} · ${state.language==="en"?"Rent":"房租"}: ${money(fixed.rent)} · ${state.language==="en"?"Water":"水费"}: ${money(fixed.water)} · ${state.language==="en"?"Electricity":"电费"}: ${money(fixed.electric)} · ${state.language==="en"?"Gas":"煤气"}: ${money(fixed.gas)} · ${state.language==="en"?"Other":"其它"}: ${money(fixed.other)}</td></tr>`;
   const blanks=Array.from({length:Math.max(0,25-items.length)},()=>'<tr class="blank-row"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join("");
@@ -1099,7 +1128,7 @@ function applyLanguage(){
   const english=state.language==="en";document.documentElement.lang=english?"en":"zh-CN";document.title=english?"Restaurant Cost Manager":"餐饮成本管家云端";
   document.querySelectorAll("[data-zh][data-en]").forEach(node=>{node.textContent=node.dataset[english?"en":"zh"];});
   document.querySelectorAll("[data-label-zh][data-label-en]").forEach(label=>{const text=label.dataset[english?"labelEn":"labelZh"];const first=[...label.childNodes].find(node=>node.nodeType===Node.TEXT_NODE);if(first)first.textContent=text;});
-  $("languageButton").textContent=english?"中文":"English";$("loginLanguageButton").textContent=english?"中文":"English";
+  $("languageButton").textContent=english?"Chinese":"English";$("loginLanguageButton").textContent=english?"Chinese":"English";
   $("addFoodRowButton").textContent=english?"＋ Add Row":"＋ 新增空行";$("addSpiceRowButton").textContent=english?"＋ Add Row":"＋ 新增空行";
   const trendLabels={net:["净利润 (净利率)","Net Profit (Margin)"],gross:["毛利润 (毛利率)","Gross Profit (Margin)"],food:["食材成本 (包括佐料)","Ingredient + Seasoning Cost"],revenue:["收入 (Revenue)","Revenue"]};
   [...$("trendMetric").options].forEach(option=>option.textContent=trendLabels[option.value][english?1:0]);
@@ -1108,6 +1137,12 @@ function applyLanguage(){
   document.querySelectorAll("#statsMonthChecks label").forEach(label=>{const input=label.querySelector("input");if(input)label.lastChild.textContent=english?` ${input.value}`:` ${input.value}月`;});
   const weekNames=english?["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]:["一","二","三","四","五","六","日"];document.querySelectorAll("#statsWeekdayChecks label").forEach((label,index)=>{if(label.lastChild)label.lastChild.textContent=` ${weekNames[index]}`;});
   if(state.token){$("ledgerPermission").textContent=canEdit()?(english?"Editable":"可修改"):(english?"Read only":"只读账号");if($("inventoryPermission"))$("inventoryPermission").textContent=canEdit()?(english?"Editable":"可修改"):(english?"Read only":"只读账号");$("changeLogNavButton")?.classList.toggle("hidden",!["admin","editor"].includes(currentRole())||isTestAccount());renderCurrentDatasetAdmin();initializeFilters();renderDashboard();renderHistory();if(typeof renderInventory==="function")renderInventory();if(state.activePage==="stats")renderStats();if(state.activePage==="users"&&currentRole()==="admin")loadUsers().catch(showError);if(state.activePage==="changes")loadChangeLogs().catch(showError);}
+  if(typeof updateDetailTotal==="function")for(const kind of ["food","spice"])if($(kind+"Rows"))updateDetailTotal(kind);
+  if(typeof localizeFixedDishLabels==="function")localizeFixedDishLabels();
+  if(typeof updateDishTotal==="function"&&$("dishRows"))updateDishTotal();
+  if(typeof updateDishSummary==="function"&&$("dishIngredientSummary"))updateDishSummary();
+  if(typeof renderLedgerDetailSummaries==="function")renderLedgerDetailSummaries();
+  if(typeof renderDishDetailSummary==="function")document.querySelectorAll("#dishRows tr,#fixedDishRows tr").forEach(renderDishDetailSummary);
   localStorage.setItem("restaurant_language",state.language);
 }
 
@@ -1115,8 +1150,8 @@ function toggleLanguage(){state.language=state.language==="en"?"zh":"en";applyLa
 
 function userDatasetIds(user){if(Array.isArray(user?.dataset_ids))return user.dataset_ids.map(String);if(Array.isArray(user?.datasets))return user.datasets.map(item=>String(item?.id||item));return [];}
 function selectedOptionValues(select){return [...select.selectedOptions].map(option=>option.value);}
-function datasetOptions(selected=[]){const chosen=new Set(selected.map(String));return state.datasets.map(item=>`<option value="${escapeHtml(item.id)}" ${chosen.has(String(item.id))?"selected":""}>${escapeHtml(item.name||item.id)}</option>`).join("");}
-function defaultDatasetOptions(ids,selected=""){const allowed=new Set(ids.map(String)),items=state.datasets.filter(item=>allowed.has(String(item.id)));return `<option value="">—</option>`+items.map(item=>`<option value="${escapeHtml(item.id)}" ${String(item.id)===String(selected)?"selected":""}>${escapeHtml(item.name||item.id)}</option>`).join("");}
+function datasetOptions(selected=[]){const chosen=new Set(selected.map(String));return state.datasets.map(item=>`<option data-user-content value="${escapeHtml(item.id)}" ${chosen.has(String(item.id))?"selected":""}>${escapeHtml(item.name||item.id)}</option>`).join("");}
+function defaultDatasetOptions(ids,selected=""){const allowed=new Set(ids.map(String)),items=state.datasets.filter(item=>allowed.has(String(item.id)));return `<option value="">—</option>`+items.map(item=>`<option data-user-content value="${escapeHtml(item.id)}" ${String(item.id)===String(selected)?"selected":""}>${escapeHtml(item.name||item.id)}</option>`).join("");}
 function syncDefaultDataset(multiple,defaultSelect){const old=defaultSelect.value,ids=selectedOptionValues(multiple);defaultSelect.innerHTML=defaultDatasetOptions(ids,ids.includes(old)?old:ids[0]||"");}
 function renderNewUserDatasets(){const multiple=$("newUserDatasets"),defaultSelect=$("newUserDefaultDataset");const keep=selectedOptionValues(multiple);multiple.innerHTML=datasetOptions(keep.length?keep:(state.dataset?[state.dataset.id]:[]));syncDefaultDataset(multiple,defaultSelect);}
 function usersEditorSnapshot(){
@@ -1147,7 +1182,7 @@ async function loadUsers(){
   renderNewUserDatasets();
   $("userRows").innerHTML=users.map(user=>{
     const ids=userDatasetIds(user),locked=user.is_test===true||String(user.username||"").toLowerCase()==="test",disabled=locked?" disabled":"";
-    return `<tr data-user-id="${escapeHtml(user.id)}" data-active="${user.is_active!==false}" data-system-user="${locked}"><td><strong>${escapeHtml(user.username)}</strong>${locked?`<small class="system-user-note">${en?"Public read-only demo":"公开只读演示"}</small>`:""}</td><td><input data-display value="${escapeHtml(user.display_name||"")}"></td><td><select data-role${disabled}>${Object.entries(roles).map(([role,label])=>`<option value="${role}" ${user.role===role?"selected":""}>${label}</option>`).join("")}</select></td><td><select data-datasets multiple size="3"${disabled}>${datasetOptions(ids)}</select></td><td><select data-default-dataset${disabled}>${defaultDatasetOptions(ids,user.default_dataset_id||"")}</select></td><td>${user.is_active===false?(en?"Disabled":"已停用"):(en?"Active":"正常")}</td><td><input data-password type="password" placeholder="${en?"Enter a new password":"输入新密码"}"></td><td><button class="soft" data-save-user>${en?"Save":"保存"}</button> <button class="danger-link" data-disable-user${disabled}>${user.is_active===false?(en?"Restore":"恢复"):(en?"Disable":"停用")}</button></td></tr>`;
+    return `<tr data-user-id="${escapeHtml(user.id)}" data-active="${user.is_active!==false}" data-system-user="${locked}"><td><strong>${userHtml(user.username)}</strong>${locked?`<small class="system-user-note">${en?"Public read-only demo":"公开只读演示"}</small>`:""}</td><td><input data-display value="${escapeHtml(user.display_name||"")}"></td><td><select data-role${disabled}>${Object.entries(roles).map(([role,label])=>`<option value="${role}" ${user.role===role?"selected":""}>${label}</option>`).join("")}</select></td><td><select data-datasets multiple size="3"${disabled}>${datasetOptions(ids)}</select></td><td><select data-default-dataset${disabled}>${defaultDatasetOptions(ids,user.default_dataset_id||"")}</select></td><td>${user.is_active===false?(en?"Disabled":"已停用"):(en?"Active":"正常")}</td><td><input data-password type="password" placeholder="${en?"Enter a new password":"输入新密码"}"></td><td><button class="soft" data-save-user>${en?"Save":"保存"}</button> <button class="danger-link" data-disable-user${disabled}>${user.is_active===false?(en?"Restore":"恢复"):(en?"Disable":"停用")}</button></td></tr>`;
   }).join("");
   $("userRows").querySelectorAll("[data-datasets]:not(:disabled)").forEach(select=>select.addEventListener("change",()=>syncDefaultDataset(select,select.closest("tr").querySelector("[data-default-dataset]"))));
   $("userRows").querySelectorAll("[data-save-user]").forEach(button=>button.addEventListener("click",()=>safely(()=>updateUser(button.closest("tr"),false))));
@@ -1166,7 +1201,7 @@ async function loadChangeLogs(){
   const target=$("changeLogRows");if(!target||!["admin","editor"].includes(currentRole()))return;
   const rows=await api(`/audit?dataset_id=${encodeURIComponent(state.dataset?.id||"")}&hours=8784&limit=500`);
   const items=Array.isArray(rows)?rows:(rows?.items||[]);
-  target.innerHTML=items.length?items.map(item=>{const when=item.created_at||item.occurred_at||"",action=auditActionLabel(item.action),location=`${item.record_type||""} ${item.record_key||""}`.trim(),deleteCell=currentRole()==="admin"?`<td><button type="button" class="danger-link" data-delete-audit="${escapeHtml(item.id||"")}">${state.language==="en"?"Delete":"删除"}</button></td>`:"<td class=\"admin-only audit-admin-column hidden\"></td>";return `<tr><td>${escapeHtml(when?new Date(when).toLocaleString(state.language==="en"?"en-US":"zh-CN"):"—")}</td><td>${escapeHtml(item.actor_label||item.actor_username||"—")}</td><td>${escapeHtml(action)}</td><td>${escapeHtml(state.dataset?.name||item.dataset_id||"—")}</td><td>${escapeHtml(location||"—")}</td><td>${escapeHtml(auditSourceLabel(item.source))} · v${escapeHtml(item.to_version??"")}</td>${deleteCell}</tr>`;}).join(""): `<tr><td colspan="7">${state.language==="en"?"No changes in the last 366 days.":"近 366 天没有非管理员修改记录。"}</td></tr>`;
+  target.innerHTML=items.length?items.map(item=>{const when=item.created_at||item.occurred_at||"",action=auditActionLabel(item.action),location=`${item.record_type||""} ${item.record_key||""}`.trim(),deleteCell=currentRole()==="admin"?`<td><button type="button" class="danger-link" data-delete-audit="${escapeHtml(item.id||"")}">${state.language==="en"?"Delete":"删除"}</button></td>`:"<td class=\"admin-only audit-admin-column hidden\"></td>";return `<tr><td>${escapeHtml(when?new Date(when).toLocaleString(state.language==="en"?"en-US":"zh-CN"):"—")}</td><td>${userHtml(item.actor_label||item.actor_username||"—")}</td><td>${escapeHtml(action)}</td><td>${userHtml(state.dataset?.name||item.dataset_id||"—")}</td><td>${escapeHtml(location||"—")}</td><td>${escapeHtml(auditSourceLabel(item.source))} · v${escapeHtml(item.to_version??"")}</td>${deleteCell}</tr>`;}).join(""): `<tr><td colspan="7">${state.language==="en"?"No changes in the last 366 days.":"近 366 天没有非管理员修改记录。"}</td></tr>`;
   target.querySelectorAll("[data-delete-audit]").forEach(button=>button.addEventListener("click",()=>safely(()=>deleteAuditLog(button.dataset.deleteAudit))));
 }
 async function deleteAuditLog(auditId){
@@ -1197,7 +1232,7 @@ function allowEditorNavigation(onConfirm=null){
   document.body.appendChild(overlay);document.addEventListener("keydown",onKey);renderFirst();return false;
 }
 function showPage(page){if(page==="users"&&(currentRole()!=="admin"||isTestAccount()))page="overview";if(page==="changes"&&(!["admin","editor"].includes(currentRole())||isTestAccount()))page="overview";if(page==="data"&&(currentRole()!=="admin"||isTestAccount()))page="overview";if(page!==state.activePage&&state.editorDirty&&!state.editorNavigationBypass)return allowEditorNavigation(()=>showPage(page));state.activePage=page;document.querySelectorAll(".app-page").forEach(node=>node.classList.toggle("hidden",node.id!==`page${page[0].toUpperCase()}${page.slice(1)}`));document.querySelectorAll('[data-page="data"]').forEach(node=>node.classList.toggle("hidden",currentRole()!=="admin"||isTestAccount()));let activeButton=null;document.querySelectorAll("[data-page]").forEach(button=>{const active=button.dataset.page===page;button.classList.toggle("active",active);if(active)activeButton=button;});if(activeButton&&window.matchMedia("(max-width: 1180px)").matches){const behavior=window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth";requestAnimationFrame(()=>activeButton.scrollIntoView({block:"nearest",inline:"center",behavior}));}if(page==="ledger"&&typeof refreshLedger==="function")refreshLedger();if(page==="stats")initializeStats();if(page==="inventory"&&typeof renderInventory==="function")renderInventory();if(page==="users")loadUsers().catch(showError);if(page==="changes")loadChangeLogs().catch(showError);if(page==="workbooks"){$("workbookDatasetName").textContent=state.dataset?.name||state.dataset?.id||"—";document.querySelectorAll(".admin-only").forEach(node=>node.classList.toggle("hidden",currentRole()!=="admin"));renderCurrentDatasetAdmin();}if(typeof renderCashPosition==="function")renderCashPosition();return true;}
-function showError(error){$("notice").textContent=error.message||String(error);$("notice").classList.remove("hidden");}
+function showError(error){$("notice").textContent=typeof systemMessage==="function"?systemMessage(error.message||String(error)):error.message||String(error);$("notice").classList.remove("hidden");}
 async function safely(action){try{await action();}catch(error){showError(error);}}
 function shiftStatsYear(amount){const target=String(Number($("statsYear").value||new Date().getFullYear())+amount);if(![...$("statsYear").options].some(option=>option.value===target))$("statsYear").add(new Option(target,target));$("statsYear").value=target;renderStats();}
 

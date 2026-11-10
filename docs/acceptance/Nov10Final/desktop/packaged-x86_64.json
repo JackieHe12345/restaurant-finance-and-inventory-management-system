@@ -1,0 +1,43 @@
+{
+  "architecture": "x86_64",
+  "network": "disabled",
+  "data": "synthetic isolated workbooks",
+  "main_bytecode_sha256": "c273c0834db9c1e09ee8071d0b855f432d95733ae03422edb1016c4bf888f381",
+  "versions": {
+    "app": "v1.0.2",
+    "python": "3.12.10 (v3.12.10:0cc81280367, Apr  8 2025, 08:47:00) [Clang 13.0.0 (clang-1300.0.29.30)]",
+    "pandas": "2.3.3",
+    "matplotlib": "3.11.1",
+    "pyside6": "6.11.2",
+    "openpyxl": "3.1.5"
+  },
+  "money": "passed",
+  "excel_roundtrip": "passed",
+  "fifo_example": {
+    "cost": "50.00",
+    "average": "16.67"
+  },
+  "qt_modules": [
+    "经营仪表盘",
+    "现金余额表",
+    "记账本",
+    "店铺设置",
+    "当日做出的菜品",
+    "食材明细",
+    "佐料明细",
+    "库存",
+    "更多统计",
+    "数据管理",
+    "修改记录",
+    "临时权限"
+  ],
+  "qt_offscreen": "12 modules constructed and switched",
+  "test_support": "unittest.mock from host Python3.12 standard library; app dependencies unchanged",
+  "test_v1_0_1_desktop.py": "passed in packaged runtime",
+  "test_v1_0_1_desktop_qt.py": "passed in packaged runtime",
+  "test_v1_0_2_desktop.py": "passed in packaged runtime",
+  "test_v1_0_2_desktop_qt.py": "passed in packaged runtime",
+  "test_v1_0_2_analytics_qt.py": "passed in packaged runtime",
+  "status": "passed",
+  "process_exit_code": 0
+}

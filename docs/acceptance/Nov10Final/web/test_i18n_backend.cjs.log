@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "backend_source_occurrences": 314,
+  "unique_backend_templates": 296,
+  "source_modules": 11,
+  "template_checks": 296,
+  "behavioral_examples": 13,
+  "actual_backend_validation_cases": 6,
+  "checks": [
+    "nested numeric/UTC validation",
+    "Pydantic wrapper and enum",
+    "Excel location and nested errors",
+    "Chinese user item/unit preservation",
+    "structured audit data preservation",
+    "Chinese mode unchanged",
+    "source template coverage"
+  ]
+}

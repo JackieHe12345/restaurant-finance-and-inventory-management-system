@@ -2,6 +2,60 @@
 
 [中文](CHANGELOG%20%28%E4%B8%AD%E6%96%87%29.md)
 
+## v1.0.2 — 2026 Nov 10
+
+The Nov10 release delivers the final five-metric dashboard, complete fixed-text English browser interface, a more capable analytics workspace, readable charts and the retained single cash-adjustment entry point. Browser/API/macOS versions remain **v1.0.2**; the build revision is **`20261110-analytics-english-final`**. The two distributions are `For自己记账系统Nov10V1.0.2.zip` and `无隐私记账系统Nov10V1.0.2.zip`. The entries below describe the final state once, not the sequence of same-day design iterations.
+
+### Five consistent homepage cards
+
+Code: `build/web-exact-source/dashboard-oct30.js`, `build/web-exact-source/app.js`, the dashboard styles and `desktop/restaurant_cost_manager.py`.
+
+The final order is average daily revenue; average daily gross profit (gross margin); estimated month-end profit/loss; average daily net profit (net margin); net profit (net margin). The exact Chinese labels are `日均收入`, `日均毛利润 (毛利率)`, `预计月底盈亏 (根据 上个月总成本 和 这个月日均收入 计算)`, `日均净利润 (净利率)` and `净利润 (净利率)`. The forecast parenthesis begins on a new line with the requested words and spaces preserved. Gross and both net values display their corresponding margin in parentheses. All five cards use the same white background and border treatment; Net profit no longer has a separate tinted card. Amount colors still convey their positive/negative meaning. Narrow layouts retain the same card sequence.
+
+Every card displays its percentage change from the corresponding previous-month value, or an explicit unchanged/unavailable explanation. Changes divide by the absolute prior value, so reductions in a loss have the correct direction. Zero and missing prior bases are distinguished. Current-month average revenue/gross use data through yesterday divided by elapsed calendar days; completed months use all calendar days. Actual monthly net includes today's recorded activity and the full saved monthly fixed expenditure. Average daily net divides that actual net by elapsed calendar days; both net margins divide actual monthly net by the same month's actual revenue. Day-one averages and undefined margins remain unavailable.
+
+### Completed-month actuals and full-report labels
+
+Current-month forecast remains average daily revenue through yesterday × days in the selected month − previous-month total cost. Missing previous cost is not replaced by current cost. From the first day of the next month in the client's local calendar, a completed month's forecast amount becomes that month's actual net profit, including December/January transitions. The homepage and full monthly report use the same rule. Future periods remain unavailable. Independent local-calendar checks refresh open browser/native views approximately every five seconds even if data is unchanged; the browser checks on returning to visibility and native refresh is deferred during modal dialogs. This does not change the selected period, write a forecast into the ledger or freeze a month against authorized correction.
+
+The Chinese full-report labels are `预计月底盈亏(根据 上月总成本 和 本月收入预测 计算)` and `平本 需要 日均收入 增加`. Their requested parentheses and spaces remain intact.
+
+### Complete English fixed interface, with original user content
+
+The browser's English mode covers system navigation, page/report headings, form labels, placeholders, buttons, help, dialogs, validation/status messages, role names, system categories, chart labels and dynamic controls across the application, including the cash sheet, daily ledger, account/book management and Excel pages. The direct display catalogs are `web/i18n-en.js`, `i18n-inventory-en.js`, `i18n-backend-en.js` and `i18n-extra-en.js`, loaded before the v8 presentation layer. Dynamic source/output metadata in v8/v28, opaque `data-user-content` cells and read-only projections, and canonical option values preserve user data and avoid observer loops. Known API errors and structured audit summaries receive English system wording while retaining original interpolated values and before/after data. English currency and chart scale labels remain consistent with the underlying CNY amounts; language switching does not convert currencies.
+
+User-authored book/store/product/dish/custom income-item names, notes, people and other entered values are preserved. A Chinese store name is expected to remain Chinese in English mode. Translation changes display labels, not the Chinese compatibility keys in saved JSON/Excel, user values or financial records. Dynamic fixed text is localized without submitting an editor or changing its book/date/amount. The native macOS application remains a Chinese interface; this release does not introduce a separate native English mode.
+
+### Analytics workspace with clear context and source data
+
+Code: `build/web-exact-source/analytics-oct30.js`, `charts-oct30.js`, `web/analytics-oct30.css`, `web/reporting-oct30.css`.
+
+The operating, expense and customer views now present a clear calculation-basis and previous-month comparison strip. Data-observation cards expose recorded-day/calendar coverage, the largest expense and its amount/share, profitable recorded days for operations, the saved-month-versus-itemized fixed-expense gap for costs, and busiest recorded customer day/customer-data coverage for customers. These are observations from the selected records, not invented forecasts or a new accounting basis.
+
+Users can switch the metric trend between line and bar views. The trend's exact mean, minimum, maximum and observation count are presented with its period context. Detail columns can be sorted, negative cells retain their sign, and filtered totals cover every matching row rather than only the current page. CSV respects the current filter and sort order. Responsive tabs, metric cards, chart controls, category bars and source tables use a consistent visual hierarchy on phones and desktops. Saved monthly fixed totals and itemized fixed payments remain separate reconciliation bases and are never added twice.
+
+The native More statistics module gains a scope banner showing selected year/months/weekdays/mode/domain and source-record count, wrapping filter controls, collapsible ingredient-purchase/actual-consumption/forecast-method sections, and chart columns that adapt to available width. Plots use restrained grid/zero lines and clearer axes; a notice identifies mixed amount/count/rate selections. Current-filter CSV remains available when its table is hidden, and empty export is disabled. No new financial formula, storage field or dependency is introduced by this native presentation change.
+
+### Readable and accessible chart details
+
+Shared SVG axes use the available width and measured label size, reserve edge/final labels, abbreviate dates/months with period context and wrap long category names. Resizing recalculates placement. English axes use K/M/B units; fixed weekday/unit/status and accessibility text follows the selected language. Fewer axis labels never removes observations. Full dates, categories and exact amounts remain available through pointer, touch, focus, arrow keys and Home/End. Missing observations remain gaps. Native plot axes also adapt to the responsive statistics layout.
+
+### Cash correction and retained accounting rules
+
+The separate Balance correction disclosure, balance/date fields and save button are removed. Add an item → Force balance adjustment remains the single entry point for setting an actual balance on a chosen date. This is not revenue or expense and does not replace existing transactions. Ordinary entries remain deletable; historical `system_locked` entries remain protected and are not unlocked or rewritten by the upgrade.
+
+Gross profit remains revenue minus food, seasoning and transaction fees. Daily utilities and Other expenses are deducted in net profit. Packaging, chopsticks, tissues, phone charges and other expenses are not reclassified. Monthly purchase/expense accounting is not replaced by FIFO consumption accounting, and the UI/localization work does not change production ledgers.
+
+### Same-version builds, two privacy flavors and complete handoff
+
+HTML and local asset queries use the build revision `20261110-analytics-english-final` while the application/API version stays v1.0.2. Deployment preflight and file verification validate the revision, exact version-plus-revision cache queries and installed/served file hashes; a v1.0.2 health response alone is insufficient.
+
+The clean ZIP contains software, generic deployment instructions, bilingual documentation, synthetic tests and sanitized evidence, without original private server identities or credentials/business snapshots. The owner ZIP adds the specifically requested `私人运维资料/`, including the supplied SSH credential and accounting-system private operations snapshot described by its inventory. Private artifacts remain outside the native app, web root and software-only server tar. The two ZIPs have separate manifests/checksums.
+
+Root and `source/` copies of the English and Chinese changelogs match. The root handoffs and `docs/ENGINEERING_REFERENCE.md` / `.zh-CN.md` document modules, APIs, tables, financial/FIFO contracts, English/user-content boundaries, configuration, builds, tests, deployment/rollback, privacy packaging and troubleshooting. Current acceptance evidence is under `docs/acceptance/Nov10Final/`; the pre-fix audit, earlier Nov10/Nov07 logs/screenshots and historical release notes 01–05 are archived only in the private ZIP under `私人运维资料/历史开发证据/`. The clean ZIP retains historical changelog text but omits those private historical attachments. Test results must identify the actual current artifacts, not reuse old pass counts without explanation.
+
+The actual repository publication and verified deployment state are recorded in [release status](docs/RELEASE_STATUS_v1.0.2.md). Packaging and deployment are checked separately against the final tar. Actual server identities and private snapshots remain only in the owner ZIP.
+
 ## v1.0.1 — 2026 Nov 07
 
 This release fixes errors in ledger details, cash balances, cloud synchronization and inventory reporting, and allows long text to wrap in the web financial reports. The main problems included expenses surviving deletion of their last detail, separate purchases being merged or moved together because they shared a name, newer data being replaced by older responses during book changes or synchronization, and inconsistent rules for reading, saving and version-checking legacy cash records.

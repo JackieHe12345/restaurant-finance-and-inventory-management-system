@@ -1,0 +1,17 @@
+test_cash_correction_removed_manual_force_kept_unlocked (__main__.MonthlyWidgets.test_cash_correction_removed_manual_force_kept_unlocked) ... qt.qpa.fonts: Populating font family aliases took 54 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+ok
+test_closed_month_actual_net_matches_full_report_and_more_stats (__main__.MonthlyWidgets.test_closed_month_actual_net_matches_full_report_and_more_stats) ... ok
+test_forecast_formula_keeps_wrapped_height_and_scroll_reachability (__main__.MonthlyWidgets.test_forecast_formula_keeps_wrapped_height_and_scroll_reachability) ... This plugin does not support propagateSizeHints()
+ok
+test_headline_order_amount_margin_and_responsive_layout (__main__.MonthlyWidgets.test_headline_order_amount_margin_and_responsive_layout) ... This plugin does not support propagateSizeHints()
+ok
+test_historical_lock_remains_while_new_force_can_be_deleted (__main__.MonthlyWidgets.test_historical_lock_remains_while_new_force_can_be_deleted) ... ok
+test_native_date_ticks_do_not_collide_at_small_and_large_widths (__main__.MonthlyWidgets.test_native_date_ticks_do_not_collide_at_small_and_large_widths) ... ok
+test_open_native_views_refresh_at_midnight_without_cloud_changes (__main__.MonthlyWidgets.test_open_native_views_refresh_at_midnight_without_cloud_changes) ... ok
+test_report_note_spaces_and_break_even_label (__main__.MonthlyWidgets.test_report_note_spaces_and_break_even_label) ... ok
+test_today_only_data_never_creates_a_zero_revenue_loss_forecast (__main__.MonthlyWidgets.test_today_only_data_never_creates_a_zero_revenue_loss_forecast) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.967s
+
+OK

@@ -1,12 +1,12 @@
 # restaurant-finance-and-inventory-management-system
 
-> The v1.0.1 source is available in this repository and in `Nov07.zip` under `Nov07/source/`. When using the ZIP, work directly in that directory instead of cloning again. Start with `00_交接必读.md` in the ZIP. See [the detailed changelog](CHANGELOG.md) for changes dated 2026 Nov 07.
+> This repository’s `main` contains **v1.0.2**, build revision **`20261110-analytics-english-final`**. The preceding V1.0.1 commit is preserved on `old/V1.0.1`; the release commit message is `V1.0.2`. Start with [the handoff](PROJECT_HANDOFF.md), [engineering reference](docs/ENGINEERING_REFERENCE.md) and [release/deployment status](docs/RELEASE_STATUS_v1.0.2.md).
 
 [中文文档](<README (中文).md>) · [English deployment guide](docs/DEPLOYMENT.md) · [中文部署指南](docs/DEPLOYMENT.zh-CN.md)
 
 `restaurant-finance-and-inventory-management-system` connects daily restaurant bookkeeping with purchasing, stock movements, fixed expenses, cash balances and operating reports. A book can record separate A/B store income channels; independent books have their own records and account memberships. The browser client and a Python desktop client work with the cloud API and exchange Excel workbooks.
 
-The source in this repository is labelled `v1.0.1`. It includes the browser application, FastAPI backend, desktop source, build tools and tests. A fresh installation starts with its own database and credentials. Production records, merchant keys and packaged macOS binaries are not part of the repository.
+The source in this delivered snapshot is labelled `v1.0.2`. It includes the browser application, FastAPI backend, desktop source, build tools and tests. A fresh installation starts with its own database and credentials. Production records, merchant keys and packaged macOS binaries are not part of the repository.
 
 ## Implementation at a glance
 
@@ -19,7 +19,7 @@ The source in this repository is labelled `v1.0.1`. It includes the browser appl
 | A daily JSON document contains entries with different editing deadlines | Server-owned timing maps track individual income fields, customer fields and detail items rather than relying on the document's last update time | `backend/app/models.py`, `backend/app/main.py`, `backend/tests/test_dataset_api.py` |
 | Monthly expenses and dated payments can be counted twice | Analytics presents monthly saved amounts and itemized fixed expenses as separate bases, with categories and source details | `build/web-exact-source/analytics-oct30.js`, `web/analytics-oct30.css` |
 
-The API suite currently passes 148 tests and 15 subtests. Browser money/business checks pass 232 assertions. The FIFO contract covers 77 fixtures and 1,020 movement/balance checks: it compares **cost and allocation results between the browser and desktop**, then compares **quantity balances with the API**. The API does not implement a third FIFO cost engine.
+The Nov07 v1.0.1 baseline passed 148 API tests and 15 subtests; the following baseline counts are historical, while this delivery’s new results are under `docs/acceptance/Nov10Final/`. Browser money/business checks pass 232 assertions. The FIFO contract covers 77 fixtures and 1,020 movement/balance checks: it compares **cost and allocation results between the browser and desktop**, then compares **quantity balances with the API**. The API does not implement a third FIFO cost engine.
 
 ## Application scope
 
@@ -177,7 +177,13 @@ If two spellings have balances of 2 and 3 buckets but the physical count is 7, t
 
 ## Reports and accounting bases
 
-The dashboard starts with the selected month's revenue, total cost, profit and customer figures. Its monthly cost includes whole-month fixed costs; daily reports use their daily allocation rules. The detailed original reports remain in an expandable section.
+The homepage shows five metrics in order: average daily revenue; average daily gross profit (gross margin); estimated month-end profit/loss; average daily net profit (net margin); net profit (net margin). The forecast explanation starts on a new line. Every card compares its amount with the corresponding previous-month metric. Narrow screens preserve the same order.
+
+Current-month average revenue and gross profit use records through yesterday and elapsed calendar days. Actual monthly net includes today's recorded activity and the full saved monthly fixed expenditure; average daily net divides that actual net by elapsed calendar days. Both net margins use actual monthly net divided by the same month's actual revenue. Day-one averages and undefined margins are unavailable. Completed months use the full calendar month.
+
+The current-month forecast is average daily revenue through yesterday multiplied by the month's calendar days, less previous-month total cost. From the first day of the next month, a completed month's forecast amount becomes its actual net profit, including across December/January. The homepage and full monthly report share this rule. An independent local-calendar check refreshes open views approximately every five seconds when the day changes; the browser also checks when visible again, while the native client defers during modal dialogs and retries failed reads. Selection is retained, and this does not write or freeze ledger data. Future months remain unavailable.
+
+Gross profit remains revenue minus food, seasoning and transaction fees; daily utilities and Other expenses are still deducted in net profit. No packaging, consumable or phone-cost reclassification is part of this release. Detailed day/week/month/year reports remain available. Full final requirements and formulas are in [the complete handoff](PROJECT_HANDOFF.md).
 
 The analytics workspace has operating, expense and customer views. To inspect labour expense, choose a month, open Expenses and select Labour. The source table can be searched and exported as CSV. Two expense bases are available:
 
@@ -186,7 +192,14 @@ The analytics workspace has operating, expense and customer views. To inspect la
 
 Purchase spending and FIFO issue cost answer different questions. The expense view follows the ledger's purchasing/expense basis; batch consumption cost is available in Inventory. A monthly profit figure is therefore not automatically a FIFO cost-of-goods-sold report.
 
-Charts are rendered as SVG, resize with their container and leave unrecorded dates as gaps. Point details can be inspected by pointer or keyboard. The web layout adapts to phone, tablet and desktop widths, with wide tables scrolling inside their own panels.
+Charts are rendered as SVG, resize with their container and leave unrecorded dates as gaps. The shared axis renderer measures text, shortens dates/months with period context, wraps category names and packs ticks while reserving the final label. No data points are removed when fewer labels fit. Pointer, touch and keyboard inspection retain full labels and exact amounts; ResizeObserver recomputes the layout when the container changes. The web layout adapts to phone, tablet and desktop widths, with wide tables scrolling inside their own panels.
+
+
+### Final analytics workflow
+
+The calculation-basis/comparison strip names the selected scope and prior-month relationship. Three observation cards summarize recorded-day coverage and the largest expense, plus a perspective-specific measure: profitable recorded days, saved-month-minus-itemized fixed-cost gap, or busiest customer day/customer coverage. The metric trend supports line/bar selection and displays exact mean/minimum/maximum with observation count. Details sort by column, show signed amounts and total all filtered rows across pages; CSV follows filter/sort. These are transparent observations, not new predictions or financial classifications.
+
+The native Chinese More statistics view provides a selected-scope/source-count banner, wrapping filters, collapsible purchase/consumption/method sections and one or two chart columns according to available width. Mixed amount/count/rate selections have a notice. Export uses current filtered records even if the table is hidden; no-data export is disabled. Its financial and storage contracts remain unchanged.
 
 ## Excel and WeChat bill integration
 
@@ -194,13 +207,12 @@ Charts are rendered as SVG, resize with their container and leave unrecorded dat
 
 `wechat_pay.py` and `wechat_sync.py` implement merchant transaction-bill retrieval/parsing and mapping amounts to configured store channels. Order, refund, settlement and fee amounts use the money helpers. Credentials are read from deployment-side configuration. The legacy scheduler is deliberately not started by the current API startup path, so its presence in the source does not imply an enabled automatic daily import.
 
-## Clone, build and test
+## Build and test the delivered source
 
 Use Python 3.12 and a current Node.js LTS release. The browser build only needs the Acorn dependency under `build/js-transform`; the Python API tests do not need a running production database.
 
 ```bash
-git clone https://github.com/JackieHe12345/restaurant-finance-and-inventory-management-system.git
-cd restaurant-finance-and-inventory-management-system
+cd /path/to/Nov10/source
 
 python3.12 -m venv .venv
 . .venv/bin/activate
@@ -208,6 +220,8 @@ python -m pip install -r build/test-requirements.txt
 
 npm ci --prefix build/js-transform
 node build/compile_exact_web.cjs
+node web/test_v1_0_2_dashboard.js
+node web/test_v1_0_2_charts.js
 node build/test_exact_web.cjs
 node web/test_inventory_v2.js
 node web/test_oct29_frontend.js
@@ -225,7 +239,7 @@ python -m pip install -r desktop/requirements.txt
 python build/test_fifo_contract.py
 ```
 
-`node` must be on `PATH`; alternatively set `NODE_BINARY` to its absolute path. The test uses Qt's offscreen platform. The source test environment uses Python 3.12 on macOS. The separately bundled v1.0.1 app requires macOS 15 or newer; source dependency wheels can have their own system requirements. The desktop source imports `fcntl`, so Windows support is not claimed. Launch the native interface with `python desktop/restaurant_cost_manager.py` on a machine with a graphical session.
+`node` must be on `PATH`; alternatively set `NODE_BINARY` to its absolute path. The test uses Qt's offscreen platform. The source test environment uses Python 3.12 on macOS. The separately bundled v1.0.2 app requires macOS 15 or newer; source dependency wheels can have their own system requirements. The desktop source imports `fcntl`, so Windows support is not claimed. Launch the native interface with `python desktop/restaurant_cost_manager.py` on a machine with a graphical session.
 
 ## Run a new instance
 
@@ -251,14 +265,16 @@ The complete first-install procedure, native API setup, Nginx routing and existi
 After the checks pass, generate the server archive from the checked-in source:
 
 ```bash
-python build/make_release.py --output dist/restaurant-cloud-v1.0.1-deploy.tar.gz
+python build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
 ```
 
-The archive has a `restaurant-cloud-v1.0.1/` root and contains `api/`, `web_frontend/`, `VERSION`, Nginx material and deployment/verification scripts. It does not include a database or runtime secrets. The builder refuses to overwrite an existing output; choose a new path for a subsequent build.
+The archive has a `restaurant-cloud-v1.0.2/` root and contains `api/`, `web_frontend/`, `VERSION`, Nginx material and deployment/verification scripts. It does not include a database or runtime secrets. The builder refuses to overwrite an existing output; choose a new path for a subsequent build.
 
 `deploy/verify_release_files.py` compares installed API/static files with a supplied release and checks the API health, version and required routes. `deploy/verify_deployment.py` captures PostgreSQL records in a read-only transaction and compares before/after evidence without printing payloads. The latter checks deployment preservation, not whether every user workflow is correct. Both need an explicitly chosen private evidence directory in the documented commands.
 
-| Check | Observed result | What it establishes |
+The following table preserves the Nov07 v1.0.1 results; it is not a claim that these counts were rerun for Nov10. See `docs/acceptance/Nov10Final/` for current verification.
+
+| Check | Historical result (Nov07) | What it establishes |
 | --- | --- | --- |
 | API pytest suite | 148 passed, 15 subtests passed | Record access, money, inventory validation, name correction, Excel and WeChat regression behavior under test fixtures |
 | Browser exact-money suite | 232 checks passed | Decimal arithmetic, field normalization, editor totals, legacy parsing and FIFO conservation |
@@ -268,7 +284,7 @@ The archive has a `restaurant-cloud-v1.0.1/` root and contains `api/`, `web_fron
 | Desktop regression suites | 12 method and 10 Qt tests passed | Cash aliases, synchronization, structured details and real Excel round-trips |
 | Report layout | 20 combinations passed | Chinese/English, five widths and normal/enlarged text |
 
-These are local automated results for the source set. They do not certify every browser/device, a packaged native binary or a production deployment.
+These are historical local automated results for the Nov07 source set. They do not certify every browser/device, a packaged native binary or a production deployment.
 
 ## Repository layout
 
@@ -291,7 +307,7 @@ docs/DEPLOYMENT.zh-CN.md   the same deployment guide in Chinese
 compose.yaml              independent local PostgreSQL/API/Nginx instance
 README.md                 English documentation
 README (中文).md          Chinese documentation
-VERSION                   v1.0.1
+VERSION                   v1.0.2
 ```
 
 ## Current boundaries
@@ -305,10 +321,28 @@ The desktop source and browser use matching financial contracts where tested, bu
 MIT. See [LICENSE](LICENSE).
 
 
-## v1.0.1 complete distribution
+## v1.0.2 complete distribution
 
-The complete ZIP additionally provides the rebuilt universal macOS app, server deployment tarball, change-by-change notes, test/build evidence, and the pre-fix audit. The bundled app requires macOS 15 or later and uses an ad-hoc signature; it is not Apple-notarized. Its preserved runtime is Python 3.12.10, PySide6 6.11.2, pandas 2.3.3, Matplotlib 3.11.1 and openpyxl 3.1.5. These versions differ from a newly installed source test environment.
+The complete ZIP additionally provides the rebuilt universal macOS app, server deployment tarball, current release notes and synthetic test/build evidence. The pre-fix audit, older Nov07/Nov10 evidence and release notes 01–05 are present only in the owner ZIP under `私人运维资料/历史开发证据/`. The bundled app requires macOS 15 or later and uses an ad-hoc signature; it is not Apple-notarized. Its preserved runtime is Python 3.12.10, PySide6 6.11.2, pandas 2.3.3, Matplotlib 3.11.1 and openpyxl 3.1.5. These versions differ from a newly installed source test environment.
 
-v1.0.1 regression commands include `python build/test_v1_0_1_desktop.py`, `QT_QPA_PLATFORM=offscreen python build/test_v1_0_1_desktop_qt.py`, `node web/test_v1_0_1_regressions.js`, and `(cd backend && PYTHONPATH=.:tests python -m pytest -q tests)`. Build/verification helpers are `build/rebuild_macos_app.py`, `build/verify_macos_app.py` and the separate offline harness `build/qa_packaged_desktop.py`. Full instructions are in the distribution's Chinese release notes. The bundled v1.0.1 app can supply the runtime for a desktop rebuild with macOS Python 3.12; the original Oct30 attachment is not required. See the ZIP build guide for commands and a separate output directory. `build/OCT30_ACCEPTANCE_RESULT.json` is historical evidence, not the v1.0.1 result.
+v1.0.1 regression commands include `python build/test_v1_0_1_desktop.py`, `QT_QPA_PLATFORM=offscreen python build/test_v1_0_1_desktop_qt.py`, `node web/test_v1_0_1_regressions.js`, and `(cd backend && PYTHONPATH=.:tests python -m pytest -q tests)`. Build/verification helpers are `build/rebuild_macos_app.py`, `build/verify_macos_app.py` and the separate offline harness `build/qa_packaged_desktop.py`. Full instructions are in the distribution's Chinese release notes. The bundled v1.0.2 app can supply the runtime for a desktop rebuild with macOS Python 3.12; the original Oct30 attachment is not required. See the ZIP build guide for commands and a separate output directory. `build/OCT30_ACCEPTANCE_RESULT.json` is historical evidence, not the v1.0.2 result.
 
-The ZIP source directory omits `.git`, dependencies and credentials. To use `build/make_release.py` from an extracted copy, first initialize a local Git repository and add the source files (`git init`, then `git add .`); this builder deliberately requires tracked runtime sources. Install the locked build/test dependencies as described above. Do not add secrets or user data to that source tree.
+The ZIP source directory omits `.git`, dependencies and credentials. To use `build/make_release.py` from an extracted copy, first initialize a local Git repository and add the source files (`git init`, then `git add VERSION backend/app backend/requirements.txt web deploy`); this builder deliberately requires tracked runtime sources. Install the locked build/test dependencies as described above. Do not add secrets or user data to that source tree.
+
+
+### v1.0.2 targeted checks and final revision
+
+After compiling browser scripts, run `node web/test_v1_0_2_dashboard.js` and `node web/test_v1_0_2_charts.js`. They cover five metrics, margins, month rollover and calendar refresh, exact labels, readable chart data and keyboard inspection. Run `QT_QPA_PLATFORM=offscreen python3.12 build/test_v1_0_2_desktop.py` and `QT_QPA_PLATFORM=offscreen python3.12 build/test_v1_0_2_desktop_qt.py` for native calculations, widgets, month rollover and retained cash protection.
+
+`build/qa_web_browser.cjs` loads the actual shipped page offline with synthetic fixtures, uses Playwright/Chromium and records layout/resize/interaction evidence. Set `QA_OUTPUT_DIR` to a new absolute directory; optionally set `PLAYWRIGHT_MODULE`, `CHROME_EXECUTABLE` and `RELEASE_SOURCE_ROOT`. Build commands and environment details are in `版本说明/06_Nov10V1.0.2更新说明.md`; final evidence is in `docs/acceptance/Nov10Final/`.
+
+The final distribution revision is `20261110-analytics-english-final`. Browser assets include this revision in cache query strings, while the application/API version remains v1.0.2. The exact publication and verified deployment result are recorded in [release status](docs/RELEASE_STATUS_v1.0.2.md). Compare hashes, not only version strings. [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) documents generic server layout, upgrade boundaries and financial formulas. Original server details and private snapshots appear only in `私人运维资料/` in the private distribution.
+
+The complete ZIP is built by `build/make_complete_package.py`, which refreshes the package manifest, preserves UTF-8 names and Unix symlinks/modes, rejects local dependency/cache directories and writes a ZIP checksum. Its output must be new and outside the distribution root. It packages already built artifacts; it does not compile source, deploy the server or alter ledgers.
+
+
+### Detailed handoff and privacy flavors
+
+Read [ENGINEERING_REFERENCE.md](docs/ENGINEERING_REFERENCE.md) and the root [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) before continuing development. They document APIs, persistence, localization boundaries and rebuild/deployment acceptance. Browser English mode translates fixed system UI while preserving user-entered strings exactly. The native desktop remains Chinese. The clean ZIP and the private owner ZIP have the same application version; only the latter adds `私人运维资料/`. Neither server runtime tar includes private artifacts. Current exact file inventories, scan scope and test results are release evidence rather than assertions inferred from historical test counts.
+
+The English runtime uses four direct catalogs (`web/i18n-en.js`, `i18n-inventory-en.js`, `i18n-backend-en.js`, `i18n-extra-en.js`) before v8, with dynamic source/output metadata, `data-user-content` exclusions, opaque read-only projections and stable option values. The engineering reference describes API-error and structured-audit localization and the new browser acceptance entry points.

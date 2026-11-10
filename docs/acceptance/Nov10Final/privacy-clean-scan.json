@@ -1,0 +1,23 @@
+{
+  "status": "no_forbidden_signatures_found",
+  "counts": {
+    "files": 1378,
+    "archive_members": 846,
+    "archives": 6,
+    "symlinks": 390,
+    "images": 39,
+    "macho_slices": 380,
+    "pyinstaller_entries": 26,
+    "pyz_modules": 2214
+  },
+  "bytes_scanned_including_decompressed_payloads": 415847661,
+  "forbidden_identifiers_supplied": 4,
+  "blocker_count": 0,
+  "review_candidate_count": 0,
+  "findings": [],
+  "limits": [
+    "No OCR or image-content classification.",
+    "Unknown credentials and personal data require manual review.",
+    "No archive code was executed."
+  ]
+}

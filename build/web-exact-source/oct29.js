@@ -71,12 +71,12 @@ function inventoryFIFOData(options={}){
   result.balances.sort((a,b)=>a.category.localeCompare(b.category,"zh-CN")||a.name.localeCompare(b.name,"zh-CN")||a.unit.localeCompare(b.unit,"zh-CN"));
   return {...result,receipts,warnings};
 }
-function fifoAllocationText(result){
-  const parts=(result.allocations||[]).map(batch=>`${batch.date||"缺入库记录"}：${compactDecimal(batch.quantity)} × ${batch.unit_price===null?"单价未知":compactDecimal(batch.unit_price)+" 元"}`);
-  return parts.length?parts.join("；"):"—";
+function fifoAllocationText(result){const en=state.language==="en";
+ const parts=(result.allocations||[]).map(batch=>`${batch.date||(en?"Missing receipt":"缺入库记录")}: ${compactDecimal(batch.quantity)} × ${batch.unit_price===null?(en?"Unknown unit price":"单价未知"):(en?"CNY ":"")+compactDecimal(batch.unit_price)+(en?"":" 元")}`);
+ return parts.length?parts.join("; "):"—";
 }
-function fifoAverageText(result){const value=InventoryFIFO.averageUnitCost(result);return value===null?"待定价":money(value);}
-function fifoCostText(result){return result.unknownQuantity>1e-9?`${money(result.cost)}（已知部分；${compactDecimal(result.unknownQuantity)} 未定价）`:money(result.cost);}
+function fifoAverageText(result){const value=InventoryFIFO.averageUnitCost(result);return value===null?(state.language==="en"?"Unpriced":"待定价"):money(value);}
+function fifoCostText(result){return result.unknownQuantity>1e-9?(state.language==="en"?`${money(result.cost)} (known cost; ${compactDecimal(result.unknownQuantity)} unpriced)`:`${money(result.cost)}（已知部分；${compactDecimal(result.unknownQuantity)} 未定价）`):money(result.cost);}
 function renderInventoryFIFO(){
   const page=$("pageInventory");if(!page)return;
   const data=inventoryFIFOData();let card=$("inventoryFifoCard");
@@ -84,8 +84,8 @@ function renderInventoryFIFO(){
   const purchases=data.receipts.filter(row=>row.source==="purchase"),movements=[...data.movements].reverse();
   card.innerHTML=`<header class="card-title"><div><h2>出入库成本 · 先进先出</h2><small>同名、同单位按入库日期先后出库；不同单位分开统计。买食材保存后自动入库，采购支出只记一次。旧记录无时间时，同日按入库、菜品、使用／损耗、覆盖的顺序计算。</small></div></header>
     ${data.warnings.length?`<p class="fifo-warning">以下采购已记支出，尚未计入数量库存：${data.warnings.map(row=>`${escapeHtml(row.date)} ${escapeHtml(row.name)}（${escapeHtml(row.reason)}）`).join("；")}</p>`:""}
-    <details ${purchases.length?"":"open"}><summary>买食材自动入库：${purchases.length} 条（在原食材明细中修改）</summary><div class="table-scroll"><table><thead><tr><th>日期</th><th>食材</th><th>数量</th><th>单位</th><th>入库单价</th><th>总价</th></tr></thead><tbody>${purchases.slice().reverse().map(row=>{const price=InventoryFIFO.unitPrice(row);return `<tr><td>${escapeHtml(row.date)}</td><td>${escapeHtml(row.name)}</td><td>${compactDecimal(row.quantity)}</td><td>${escapeHtml(row.unit)}</td><td>${price===null?"未知":compactDecimal(price)}</td><td>${price===null?"未知":money(price*row.quantity)}</td></tr>`;}).join("")||'<tr><td colspan="6">暂无带数量和单位的食材采购记录。</td></tr>'}</tbody></table></div></details>
-    <h3>出库明细及原入库价格</h3><div class="table-scroll"><table><thead><tr><th>出库日期</th><th>食材／佐料</th><th>用途</th><th>出库量</th><th>FIFO 入库批次（数量 × 单价）</th><th>出库成本</th><th>平均单价</th></tr></thead><tbody>${movements.map(row=>`<tr><td>${escapeHtml(row.date)}</td><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.label||(row.kind==="loss"?"损耗":"正常使用"))}</td><td>${compactDecimal(row.quantity)} ${escapeHtml(row.unit)}</td><td>${escapeHtml(fifoAllocationText(row))}</td><td>${escapeHtml(fifoCostText(row))}</td><td>${escapeHtml(fifoAverageText(row))} 元／${escapeHtml(row.unit||"单位")}</td></tr>`).join("")||'<tr><td colspan="7">暂无出库记录。</td></tr>'}</tbody></table></div>`;
+    <details ${purchases.length?"":"open"}><summary>买食材自动入库：${purchases.length} 条（在原食材明细中修改）</summary><div class="table-scroll"><table><thead><tr><th>日期</th><th>食材</th><th>数量</th><th>单位</th><th>入库单价</th><th>总价</th></tr></thead><tbody>${purchases.slice().reverse().map(row=>{const price=InventoryFIFO.unitPrice(row);return `<tr><td>${escapeHtml(row.date)}</td><td>${userHtml(row.name)}</td><td>${compactDecimal(row.quantity)}</td><td>${userHtml(v8DisplayUnit(row.unit))}</td><td>${price===null?"未知":compactDecimal(price)}</td><td>${price===null?"未知":money(price*row.quantity)}</td></tr>`;}).join("")||'<tr><td colspan="6">暂无带数量和单位的食材采购记录。</td></tr>'}</tbody></table></div></details>
+    <h3>出库明细及原入库价格</h3><div class="table-scroll"><table><thead><tr><th>出库日期</th><th>食材／佐料</th><th>用途</th><th>出库量</th><th>FIFO 入库批次（数量 × 单价）</th><th>出库成本</th><th>平均单价</th></tr></thead><tbody>${movements.map(row=>`<tr><td>${escapeHtml(row.date)}</td><td>${userHtml(row.name)}</td><td>${escapeHtml(row.label||(row.kind==="loss"?"损耗":"正常使用"))}</td><td>${compactDecimal(row.quantity)} ${userHtml(v8DisplayUnit(row.unit))}</td><td>${escapeHtml(fifoAllocationText(row))}</td><td>${escapeHtml(fifoCostText(row))}</td><td>${escapeHtml(fifoAverageText(row))} / ${userHtml(v8DisplayUnit(row.unit||""))}</td></tr>`).join("")||'<tr><td colspan="7">暂无出库记录。</td></tr>'}</tbody></table></div>`;
 }
 function attachFIFOQuote(key,overwrite=false){
   const host=$("proModalHost"),body=host?.querySelector(".inventory-adjust-modal .modal-body"),input=host?.querySelector("[data-inventory-value]");
@@ -98,7 +98,7 @@ function renderDishFIFO(){
   const page=$("pageDishes"),date=$("dishDate")?.value;if(!page||!date)return;
   let card=$("dishFifoPreview");if(!card){page.insertAdjacentHTML("beforeend",'<section id="dishFifoPreview" class="table-card fifo-card"></section>');card=$("dishFifoPreview");}
   const data=inventoryFIFOData({dishDate:date,dishRows:collectDishRows(),asOf:date}),rows=data.movements.filter(row=>row.date===date&&row.kind==="dish");
-  card.innerHTML=`<header class="card-title"><div><h2>本日菜品出库 · 入库价格预览</h2><small>按当前编辑用量计算 FIFO 批次成本；保存菜品后扣减库存。平均单价仅作显示，实际成本按各入库批次分摊合计；采购及现金金额仍按原采购记录计算。</small></div></header><div class="table-scroll"><table><thead><tr><th>菜品</th><th>食材</th><th>数量</th><th>原入库价格</th><th>FIFO 成本</th><th>平均单价</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.name)}</td><td>${compactDecimal(row.quantity)} ${escapeHtml(row.unit)}</td><td>${escapeHtml(fifoAllocationText(row))}</td><td>${escapeHtml(fifoCostText(row))}</td><td>${escapeHtml(fifoAverageText(row))} 元／${escapeHtml(row.unit||"单位")}</td></tr>`).join("")||'<tr><td colspan="6">填写菜品食材用量后显示出库价格。</td></tr>'}</tbody></table></div>`;
+  card.innerHTML=`<header class="card-title"><div><h2>本日菜品出库 · 入库价格预览</h2><small>按当前编辑用量计算 FIFO 批次成本；保存菜品后扣减库存。平均单价仅作显示，实际成本按各入库批次分摊合计；采购及现金金额仍按原采购记录计算。</small></div></header><div class="table-scroll"><table><thead><tr><th>菜品</th><th>食材</th><th>数量</th><th>原入库价格</th><th>FIFO 成本</th><th>平均单价</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${userHtml(row.label)}</td><td>${userHtml(row.name)}</td><td>${compactDecimal(row.quantity)} ${userHtml(v8DisplayUnit(row.unit))}</td><td>${escapeHtml(fifoAllocationText(row))}</td><td>${escapeHtml(fifoCostText(row))}</td><td>${escapeHtml(fifoAverageText(row))} / ${userHtml(v8DisplayUnit(row.unit||""))}</td></tr>`).join("")||'<tr><td colspan="6">填写菜品食材用量后显示出库价格。</td></tr>'}</tbody></table></div>`;
 }
 (() => {
   const baseRefresh=refreshLedger;

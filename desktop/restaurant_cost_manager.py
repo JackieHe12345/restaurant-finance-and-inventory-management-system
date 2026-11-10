@@ -283,14 +283,14 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QDateEdit, QLineEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QFormLayout, QGroupBox, QGridLayout, QComboBox,
     QDialog, QInputDialog, QFileDialog, QCheckBox, QAbstractItemView, QTextEdit,
-    QFrame, QSizePolicy, QListWidget, QListWidgetItem, QDateTimeEdit
+    QFrame, QSizePolicy, QListWidget, QListWidgetItem, QDateTimeEdit, QLayout, QToolButton
 )
-from PySide6.QtCore import Qt, QDate, QDateTime, QEvent, QStandardPaths, QTimer, QSize
+from PySide6.QtCore import Qt, QDate, QDateTime, QEvent, QStandardPaths, QTimer, QSize, QRect
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QIntValidator
 
 # Keep the product version in the source as well as in the packaged bundle.  The
-# delivery version for this build is v1.0.1.
-APP_VERSION = "v1.0.1"
+# delivery version for this build is v1.0.2 (2026 Nov 10).
+APP_VERSION = "v1.0.2"
 
 # A cloud login can be valid while the first background record refresh is still
 # in flight.  Require several failed cycles and a short grace period before
@@ -5379,7 +5379,14 @@ def calc_month_summary(year, month, df_daily=None, df_fixed=None):
     fixed = get_monthly_fixed_breakdown(year, month, fixed_df)
     dim = calendar.monthrange(year, month)[1]
     total_fixed = fixed['固定支出合计'] if (int(year), int(month)) <= (today.year, today.month) else 0
-    if not metrics and not total_fixed:
+    # A saved zero-cost month is a known baseline, unlike missing history.
+    # Keep future entries out of both actual amounts and forecast baselines.
+    recorded_fixed_month = (
+        (int(year), int(month)) <= (today.year, today.month)
+        and '月份' in fixed_df.columns
+        and fixed_df['月份'].astype(str).eq(f"{year}-{month:02d}").any()
+    )
+    if not metrics and not total_fixed and not recorded_fixed_month:
         return None
     total_cost = total_variable + total_fixed
     total_net = sum(m['收益'] for m in metrics) - total_cost
@@ -5399,6 +5406,91 @@ def calc_month_summary(year, month, df_daily=None, df_fixed=None):
                       '月煤气费(分摊)': fixed['计入成本煤气费'],
                       '其它固定成本(分摊)': fixed['其它固定成本']}.items() if v > 0}
     }
+
+
+def month_comparison_text(current, previous):
+    """Describe an amount's monthly change, including losses and missing bases."""
+    if current is None:
+        return "暂无可比数据"
+    if previous is None:
+        return "暂无上月可比数据"
+    current, previous = decimal_number(current), decimal_number(previous)
+    difference = current - previous
+    if difference == 0:
+        return "与上个月持平 0.0%"
+    if previous == 0:
+        return "上个月为 0，无法计算百分比"
+    percent = decimal_divide(abs(difference), abs(previous)) * 100
+    return f"比上个月{'多了' if difference > 0 else '少了'} {percent:.1f}%"
+
+
+def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
+    """Share headline and report amounts, including the month-close rollover.
+
+    Revenue/gross averages use completed dates. Average net uses the actual
+    monthly net divided by elapsed calendar days; both net margins use actual
+    monthly revenue. A closed month's forecast becomes that month's actual net.
+    """
+    reference = _elapsed_reference(as_of)
+    summaries = {}
+
+    def summary_for(y, m):
+        key = (y, m)
+        if key not in summaries:
+            summaries[key] = calc_month_summary(y, m, df_daily, df_fixed)
+        return summaries[key]
+
+    def snapshot(y, m):
+        summary = summary_for(y, m)
+        values = dict(avg_revenue=None, avg_gross=None, gross_margin=None,
+                      avg_net=None, net_margin=None, projected_net=None, net=None,
+                      projected_revenue=None, is_closed=False, forecast_status='暂无经营数据')
+        if summary is None or (y, m) > (reference.year, reference.month):
+            return values
+        values['net'] = decimal_number(summary['本月净利'])
+        month_revenue = decimal_number(summary['本月收益'])
+        elapsed = elapsed_month_days(y, m, as_of=reference)
+        if (y, m) == (reference.year, reference.month) and reference.day == 1:
+            elapsed = 0
+        values['avg_net'] = decimal_divide(values['net'], elapsed) if elapsed > 0 else None
+        values['net_margin'] = decimal_divide(values['net'], month_revenue) * 100 if month_revenue else None
+        values['is_closed'] = (y, m) < (reference.year, reference.month)
+        if values['is_closed']:
+            values['projected_revenue'] = month_revenue
+            values['projected_net'] = values['net']
+            values['forecast_status'] = '该月已结束，预计月底盈亏显示本月实际净利润。'
+        else:
+            values['forecast_status'] = '暂无已完成日期的经营数据，暂时无法预测'
+        prefix = f"{y}-{m:02d}-"
+        metrics = []
+        for _, row in df_daily.iterrows():
+            day = str(row.get('日期', ''))[:10]
+            if not day.startswith(prefix) or day >= reference.isoformat():
+                continue
+            if day_has_meaningful_data(row):
+                metric = calc_day_metrics(day, df_daily, df_fixed)
+                if metric:
+                    metrics.append(metric)
+        if not metrics or elapsed <= 0:
+            return values
+        revenue = sum(decimal_number(item['收益']) for item in metrics)
+        gross = sum(decimal_number(item['毛利']) for item in metrics)
+        values['avg_revenue'] = decimal_divide(revenue, elapsed)
+        values['avg_gross'] = decimal_divide(gross, elapsed)
+        values['gross_margin'] = decimal_divide(gross, revenue) * 100 if revenue else 0
+        if not values['is_closed']:
+            values['projected_revenue'] = values['avg_revenue'] * calendar.monthrange(y, m)[1]
+            prior = datetime(y, m, 1) - timedelta(days=1)
+            prior_summary = summary_for(prior.year, prior.month)
+            if prior_summary is not None:
+                values['projected_net'] = values['projected_revenue'] - prior_summary['本月总成本']
+                values['forecast_status'] = ''
+            else:
+                values['forecast_status'] = '缺少上月成本数据，暂时无法计算预计月底盈亏'
+        return values
+
+    previous = datetime(year, month, 1) - timedelta(days=1)
+    return dict(current=snapshot(year, month), previous=snapshot(previous.year, previous.month))
 
 
 def calc_year_summary(year, df_daily=None, df_fixed=None):
@@ -8766,14 +8858,14 @@ class ForecastSummaryPanel(QWidget):
         layout.addWidget(self.revenue_blank_line)
         self.net_value = self._add_amount_row(layout, "预计月底盈亏")
 
-        self.net_note_label = QLabel("(根据上月总成本和本月收入预测)")
+        self.net_note_label = QLabel("(根据 上月总成本 和 本月收入预测 计算)")
         self.net_note_label.setWordWrap(True)
         layout.addWidget(self.net_note_label)
         self.net_blank_line = QLabel(" ")
         layout.addWidget(self.net_blank_line)
 
         self.break_even_title_label = QLabel(
-            "平本需要 日均收入 (“收入”指“Revenue”) 增加\n"
+            "平本 需要 日均收入 增加\n"
             "( (预计月底盈亏/本月毛利率) / 本月天数 )"
         )
         self.break_even_title_label.setWordWrap(True)
@@ -8789,6 +8881,37 @@ class ForecastSummaryPanel(QWidget):
         self.status_label.setStyleSheet("color:#667085;")
         self.status_label.setVisible(False)
         layout.addWidget(self.status_label)
+
+    def _sync_wrapping_height(self):
+        """Propagate wrapped text height through the containing form layout.
+
+        QFormLayout can reuse a wide size hint after the monthly card narrows.
+        Explicit child minima keep the formula readable and let the dashboard
+        scroll vertically instead of compressing a three-line label to two.
+        """
+        self._height_sync_pending = False
+        layout = self.layout()
+        layout.activate()
+        for label in self.findChildren(QLabel):
+            if label.wordWrap() and not label.isHidden() and label.width() > 0:
+                # QLabel.heightForWidth includes its current minimumHeight;
+                # measure the text directly so the minimum can shrink again.
+                required = label.fontMetrics().boundingRect(
+                    0, 0, label.contentsRect().width(), 100000,
+                    int(Qt.TextWordWrap | Qt.TextExpandTabs), label.text()
+                ).height()
+                if required > 0 and label.minimumHeight() != required:
+                    label.setMinimumHeight(required)
+        required = layout.minimumSize().height()
+        if self.minimumHeight() != required:
+            self.setMinimumHeight(required)
+        self.updateGeometry()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not getattr(self, '_height_sync_pending', False):
+            self._height_sync_pending = True
+            QTimer.singleShot(0, self._sync_wrapping_height)
 
     @staticmethod
     def _add_amount_row(layout, title):
@@ -8826,6 +8949,72 @@ class ForecastSummaryPanel(QWidget):
         self.break_even_value.setText(self._money(break_even_increase))
         self.status_label.setText(str(status or ""))
         self.status_label.setVisible(bool(status))
+        self._sync_wrapping_height()
+
+
+class AnalyticsFlowLayout(QLayout):
+    """Wrap filter controls without changing their order or selected values."""
+
+    def __init__(self, parent=None, spacing=8):
+        super().__init__(parent)
+        self._items = []
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(spacing)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._arrange(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rectangle):
+        super().setGeometry(rectangle)
+        self._arrange(rectangle, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            if not item.isEmpty():
+                size = size.expandedTo(item.minimumSize())
+        left, top, right, bottom = self.getContentsMargins()
+        return size + QSize(left + right, top + bottom)
+
+    def _arrange(self, rectangle, measure):
+        left, top, right, bottom = self.getContentsMargins()
+        available = rectangle.adjusted(left, top, -right, -bottom)
+        x, y, row_height = available.x(), available.y(), 0
+        gap = self.spacing()
+        for item in self._items:
+            if item.isEmpty():
+                continue
+            hint = item.sizeHint()
+            width = min(max(1, hint.width()), max(1, available.width()))
+            height = item.heightForWidth(width) if item.hasHeightForWidth() else hint.height()
+            if x > available.x() and x + width > available.right() + 1:
+                x, y, row_height = available.x(), y + row_height + gap, 0
+            if not measure:
+                item.setGeometry(QRect(x, y, width, height))
+            x += width + gap
+            row_height = max(row_height, height)
+        return y + row_height - rectangle.y() + bottom
 
 
 class MoreStatsTab(QWidget):
@@ -8859,45 +9048,69 @@ class MoreStatsTab(QWidget):
         self.stats_scroll.setStyleSheet("QScrollArea { border: none; }")
         page = QWidget()
         main_layout = QVBoxLayout(page)
-        main_layout.setSpacing(6)
+        main_layout.setSpacing(14)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        page.setObjectName('analyticsWorkspace')
+        page.setStyleSheet(
+            'QWidget#analyticsWorkspace { background:#f4f6f9; }'
+            'QGroupBox { background:white; border:1px solid #dce3eb; border-radius:7px;'
+            'margin-top:12px; padding:12px; font-weight:600; color:#334155; }'
+            'QGroupBox::title { subcontrol-origin:margin; left:12px; padding:0 5px; }'
+            'QCheckBox { font-weight:400; spacing:6px; color:#475569; }'
+            'QTableWidget { background:white; alternate-background-color:#f7f9fc;'
+            'gridline-color:#e8edf3; border:1px solid #dce3eb; border-radius:5px; }'
+        )
+        heading = QLabel('经营分析工作台')
+        heading.setStyleSheet('font-size:21px; font-weight:700; color:#1e293b;')
+        main_layout.addWidget(heading)
+        introduction = QLabel('选择期间和指标，查看趋势、月度对比与明细。各项图表与导出始终使用当前筛选条件。')
+        introduction.setWordWrap(True)
+        introduction.setStyleSheet('color:#64748b; padding-bottom:2px;')
+        main_layout.addWidget(introduction)
+        self.analysis_context = QLabel('正在准备分析…')
+        self.analysis_context.setWordWrap(True)
+        self.analysis_context.setStyleSheet('background:#eaf0f8; color:#38516e; padding:11px; border-radius:6px;')
+        main_layout.addWidget(self.analysis_context)
+        self.analysis_unit_warning = QLabel('')
+        self.analysis_unit_warning.setWordWrap(True)
+        self.analysis_unit_warning.setStyleSheet('color:#8a5b13; background:#fff8e8; padding:9px; border-radius:6px;')
+        self.analysis_unit_warning.hide()
+        main_layout.addWidget(self.analysis_unit_warning)
 
-        top = QGridLayout()
-        top.setHorizontalSpacing(8)
-        top.setVerticalSpacing(5)
+        top = AnalyticsFlowLayout(spacing=8)
 
-        top.addWidget(QLabel("统计方式:"), 0, 0)
+        top.addWidget(QLabel("统计方式:"))
         self.check_detail = QCheckBox("明细")
         self.check_average = QCheckBox("平均")
         self.check_detail.setChecked(True)
         self.check_detail.setToolTip("按日显示经营数据；食材单价按实际采购日期显示。")
         self.check_average.setToolTip("显示月度日均、星期日均或食材加权平均。可与“明细”同时勾选。")
-        top.addWidget(self.check_detail, 0, 1)
-        top.addWidget(self.check_average, 0, 2)
+        top.addWidget(self.check_detail)
+        top.addWidget(self.check_average)
 
-        top.addWidget(QLabel("年份:"), 0, 3)
+        top.addWidget(QLabel("年份:"))
         self.combo_year = QComboBox()
         current_year = QDate.currentDate().year()
         self.combo_year.addItems([str(year) for year in range(2015, current_year + 6)])
         self.combo_year.setCurrentText(str(current_year))
         self.combo_year.setFixedWidth(95)
-        top.addWidget(self.combo_year, 0, 4)
+        top.addWidget(self.combo_year)
 
         self.btn_prev_year = QPushButton("上一年")
         self.btn_this_year = QPushButton("今年")
         self.btn_next_year = QPushButton("下一年")
         for button in (self.btn_prev_year, self.btn_this_year, self.btn_next_year):
             button.setStyleSheet("padding: 2px 8px;")
-            top.addWidget(button, 0, top.columnCount())
+            top.addWidget(button)
 
         
         self.btn_export = QPushButton("导出CSV")
         self.btn_export.setStyleSheet("background-color: #596d82; color: white; padding: 4px 12px;")
         self.btn_export.setFixedWidth(105)
-        top.addWidget(self.btn_export, 0, top.columnCount())
-        top.setColumnStretch(top.columnCount(), 1)
+        top.addWidget(self.btn_export)
         main_layout.addLayout(top)
 
-        month_layout = QHBoxLayout()
+        month_layout = AnalyticsFlowLayout(spacing=8)
         month_layout.addWidget(QLabel("月份:"))
         self.month_checks = []
         current_month = QDate.currentDate().month()
@@ -8930,10 +9143,9 @@ class MoreStatsTab(QWidget):
         ):
             button.setStyleSheet("padding: 2px 8px; font-size: 11px;")
             month_layout.addWidget(button)
-        month_layout.addStretch()
         main_layout.addLayout(month_layout)
 
-        weekday_layout = QHBoxLayout()
+        weekday_layout = AnalyticsFlowLayout(spacing=8)
         weekday_layout.addWidget(QLabel("星期:"))
         self.weekday_checks = []
         for index, name in enumerate(self.WEEKDAY_NAMES):
@@ -8952,13 +9164,10 @@ class MoreStatsTab(QWidget):
         ):
             button.setStyleSheet("padding: 2px 8px; font-size: 11px;")
             weekday_layout.addWidget(button)
-        weekday_layout.addStretch()
         main_layout.addLayout(weekday_layout)
 
         self.business_group = QGroupBox("经营指标")
-        metric_layout = QGridLayout(self.business_group)
-        metric_layout.setHorizontalSpacing(12)
-        metric_layout.setVerticalSpacing(3)
+        metric_layout = AnalyticsFlowLayout(self.business_group, spacing=12)
         self.metric_names = [
             "收入", "毛利润", "毛利率(%)", "净利润", "净利率(%)",
             "总客人数", "新客人数量", "老客人数", "新客比例(%)", "老客比例(%)",
@@ -8973,14 +9182,16 @@ class MoreStatsTab(QWidget):
                 lambda _state, metric=name: self._on_metric_check_changed(metric)
             )
             self.metric_checks.append(checkbox)
-            metric_layout.addWidget(checkbox, index // 5, index % 5)
+            metric_layout.addWidget(checkbox)
         self.btn_metric_none = QPushButton("全不选")
         self.btn_metric_none.setStyleSheet("padding: 2px 10px; font-size: 11px;")
-        metric_layout.addWidget(self.btn_metric_none, (len(self.metric_names) + 4) // 5, 4)
+        metric_layout.addWidget(self.btn_metric_none)
         main_layout.addWidget(self.business_group)
 
         self.food_group = QGroupBox("食材采购")
-        food_layout = QHBoxLayout(self.food_group)
+        food_group_layout = QVBoxLayout(self.food_group)
+        food_layout = AnalyticsFlowLayout(spacing=8)
+        food_group_layout.addLayout(food_layout)
         food_layout.addWidget(QLabel("食材指标:"))
         self.combo_food_metric = QComboBox()
         self.combo_food_metric.addItems([
@@ -8993,18 +9204,22 @@ class MoreStatsTab(QWidget):
         food_layout.addWidget(self.combo_food_metric)
         food_layout.addWidget(QLabel("食材（可多选）:"))
         self.btn_select_food = QPushButton("选择食材（未选择）")
-        self.btn_select_food.setMinimumWidth(260)
+        self.btn_select_food.setMinimumWidth(180)
+        self.btn_select_food.setMaximumWidth(360)
         food_layout.addWidget(self.btn_select_food)
         self.btn_clear_food = QPushButton("清空食材")
         food_layout.addWidget(self.btn_clear_food)
         self.lbl_food_hint = QLabel("不选食材时显示经营指标；选了食材后，图表自动切换为该食材分析。同一食材不同单位会分开统计。")
         self.lbl_food_hint.setStyleSheet("color: #667085;")
-        food_layout.addWidget(self.lbl_food_hint)
-        food_layout.addStretch()
+        self.lbl_food_hint.setWordWrap(True)
+        food_group_layout.addWidget(self.lbl_food_hint)
         main_layout.addWidget(self.food_group)
+        self._make_analysis_section_collapsible(self.food_group, "食材采购分析")
 
         self.consumption_group = QGroupBox("食材消耗（来自“当日做出的菜品”）")
-        consumption_layout = QHBoxLayout(self.consumption_group)
+        consumption_group_layout = QVBoxLayout(self.consumption_group)
+        consumption_layout = AnalyticsFlowLayout(spacing=8)
+        consumption_group_layout.addLayout(consumption_layout)
         consumption_layout.addWidget(QLabel("消耗指标:"))
         self.combo_consumption_metric = QComboBox()
         self.combo_consumption_metric.addItems([
@@ -9017,7 +9232,8 @@ class MoreStatsTab(QWidget):
         consumption_layout.addWidget(self.combo_consumption_metric)
         consumption_layout.addWidget(QLabel("食材（可多选）:"))
         self.btn_select_consumption = QPushButton("选择消耗食材（未选择）")
-        self.btn_select_consumption.setMinimumWidth(260)
+        self.btn_select_consumption.setMinimumWidth(180)
+        self.btn_select_consumption.setMaximumWidth(360)
         consumption_layout.addWidget(self.btn_select_consumption)
         self.btn_clear_consumption = QPushButton("清空消耗食材")
         consumption_layout.addWidget(self.btn_clear_consumption)
@@ -9025,9 +9241,10 @@ class MoreStatsTab(QWidget):
             "按菜品中填写的实际总用量统计，不再乘菜品份数；不同单位分开统计，旧记录未填数量时不计入用量。"
         )
         self.lbl_consumption_hint.setStyleSheet("color: #667085;")
-        consumption_layout.addWidget(self.lbl_consumption_hint)
-        consumption_layout.addStretch()
+        self.lbl_consumption_hint.setWordWrap(True)
+        consumption_group_layout.addWidget(self.lbl_consumption_hint)
         main_layout.addWidget(self.consumption_group)
+        self._make_analysis_section_collapsible(self.consumption_group, "食材实际消耗分析")
 
         self.forecast_group = QGroupBox("平本收入预测")
         store_layout = QVBoxLayout(self.forecast_group)
@@ -9035,8 +9252,9 @@ class MoreStatsTab(QWidget):
         self.month_forecast_panel.setStyleSheet("color:#475467;")
         store_layout.addWidget(self.month_forecast_panel)
         main_layout.addWidget(self.forecast_group)
+        self._make_analysis_section_collapsible(self.forecast_group, "盈亏预测与平本计算口径")
 
-        visible_layout = QHBoxLayout()
+        visible_layout = AnalyticsFlowLayout(spacing=8)
         visible_layout.addWidget(QLabel("显示内容:"))
         self.view_checks = {}
         for key, label in [
@@ -9056,17 +9274,21 @@ class MoreStatsTab(QWidget):
         for button in (self.btn_view_all, self.btn_view_none, self.btn_view_table):
             button.setStyleSheet("padding: 2px 8px; font-size: 11px;")
             visible_layout.addWidget(button)
-        visible_layout.addStretch()
         main_layout.addLayout(visible_layout)
 
         content = QWidget()
         self.stats_content = content
         grid = QGridLayout(content)
+        self.analytics_grid = grid
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(14)
         self.canvas_trend = FigureCanvas(Figure())
         self.canvas_compare = FigureCanvas(Figure())
         self.canvas_weekday = FigureCanvas(Figure())
         for canvas in (self.canvas_trend, self.canvas_compare, self.canvas_weekday):
-            canvas.setMinimumSize(620, 420)
+            canvas.setMinimumSize(260, 350)
+            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            canvas.setStyleSheet("background:white; border:1px solid #dce3eb; border-radius:7px;")
         grid.addWidget(self.canvas_trend, 0, 0)
         grid.addWidget(self.canvas_compare, 0, 1)
         grid.addWidget(self.canvas_weekday, 1, 0, 1, 2)
@@ -9082,6 +9304,7 @@ class MoreStatsTab(QWidget):
         inventory_layout = QVBoxLayout(self.inventory_stats_group)
         inventory_hint = QLabel('不同单位分开统计；正常使用与损耗分别记录，直接覆盖调整不影响统计。该表始终显示当前账本的实时结余。')
         inventory_hint.setStyleSheet('color:#667085;')
+        inventory_hint.setWordWrap(True)
         inventory_layout.addWidget(inventory_hint)
         self.table_inventory_balance = WheelPassThroughTableWidget()
         self.table_inventory_balance.setColumnCount(10)
@@ -9096,6 +9319,7 @@ class MoreStatsTab(QWidget):
         grid.addWidget(self.inventory_stats_group, 3, 0, 1, 2)
 
         outbound_group = QGroupBox('正常消耗与损耗指标（跟随上方年份、月份和星期筛选）')
+        self.outbound_group = outbound_group
         outbound_layout = QVBoxLayout(outbound_group)
         outbound_hint = QLabel(
             '菜品页填写的是当天实际总用量，保存后直接算出库，不乘菜品份数；'
@@ -9105,6 +9329,8 @@ class MoreStatsTab(QWidget):
         outbound_hint.setStyleSheet('color:#667085;')
         outbound_layout.addWidget(outbound_hint)
         self.outbound_tabs = QTabWidget()
+        self.outbound_tabs.setUsesScrollButtons(True)
+        self.outbound_tabs.setElideMode(Qt.ElideRight)
         self.table_monthly_outbound = WheelPassThroughTableWidget()
         self.table_normal_adjustment = WheelPassThroughTableWidget()
         self.table_dish_servings = WheelPassThroughTableWidget()
@@ -9130,6 +9356,7 @@ class MoreStatsTab(QWidget):
         self.stats_scroll.setWidget(page)
         outer_layout.addWidget(self.stats_scroll)
         self._install_stats_wheel_filters()
+        self._reflow_statistics_layout()
 
         self.check_detail.stateChanged.connect(lambda _state: self._on_mode_changed(self.check_detail))
         self.check_average.stateChanged.connect(lambda _state: self._on_mode_changed(self.check_average))
@@ -9166,6 +9393,86 @@ class MoreStatsTab(QWidget):
         self.btn_view_all.clicked.connect(lambda: self._set_visible_views(self.view_checks.keys()))
         self.btn_view_none.clicked.connect(lambda: self._set_visible_views([]))
         self.btn_view_table.clicked.connect(lambda: self._set_visible_views(["table"]))
+
+    @staticmethod
+    def _make_analysis_section_collapsible(group, title):
+        """Keep secondary analyses reachable without pushing charts below all filters."""
+        body = QWidget()
+        body.setLayout(group.layout())
+        group.setTitle('')
+        group.setStyleSheet('QGroupBox { margin-top:0; padding:5px; }')
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
+        toggle = QToolButton(group)
+        toggle.setText(title)
+        toggle.setCheckable(True)
+        toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        toggle.setArrowType(Qt.RightArrow)
+        toggle.setStyleSheet('QToolButton { border:none; color:#475569; font-weight:600; padding:5px; }')
+        toggle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        toggle.setToolTip('展开或收起此分析区域；筛选条件保持不变。')
+        layout.addWidget(toggle)
+        layout.addWidget(body)
+        body.setVisible(False)
+        toggle.toggled.connect(body.setVisible)
+        toggle.toggled.connect(lambda expanded: toggle.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow))
+        group._analysis_toggle = toggle
+        group._analysis_body = body
+
+    def _reflow_statistics_layout(self):
+        """Use two comparison columns only when each chart remains readable."""
+        if not hasattr(self, 'analytics_grid'):
+            return
+        width = self.stats_scroll.viewport().width()
+        columns = 2 if width >= 1120 else 1
+        if getattr(self, '_analytics_columns', None) == columns:
+            return
+        self._analytics_columns = columns
+        layout = self.analytics_grid
+        widgets = (self.canvas_trend, self.canvas_compare, self.canvas_weekday,
+                   self.table_stats, self.inventory_stats_group, self.outbound_group)
+        for widget in widgets:
+            layout.removeWidget(widget)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1 if columns == 2 else 0)
+        if columns == 2:
+            layout.addWidget(self.canvas_trend, 0, 0)
+            layout.addWidget(self.canvas_compare, 0, 1)
+            row = 1
+        else:
+            layout.addWidget(self.canvas_trend, 0, 0)
+            layout.addWidget(self.canvas_compare, 1, 0)
+            row = 2
+        for widget in widgets[2:]:
+            layout.addWidget(widget, row, 0, 1, columns)
+            row += 1
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._reflow_statistics_layout)
+
+    def _update_analysis_context(self, frame=None):
+        months = self._selected_months()
+        weekdays = self._selected_weekdays()
+        mode = '、'.join(name for enabled, name in zip(self._selected_modes(), ('明细', '平均')) if enabled)
+        if self._is_consumption_analysis_active():
+            subject = f'实际消耗 · {len(self.selected_consumption_items)} 种食材'
+        elif self._is_food_analysis_active():
+            subject = f'食材采购 · {len(self.selected_food_items)} 种食材'
+        else:
+            subject = f'经营分析 · {len(self._selected_metrics())} 项指标'
+        records = len(frame) if frame is not None else 0
+        month_text = '全年' if len(months) == 12 else '、'.join(f'{month}月' for month in months) or '未选择月份'
+        weekday_text = '星期全部' if len(weekdays) == 7 else '、'.join(self.WEEKDAY_NAMES[day] for day in weekdays) or '未选择星期'
+        self.analysis_context.setText(
+            f'{self._current_year()} 年 · {month_text} · {weekday_text}'
+            f'  |  {subject}  |  {mode or "未选统计方式"}  |  {records:,} 条来源记录'
+        )
+        selected = self._selected_metrics() if not self._is_food_analysis_active() and not self._is_consumption_analysis_active() else []
+        units = {'比例' if '(%)' in name else '人数' if name in ('总客人数', '新客人数量', '老客人数') else '金额' for name in selected}
+        self.analysis_unit_warning.setText('当前包含不同量纲（金额、人数或比例）；同轴曲线仅用于观察趋势，不宜直接比较数值大小。建议分别选择同一量纲的指标。')
+        self.analysis_unit_warning.setVisible(len(units) > 1)
 
     def _install_stats_wheel_filters(self):
         for widget in (
@@ -9905,10 +10212,48 @@ class MoreStatsTab(QWidget):
             )
             self._remember_value_annotation(axis, annotation)
 
+    @staticmethod
+    def _fit_date_axis_labels(canvas, axis):
+        """Keep readable calendar ticks at the actual canvas width, including endpoints.
+
+        This changes only date/month tick visibility; plotted observations and
+        value annotations remain intact. It also runs after native resizing.
+        """
+        labels = [tick.label1 for tick in axis.xaxis.get_major_ticks()]
+        texts = [label.get_text() for label in labels]
+        if not texts or not all(re.fullmatch(r'\d{4}-\d{2}(?:-\d{2})?|\d{2}-\d{2}|\d{1,2}月', text) for text in texts):
+            return
+        for label in labels:
+            label.set_visible(True)
+        renderer = canvas.get_renderer()
+        boxes = [label.get_window_extent(renderer) for label in labels]
+        selected = [0]
+        gap = 10
+        for index in range(1, len(labels) - 1):
+            if boxes[index].x0 >= boxes[selected[-1]].x1 + gap:
+                selected.append(index)
+        if len(labels) > 1:
+            last = len(labels) - 1
+            while len(selected) > 1 and boxes[last].x0 < boxes[selected[-1]].x1 + gap:
+                selected.pop()
+            if boxes[last].x0 >= boxes[selected[-1]].x1 + gap:
+                selected.append(last)
+        for index, label in enumerate(labels):
+            label.set_visible(index in selected)
+
     def _finalize_annotated_chart(self, canvas, axis):
         """Draw, detect overlapping value labels, and iteratively move them apart."""
         figure = canvas.figure
         figure.tight_layout()
+        canvas.draw()
+        self._fit_date_axis_labels(canvas, axis)
+        previous_resize_callback = getattr(canvas, '_restaurant_tick_resize_callback', None)
+        if previous_resize_callback is not None:
+            canvas.mpl_disconnect(previous_resize_callback)
+        def fit_resized_dates(_event):
+            self._fit_date_axis_labels(canvas, axis)
+            canvas.draw_idle()
+        canvas._restaurant_tick_resize_callback = canvas.mpl_connect('resize_event', fit_resized_dates)
         annotations = list(getattr(axis, "_restaurant_value_annotations", []))
         if not annotations:
             canvas.draw_idle()
@@ -9971,14 +10316,19 @@ class MoreStatsTab(QWidget):
 
         axis.set_xticks(x_positions)
         axis.set_xticklabels(labels, rotation=45 if len(labels) > 8 else 0, ha="right" if len(labels) > 8 else "center")
-        axis.set_title(title, fontsize=13)
+        axis.set_title(title, fontsize=13, fontweight="semibold", loc="left", pad=16, color="#334155")
         if y_label:
             axis.set_ylabel(y_label)
-        axis.grid(True, axis="y", alpha=0.25)
+        axis.grid(True, axis="y", color="#e5eaf1", linewidth=0.8)
+        axis.set_axisbelow(True)
+        axis.spines[["top", "right"]].set_visible(False)
+        axis.spines[["left", "bottom"]].set_color("#dce3eb")
+        axis.tick_params(colors="#64748b", labelsize=9)
+        axis.axhline(0, color="#94a3b8", linewidth=0.8, linestyle="--", zorder=1)
         axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{value:,.2f}"))
         axis.margins(y=0.16)
         if len(series_items) > 1 or series_items[0][0]:
-            axis.legend(loc="best", fontsize=9)
+            axis.legend(loc="best", fontsize=9, frameon=False)
         self._finalize_annotated_chart(canvas, axis)
 
     def _plot_horizontal_compare(self, canvas, labels, series, title):
@@ -10000,11 +10350,15 @@ class MoreStatsTab(QWidget):
             self._annotate_horizontal_bars(axis, bars, values, name)
         axis.set_yticks(positions)
         axis.set_yticklabels(labels)
-        axis.set_title(title, fontsize=13)
-        axis.grid(True, axis="x", alpha=0.25)
+        axis.set_title(title, fontsize=13, fontweight="semibold", loc="left", pad=16, color="#334155")
+        axis.grid(True, axis="x", color="#e5eaf1", linewidth=0.8)
+        axis.set_axisbelow(True)
+        axis.spines[["top", "right"]].set_visible(False)
+        axis.spines[["left", "bottom"]].set_color("#dce3eb")
+        axis.tick_params(colors="#64748b", labelsize=9)
         axis.xaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{value:,.2f}"))
         if len(items) > 1:
-            axis.legend(loc="best", fontsize=9)
+            axis.legend(loc="best", fontsize=9, frameon=False)
         self._finalize_annotated_chart(canvas, axis)
 
     # ---------- 经营指标视图 ----------
@@ -10106,7 +10460,12 @@ class MoreStatsTab(QWidget):
         axis.set_xticks(x_positions)
         axis.set_xticklabels(labels, rotation=45 if len(labels) > 10 else 0, ha="right" if len(labels) > 10 else "center")
         axis.set_title(f"{self._current_year()}年 所选日期明细趋势")
-        axis.grid(True, axis="y", alpha=0.25)
+        axis.grid(True, axis="y", color="#e5eaf1", linewidth=0.8)
+        axis.set_axisbelow(True)
+        axis.spines[["top", "right"]].set_visible(False)
+        axis.spines[["left", "bottom"]].set_color("#dce3eb")
+        axis.tick_params(colors="#64748b", labelsize=9)
+        axis.axhline(0, color="#94a3b8", linewidth=0.8, linestyle="--", zorder=1)
         axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{value:,.2f}"))
         axis.margins(y=0.16)
         axis.legend(loc="best", fontsize=8)
@@ -10262,7 +10621,12 @@ class MoreStatsTab(QWidget):
         axis.set_xticklabels([pd.to_datetime(day).strftime("%m-%d") for day in labels], rotation=45 if len(labels) > 10 else 0, ha="right" if len(labels) > 10 else "center")
         axis.set_title("食材单价随时间变化")
         axis.set_ylabel("单价")
-        axis.grid(True, axis="y", alpha=0.25)
+        axis.grid(True, axis="y", color="#e5eaf1", linewidth=0.8)
+        axis.set_axisbelow(True)
+        axis.spines[["top", "right"]].set_visible(False)
+        axis.spines[["left", "bottom"]].set_color("#dce3eb")
+        axis.tick_params(colors="#64748b", labelsize=9)
+        axis.axhline(0, color="#94a3b8", linewidth=0.8, linestyle="--", zorder=1)
         axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{value:,.2f}"))
         axis.margins(y=0.16)
         axis.legend(loc="best", fontsize=8)
@@ -10403,7 +10767,12 @@ class MoreStatsTab(QWidget):
         )
         axis.set_title("食材累计消耗量" if metric == "累计消耗量" else "食材每日消耗量变化")
         axis.set_ylabel("消耗量")
-        axis.grid(True, axis="y", alpha=0.25)
+        axis.grid(True, axis="y", color="#e5eaf1", linewidth=0.8)
+        axis.set_axisbelow(True)
+        axis.spines[["top", "right"]].set_visible(False)
+        axis.spines[["left", "bottom"]].set_color("#dce3eb")
+        axis.tick_params(colors="#64748b", labelsize=9)
+        axis.axhline(0, color="#94a3b8", linewidth=0.8, linestyle="--", zorder=1)
         axis.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{value:,.2f}"))
         axis.margins(y=0.16)
         axis.legend(loc="best", fontsize=8)
@@ -10500,6 +10869,7 @@ class MoreStatsTab(QWidget):
     # ---------- 表格与刷新 ----------
     def _set_table(self, frame, metric_columns=None):
         self._last_table_export = frame.copy()
+        self.btn_export.setEnabled(not frame.empty)
         self.table_stats.clear()
         if frame.empty:
             self.table_stats.setRowCount(0)
@@ -10532,6 +10902,7 @@ class MoreStatsTab(QWidget):
         self.refresh_outbound_stats()
         months = self._selected_months()
         weekdays = self._selected_weekdays()
+        self._update_analysis_context()
         if not months:
             message = "请至少选择一个月份"
             for canvas in (self.canvas_trend, self.canvas_compare, self.canvas_weekday):
@@ -10567,8 +10938,7 @@ class MoreStatsTab(QWidget):
                 self.draw_consumption_compare(frame, metric)
             if visible.get("weekday"):
                 self.draw_consumption_weekday(frame, metric)
-            if visible.get("table"):
-                self.update_consumption_table(frame, metric)
+            self.update_consumption_table(frame, metric)
         elif self._is_food_analysis_active():
             frame = self._food_frame()
             metric = self.combo_food_metric.currentText()
@@ -10578,8 +10948,7 @@ class MoreStatsTab(QWidget):
                 self.draw_food_compare(frame, metric)
             if visible.get("weekday"):
                 self.draw_food_weekday(frame, metric)
-            if visible.get("table"):
-                self.update_food_table(frame, metric)
+            self.update_food_table(frame, metric)
         else:
             frame = self._business_frame()
             metrics = self._selected_metrics()
@@ -10589,8 +10958,9 @@ class MoreStatsTab(QWidget):
                 self.draw_business_compare(frame, metrics)
             if visible.get("weekday"):
                 self.draw_business_weekday(frame, metrics)
-            if visible.get("table"):
-                self.update_business_table(frame, metrics)
+            self.update_business_table(frame, metrics)
+        self._update_analysis_context(frame)
+        self._reflow_statistics_layout()
 
     def _update_month_forecast(self):
         months = self._selected_months()
@@ -10599,43 +10969,17 @@ class MoreStatsTab(QWidget):
             return
         today = QDate.currentDate()
         preferred = today.month() if self._current_year() == today.year() and today.month() in months else months[0]
-        frame = load_daily().copy()
-        prefix = f"{self._current_year()}-{preferred:02d}-"
-        frame = frame[frame['日期'].astype(str).str.startswith(prefix)]
-        # Annual workbooks may contain pre-created rows for future dates. They
-        # are not elapsed business days and must not change a live forecast.
-        if not frame.empty:
-            frame_dates = pd.to_datetime(frame['日期'], errors='coerce').dt.date
-            reference_day = datetime.now().date()
-            if (self._current_year(), preferred) == (reference_day.year, reference_day.month):
-                frame = frame[frame_dates < reference_day]
-            else:
-                frame = frame[frame_dates <= reference_day]
-        frame = frame[frame.apply(day_has_meaningful_data, axis=1)] if not frame.empty else frame
-        if frame.empty:
-            self.month_forecast_panel.set_values(status=f"{preferred}月暂无经营数据")
-            return
         all_daily, fixed = load_daily(), load_monthly_fixed()
-        metrics_for_month = [calc_day_metrics(str(day), all_daily, fixed) for day in frame['日期'].astype(str)]
-        metrics_for_month = [item for item in metrics_for_month if item]
-        revenue = sum(decimal_number(item.get('收益', 0) or 0) for item in metrics_for_month)
-        if not metrics_for_month:
-            self.month_forecast_panel.set_values(status=f"{preferred}月暂无经营数据")
-            return
+        current = calc_dashboard_month_kpis(self._current_year(), preferred, all_daily, fixed)['current']
         days_in_month = calendar.monthrange(self._current_year(), preferred)[1]
-        elapsed_days = max(1, elapsed_month_days(self._current_year(), preferred))
-        projected_revenue = decimal_divide(revenue, elapsed_days) * days_in_month
-        previous_date = datetime(self._current_year(), preferred, 1) - timedelta(days=1)
-        previous_summary = calc_month_summary(previous_date.year, previous_date.month, all_daily, fixed)
-        previous_total_cost = previous_summary.get('本月总成本', 0) if previous_summary else sum(item.get('总成本', 0) for item in metrics_for_month)
-        projected_net = projected_revenue - previous_total_cost
-        gross_profit = sum(decimal_number(item.get('毛利', 0) or 0) for item in metrics_for_month)
-        gross_margin = decimal_divide(gross_profit, revenue) if revenue > 0 else 0
+        projected_net = current['projected_net']
+        gross_margin = decimal_divide(current['gross_margin'], 100) if current['gross_margin'] is not None else 0
         break_even_increase = calculate_break_even_daily_revenue_increase(
             projected_net, gross_margin, days_in_month
-        )
+        ) if projected_net is not None else None
         self.month_forecast_panel.set_values(
-            projected_revenue, projected_net, break_even_increase
+            current['projected_revenue'], projected_net, break_even_increase,
+            status=current['forecast_status']
         )
 
     def refresh_inventory_balance(self):
@@ -10908,6 +11252,50 @@ class DashboardTab(QWidget):
         self.month_combo.setFixedWidth(76); self.year_combo.setFixedWidth(90)
         date_layout.setColumnStretch(5, 1)
         main_layout.addLayout(date_layout)
+
+        self.headline_title = QLabel("本月经营表现")
+        self.headline_title.setStyleSheet("font-size:15px;font-weight:600;")
+        main_layout.addWidget(self.headline_title)
+        self.headline_layout = QGridLayout()
+        self.headline_layout.setHorizontalSpacing(8)
+        self.headline_layout.setVerticalSpacing(8)
+        self.headline_cards = []
+        self.headline_values = {}
+        self.headline_comparisons = {}
+        headline_specs = (
+            ('avg_revenue', '日均收入'),
+            ('avg_gross', '日均毛利润 (毛利率)'),
+            ('projected_net', '预计月底盈亏\n(根据 上个月总成本 和 这个月日均收入 计算)'),
+            ('avg_net', '日均净利润 (净利率)'),
+            ('net', '净利润 (净利率)'),
+        )
+        for key, caption in headline_specs:
+            card = QFrame()
+            card.setObjectName('monthlyHeadlineCard')
+            card.setStyleSheet('QFrame#monthlyHeadlineCard { background:white; border:1px solid #d7dde5; border-radius:6px; }')
+            card.setMinimumWidth(0)
+            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(12, 10, 12, 10)
+            title = QLabel(caption)
+            title.setWordWrap(True)
+            title.setMinimumWidth(0)
+            title.setStyleSheet('color:#657486;')
+            value = QLabel('—')
+            value.setWordWrap(True)
+            value.setMinimumWidth(0)
+            value.setStyleSheet('font-size:17px;font-weight:600;')
+            comparison = QLabel('暂无可比数据')
+            comparison.setWordWrap(True)
+            comparison.setMinimumWidth(0)
+            comparison.setStyleSheet('color:#657486;')
+            card_layout.addWidget(title)
+            card_layout.addWidget(value)
+            card_layout.addWidget(comparison)
+            self.headline_cards.append(card)
+            self.headline_values[key] = value
+            self.headline_comparisons[key] = comparison
+        main_layout.addLayout(self.headline_layout)
 
         self.summary_layout = QGridLayout()
         self.summary_layout.setHorizontalSpacing(8)
@@ -11234,7 +11622,9 @@ class DashboardTab(QWidget):
         # compact row.  Two rows are reserved for genuinely narrow windows;
         # this avoids turning a standard laptop dashboard into a long page.
         summary_columns = 4 if viewport_width >= 1180 else 2 if viewport_width >= 620 else 1
+        headline_columns = 5 if viewport_width >= 1180 else 3 if viewport_width >= 900 else 2 if viewport_width >= 620 else 1
         chart_columns = 2 if viewport_width >= 720 else 1
+        self._arrange_responsive_grid(self.headline_layout, self.headline_cards, headline_columns)
         self._arrange_responsive_grid(self.summary_layout, self.summary_groups, summary_columns)
         self._arrange_responsive_grid(self.chart_layout, self.chart_widgets, chart_columns)
         if hasattr(self, 'dashboard_content'):
@@ -11261,6 +11651,24 @@ class DashboardTab(QWidget):
                             event.ignore()
                     return passthrough
                 canvas.wheelEvent = make_passthrough(orig_wheel)
+
+    def _refresh_month_headlines(self, year, month, df_daily, df_fixed):
+        summary = calc_dashboard_month_kpis(year, month, df_daily, df_fixed)
+        self.headline_title.setText(f"{year}-{month:02d} 经营表现")
+        current, previous = summary['current'], summary['previous']
+        for key, label in self.headline_values.items():
+            value = current[key]
+            text = f"{decimal_number(value):,.2f} 元" if value is not None else "—"
+            if key == 'avg_gross' and value is not None:
+                text += f" ({decimal_number(current['gross_margin']):.1f}%)"
+            elif key in ('avg_net', 'net') and value is not None:
+                margin = current['net_margin']
+                text += f" ({decimal_number(margin):.1f}%)" if margin is not None else " (—)"
+            label.setText(text)
+            self.headline_comparisons[key].setText(month_comparison_text(value, previous[key]))
+            label.setToolTip(current['forecast_status'] if key == 'projected_net'
+                             else '净利率按本月实际净利润 ÷ 本月实际收入计算；收入为 0 时显示 —。'
+                             if key in ('avg_net', 'net') else '')
 
     def refresh_all(self):
         df_daily, df_fixed = load_daily(), load_monthly_fixed()
@@ -11368,8 +11776,9 @@ class DashboardTab(QWidget):
                 lbl.setText("-")
 
         # Month logic
+        self._refresh_month_headlines(year, month, df_daily, df_fixed)
         m_m = calc_month_summary(year, month, df_daily, df_fixed)
-        if m_m and m_m['活跃天数'] > 0:
+        if m_m:
             d = m_m.get('日均天数', elapsed_month_days(year, month))
             month_rows = df_daily[df_daily['日期'].astype(str).str.startswith(f"{year}-{month:02d}")]
             if not month_rows.empty:
@@ -11387,7 +11796,6 @@ class DashboardTab(QWidget):
             average_month_variable = sum(item['变动成本'] for item in average_month_metrics)
             average_month_total = sum(item['总成本'] for item in average_month_metrics)
             average_month_gross = sum(item['毛利'] for item in average_month_metrics)
-            average_month_net = sum(item['净利润'] for item in average_month_metrics)
             self.lbl_month_revenue.setText(money_sd(m_m['本月收益'], [x['收益'] for x in month_metric_rows]))
             self.lbl_month_a_revenue.setText(money_sd(store_sum(month_rows, 'A店收入'), [money_amount(row.get('A店收入', 0)) for _, row in month_rows.iterrows()]))
             self.lbl_month_b_revenue.setText(money_sd(store_sum(month_rows, 'B店收入'), [money_amount(row.get('B店收入', 0)) for _, row in month_rows.iterrows()]))
@@ -11400,19 +11808,26 @@ class DashboardTab(QWidget):
             self.lbl_month_avg_var.setText(money_sd(decimal_divide(average_month_variable, d), [x['变动成本'] for x in average_month_metrics]) + "/天")
             self.lbl_month_avg_cost.setText(money_sd(decimal_divide(average_month_total, d), [x['总成本'] for x in average_month_metrics]) + "/天")
             self.lbl_month_avg_gross.setText(margin_sd(decimal_divide(average_month_gross, d), decimal_divide(average_month_revenue, d), [x['毛利'] for x in average_month_metrics]) + "/天")
-            self.lbl_month_avg_net.setText(margin_sd(decimal_divide(average_month_net, d), decimal_divide(average_month_revenue, d), [x['净利润'] for x in average_month_metrics]) + "/天")
+            month_kpis = calc_dashboard_month_kpis(year, month, df_daily, df_fixed)['current']
+            if month_kpis['avg_net'] is not None:
+                margin_text = f"{month_kpis['net_margin']:.1f}%" if month_kpis['net_margin'] is not None else '—'
+                self.lbl_month_avg_net.setText(f"{month_kpis['avg_net']:,.2f} 元 ({margin_text})/天")
+            else:
+                self.lbl_month_avg_net.setText('—')
+            if not average_month_metrics:
+                for label in (self.lbl_month_avg_rev, self.lbl_month_avg_var, self.lbl_month_avg_cost,
+                              self.lbl_month_avg_gross):
+                    label.setText("—")
             days_in_month = calendar.monthrange(year, month)[1]
-            projected_revenue = decimal_divide(average_month_revenue, d) * days_in_month
-            previous_date = (datetime(year, month, 1) - timedelta(days=1))
-            previous_summary = calc_month_summary(previous_date.year, previous_date.month, df_daily, df_fixed)
-            previous_total_cost = previous_summary['本月总成本'] if previous_summary else m_m['本月总成本']
-            projected_net = projected_revenue - previous_total_cost
+            projected_revenue = month_kpis['projected_revenue']
+            projected_net = month_kpis['projected_net']
             gross_margin = decimal_divide(m_m['本月毛利'], m_m['本月收益']) if m_m['本月收益'] > 0 else 0
             break_even_increase = calculate_break_even_daily_revenue_increase(
                 projected_net, gross_margin, days_in_month
-            )
+            ) if projected_net is not None else None
             self.month_forecast_panel.set_values(
-                projected_revenue, projected_net, break_even_increase
+                projected_revenue, projected_net, break_even_increase,
+                status=month_kpis['forecast_status']
             )
         else:
             for lbl in [self.lbl_month_revenue, self.lbl_month_a_revenue, self.lbl_month_b_revenue, self.lbl_month_fixed, self.lbl_month_var_cost, self.lbl_month_cost,
@@ -16755,31 +17170,18 @@ class CashPositionTab(QWidget):
         toolbar=QHBoxLayout(); toolbar.addWidget(QLabel('明细月份'))
         self.filter_month=QDateEdit(QDate.currentDate()); self.filter_month.setCalendarPopup(True); self.filter_month.setDisplayFormat('yyyy-MM'); self.filter_month.setFixedWidth(128)
         self.add_item_button=QPushButton('新增项目'); self.delete_item_button=QPushButton('删除选中手工项目'); self.refresh_button=QPushButton('刷新现金流')
-        self.correction_toggle=QPushButton('余额校正'); self.correction_toggle.setCheckable(True)
         for widget in (self.filter_month,self.add_item_button,self.delete_item_button,self.refresh_button):toolbar.addWidget(widget)
-        toolbar.addStretch(); toolbar.addWidget(self.correction_toggle); outer.addLayout(toolbar)
-        self.correction_form=QGroupBox('余额校正'); form=QGridLayout(self.correction_form)
-        self.base_balance=QLineEdit(); self.base_balance.setPlaceholderText('校正后余额'); self.base_balance.setFixedWidth(180); self.base_balance.setAlignment(Qt.AlignRight)
-        self.as_of_date=QDateEdit(QDate.currentDate()); self.as_of_date.setCalendarPopup(True); self.as_of_date.setFixedWidth(140)
-        self.shareholder_loan=QLineEdit(); self.shareholder_loan.hide()
-        self.save_button=QPushButton('保存余额修正'); self.save_button.setStyleSheet('background:#315f88;color:white;')
-        form.addWidget(QLabel('校正后余额'),0,0); form.addWidget(self.base_balance,0,1); form.addWidget(QLabel('生效日期'),0,2); form.addWidget(self.as_of_date,0,3); form.addWidget(self.save_button,0,4); form.setColumnStretch(5,1)
-        hint=QLabel('校正会追加一条余额记录，保留历史明细；之后的收入和支出继续自动计算。'); hint.setWordWrap(True); hint.setStyleSheet('color:#657486;'); form.addWidget(hint,1,0,1,6)
-        self.correction_form.hide(); outer.addWidget(self.correction_form)
-        self.correction_toggle.toggled.connect(self.correction_form.setVisible)
+        toolbar.addStretch(); outer.addLayout(toolbar)
         self.table=QTableWidget(0,6); self.table.setHorizontalHeaderLabels(['日期','类型','说明','收入','支出','余额']); self.table.setEditTriggers(QTableWidget.NoEditTriggers); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setAlternatingRowColors(True)
         header=self.table.horizontalHeader(); header.setSectionResizeMode(QHeaderView.Interactive)
         for column,width in enumerate((130,160,360,150,150,160)):self.table.setColumnWidth(column,width)
         header.setSectionResizeMode(2,QHeaderView.Stretch); self.table.verticalHeader().setDefaultSectionSize(34); outer.addWidget(self.table,1)
         self.status=QLabel(''); self.status.setStyleSheet('color:#657486;'); outer.addWidget(self.status)
-        self.save_button.clicked.connect(self.save); self.refresh_button.clicked.connect(self.refresh); self.filter_month.dateChanged.connect(lambda _date:self._render_summary()); self.add_item_button.clicked.connect(self.add_item); self.delete_item_button.clicked.connect(self.delete_item)
+        self.refresh_button.clicked.connect(self.refresh); self.filter_month.dateChanged.connect(lambda _date:self._render_summary()); self.add_item_button.clicked.connect(self.add_item); self.delete_item_button.clicked.connect(self.delete_item)
 
     def set_role(self, role):
         self._role = str(role or '')
         enabled = self._role in {'admin', 'editor'}
-        self.save_button.setEnabled(enabled)
-        self.base_balance.setReadOnly(not enabled)
-        self.as_of_date.setEnabled(enabled)
         self.add_item_button.setEnabled(enabled); self.delete_item_button.setEnabled(enabled)
 
     def refresh(self):
@@ -16815,10 +17217,6 @@ class CashPositionTab(QWidget):
         self._payload = dict(payload or {})
         self._loading = False
         self._render_summary()
-        # The input is a proposed target balance, not the historical opening
-        # balance.  Showing the current result makes a correction easy without
-        # allowing unsaved text to alter the ledger preview.
-        self.base_balance.setText(f"{safe_float(getattr(self, '_last_current_balance', 0)):g}")
 
     def _render_summary(self):
         month = self.filter_month.date().toString('yyyy-MM')
@@ -16848,43 +17246,8 @@ class CashPositionTab(QWidget):
                 cell.setData(Qt.UserRole + 1, bool(item.get('system_locked', False)))
                 cell.setData(Qt.UserRole + 2, str(item.get('mode') or 'delta'))
                 if is_force and item.get('system_locked', False):
-                    cell.setToolTip('这条余额修正由上方“保存余额修正”产生，不能删除。')
+                    cell.setToolTip('这条记录由旧版余额校正产生，已锁定，不能删除。')
                 self.table.setItem(index, column, cell)
-
-    def save(self):
-        try:
-            target_balance = money_input(self.base_balance.text())
-        except ValueError as exc:
-            QMessageBox.warning(self, '金额错误', str(exc))
-            return
-        if target_balance < 0:
-            QMessageBox.warning(self, '金额错误', '强制修正余额不能为负数。')
-            return
-        try:
-            correction_date = self.as_of_date.date().toString('yyyy-MM-dd')
-            payload = dict(self._payload)
-            if 'base_balance' not in payload:
-                payload['base_balance'] = money_amount(payload.get('opening_balance', payload.get('可用余额', 0)))
-            if not payload.get('as_of_date'):
-                payload['as_of_date'] = str(payload.get('opening_date') or correction_date)[:10]
-            transactions = list(payload.get('transactions') or [])
-            transactions.append({
-                'id': str(uuid.uuid4()),
-                'date': correction_date,
-                'type': '余额强制修改',
-                'amount': target_balance,
-                'description': '余额强制修改',
-                'mode': 'force',
-                'system_locked': True,
-                'created_at': _inventory_operation_stamp([{'recorded_at': item.get('created_at')} for item in transactions]),
-            })
-            payload['transactions'] = transactions
-            payload['shareholder_loan'] = 0
-            save_cash_position_record(payload, expected_hash=self._payload_hash)
-            self.status.setText('余额强制修改已记入明细，正在同步云端。')
-            self.refresh()
-        except Exception as exc:
-            QMessageBox.warning(self, '无法保存余额修正', str(exc))
 
     def add_item(self):
         dialog = QDialog(self); dialog.setWindowTitle('现金余额表 · 加一项')
@@ -16944,7 +17307,7 @@ class CashPositionTab(QWidget):
             QMessageBox.information(self, '提示', '这条明细不是可删除的手工项目。'); return
         locked_value = transaction.get('system_locked', False)
         if locked_value is True or str(locked_value).strip().lower() in {'1', 'true', 'yes', 'on'}:
-            QMessageBox.information(self, '不能删除', '通过上方“保存余额修正”产生的记录不能删除。'); return
+            QMessageBox.information(self, '不能删除', '旧版余额校正产生的锁定记录不能删除。'); return
         if QMessageBox.question(self, '确认删除', '确定删除这条手工现金项目吗？') != QMessageBox.Yes: return
         payload = dict(self._payload); payload['transactions'] = [item for item in payload.get('transactions', []) if str(item.get('id') or '') != item_id]; payload['shareholder_loan'] = 0
         try: save_cash_position_record(payload, expected_hash=self._payload_hash); self.refresh()
@@ -17133,7 +17496,27 @@ class MainWindow(QMainWindow):
         self._cloud_refresh_timer.setInterval(poll_seconds * 1000)
         self._cloud_refresh_timer.timeout.connect(self.check_cloud_sync_updates)
         self._cloud_refresh_timer.start()
+        # Calendar-dependent totals must advance even when the workbook and
+        # cloud sequence remain unchanged, including after sleeping overnight.
+        self._last_statistics_date = datetime.now().date()
+        self._statistics_date_timer = QTimer(self)
+        self._statistics_date_timer.setInterval(5000)
+        self._statistics_date_timer.timeout.connect(self._refresh_statistics_after_date_change)
+        self._statistics_date_timer.start()
         self.statusBar().showMessage('网站数据每 2 秒检查一次；断网时自动只读。', 5000)
+
+    def _refresh_statistics_after_date_change(self):
+        """Recompute date-sensitive read-only views without changing their filters."""
+        current_date = datetime.now().date()
+        if current_date == self._last_statistics_date or QApplication.activeModalWidget() is not None:
+            return
+        try:
+            self.dashboard.refresh_all()
+            self.more_stats.refresh()
+        except Exception as exc:
+            self.statusBar().showMessage(f'日期已变化，统计刷新暂缓：{exc}', 5000)
+            return
+        self._last_statistics_date = current_date
 
     def eventFilter(self, watched, event):
         """Refresh the local 2-hour activity deadline without counting sync work."""

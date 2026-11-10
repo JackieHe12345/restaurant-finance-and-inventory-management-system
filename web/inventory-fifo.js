@@ -1,5 +1,5 @@
 if(typeof module!=='undefined' && module.exports && !globalThis.Exact) require('./money.js');
-/* v1.0.1: Decimal-safe business expressions; source and rebuild tool accompany this release. */
+/* v1.0.2: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 /* v1.0.1: exact decimal FIFO; cumulative cent allocation conserves every receipt's booked total. */
 (function(root){
   'use strict';
