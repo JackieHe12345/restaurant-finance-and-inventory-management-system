@@ -587,7 +587,9 @@ function elapsedCalendarDays(start,end,asOf=new Date()) {
   const last=new Date(end.getFullYear(),end.getMonth(),end.getDate());
   const yesterday=new Date(asOf.getFullYear(),asOf.getMonth(),asOf.getDate()-1);
   const capped=last<yesterday?last:yesterday;
-  return capped<first?0:Math.floor((capped-first)/86400000)+1;
+  // Count local calendar dates even when a daylight-saving change makes a day 23 or 25 hours.
+  const calendarDay=date=>Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())/86400000;
+  return capped<first?0:calendarDay(capped)-calendarDay(first)+1;
 }
 function periodElapsedDays(year,month) {
   return Math.max(0,elapsedCalendarDays(new Date(year,month-1,1),new Date(year,month,0)));
@@ -601,7 +603,7 @@ function dayRowForDate(key) {
 }
 function hasMeaningfulDayData(row){
   if(!row)return false;
-  const numericKeys=["收益","总金额","收入","总收入","A店收入","B店收入","学生外卖","A店外卖","B店外卖","A店现金","B店现金","总现金","总线上","食材成本","佐料成本","水电","其他","总客人数","新客人数量"];
+  const numericKeys=["收益","总金额","收入","总收入","A店收入","B店收入","学生外卖","A店外卖","B店外卖","A店现金","B店现金","总现金","总线上","食材成本","佐料成本","水电","其他","手续费","总客人数","新客人数量"];
   if(numericKeys.some(key=>entered(row[key])&&Math.abs(num(row[key]))>1e-9))return true;
   return ["食材明细","佐料明细","其他明细","当日备注"].some(key=>entered(row[key]));
 }
@@ -640,28 +642,87 @@ function monthOverviewMetricsV102(year,month) {
     cutoff=isoDate(new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate()-1));
   const items=dataDayMetrics().filter(item=>item.date.startsWith(key)&&item.date<=today),
     averageItems=items.filter(item=>item.date<=cutoff),elapsed=periodElapsedDays(year,month);
-  const known=key<=today.slice(0,7)&&(items.length>0||state.months.has(key)),hasRevenue=items.length>0,hasAverage=averageItems.length>0,
-    revenue=Exact.sum(items.map(item=>item.revenue)),variable=Exact.sum(items.map(item=>item.variable)),
-    total=Exact.add(variable,fixedBreakdown(year,month).spentTotal),net=known?Exact.sub(revenue,total):null;
-  return {key,known,hasRevenue,hasAverage,items,revenue,total,net,elapsed,
-    avgRevenue:hasAverage&&elapsed>0?Exact.div(Exact.sum(averageItems.map(item=>item.revenue)),elapsed):null,
-    avgGross:hasAverage&&elapsed>0?Exact.div(Exact.sum(averageItems.map(item=>item.gross)),elapsed):null,
+  const known=key<=today.slice(0,7)&&(items.length>0||state.months.has(key)),hasRevenue=items.length>0,hasAverage=averageItems.length>0;
+  const sum=(rows,key)=>Exact.sum(rows.map(row=>row[key]));
+  const fixed=fixedBreakdown(year,month).spentTotal,revenue=sum(items,"revenue"),total=Exact.add(sum(items,"variable"),fixed);
+  const net=known?Exact.sub(revenue,total):null,completedRevenue=sum(averageItems,"revenue"),completedGross=sum(averageItems,"gross");
+  const ingredient=Exact.add(sum(averageItems,"food"),sum(averageItems,"spice"));
+  // Daily variable costs already exclude the monthly fixed total. Subtract food
+  // and seasoning once to retain fees, daily utilities and other expenses.
+  const other=Exact.sub(sum(averageItems,"variable"),ingredient);
+  return {key,known,hasRevenue,hasAverage,items,revenue,total,net,elapsed,fixed,hasSavedFixed:state.months.has(key),
+    ingredient,other,completedRevenue,completedGross,
+    avgRevenue:hasAverage&&elapsed>0?Exact.div(completedRevenue,elapsed):null,
+    avgGross:hasAverage&&elapsed>0?Exact.div(completedGross,elapsed):null,
     avgNet:known&&elapsed>0?Exact.div(net,elapsed):null,
     netMargin:known&&Exact.cmp(revenue,0)!==0?Exact.mul(Exact.div(net,revenue),100):null};
 }
 function monthForecastV102(year,month) {
-  const current=monthOverviewMetricsV102(year,month),previousDate=new Date(year,month-2,1),
-    previous=monthOverviewMetricsV102(previousDate.getFullYear(),previousDate.getMonth()+1),
-    closed=current.key<isoDate(new Date()).slice(0,7),
-    revenue=closed?(current.known?current.revenue:null):current.hasAverage?Exact.mul(current.avgRevenue,daysInMonth(year,month)):null;
-  // At the next month's local calendar boundary, replace the estimate with
-  // this month's actual result. No historical write or close-out job is needed.
-  return {current,previous,closed,revenue,net:closed?current.net:current.hasAverage&&previous.known?Exact.sub(revenue,previous.total):null};
+  const current=monthOverviewMetricsV102(year,month),previousDate=new Date(year,month-2,1);
+  const previous=monthOverviewMetricsV102(previousDate.getFullYear(),previousDate.getMonth()+1);
+  const closed=current.key<isoDate(new Date()).slice(0,7),days=daysInMonth(year,month);
+  const revenue=closed?(current.known?current.revenue:null):current.hasAverage?Exact.div(Exact.mul(current.completedRevenue,days),current.elapsed):null;
+  let denominator=1,netNumerator=closed?current.net:null,cost=closed&&current.known?current.total:null;
+  if(!closed&&current.hasAverage&&previous.known){
+    const fixed=current.hasSavedFixed?Exact.math.max(previous.fixed,current.fixed):previous.fixed;
+    // Compare rates and combine income and costs before division. Individually
+    // dividing recurring rates can move an exact half cent across its rounding boundary.
+    denominator=current.elapsed*previous.elapsed;
+    const higherRateNumerator=category=>Exact.math.max(
+      Exact.mul(current[category],previous.elapsed),Exact.mul(previous[category],current.elapsed)
+    );
+    const variableNumerator=Exact.mul(Exact.add(higherRateNumerator("ingredient"),higherRateNumerator("other")),days);
+    const costNumerator=Exact.add(Exact.mul(fixed,denominator),variableNumerator);
+    const revenueNumerator=Exact.mul(current.completedRevenue,previous.elapsed*days);
+    netNumerator=Exact.sub(revenueNumerator,costNumerator);
+    cost=Exact.div(costNumerator,denominator);
+  }
+  const net=netNumerator===null?null:Exact.div(netNumerator,denominator);
+  let breakEven=null;
+  if(netNumerator!==null){
+    if(Exact.cmp(netNumerator,0)>=0)breakEven=Exact.decimal(0);
+    else if(Exact.cmp(current.completedRevenue,0)>0&&Exact.cmp(current.completedGross,0)>0){
+      const lossTimesRevenue=Exact.mul(Exact.abs(netNumerator),current.completedRevenue);
+      breakEven=Exact.div(lossTimesRevenue,Exact.mul(current.completedGross,days*denominator));
+    }
+  }
+  return {current,previous,closed,revenue,cost,net,breakEven};
+}
+function forecastLabelV102(scope,forecast){
+  const english=state.language==="en",title=english?"Estimated month-end profit/loss":"预计月底盈亏";
+  const caption=english?"(based on this month’s projected costs and revenue)":"(根据 本月预计成本 和 本月预计收入 计算)";
+  const lines=english?[
+    "Projected profit/loss = projected revenue − projected costs.",
+    "Revenue = average daily revenue through yesterday × calendar days in the selected month.",
+    "Projected costs = fixed costs + ingredient costs + other costs.",
+    "Fixed costs = the higher of last month’s actual fixed spending and this month’s saved fixed spending.",
+    "Ingredients (including seasonings) = the higher of the two monthly daily averages × days in this month.",
+    "Other costs = total costs − ingredients and seasonings − fixed costs. Use the higher of the two daily averages × days in this month.",
+    "Prior daily averages use all calendar days in that month. Current averages use elapsed calendar days through yesterday.",
+    "At local midnight on the first of the next month, the report switches to actual revenue minus actual total costs."
+  ]:[
+    "预计月底盈亏 = 本月预计收入 − 本月预计成本。",
+    "本月预计收入 = 本月截至昨天的日均收入 × 本月总天数。",
+    "本月预计成本 = 预计固定成本 + 预计食材成本 + 预计其他成本。",
+    "预计固定成本：取上月实际固定成本与本月已保存固定成本中的较高值。",
+    "预计食材成本（含佐料）：取上月与本月日均食材成本中的较高值 × 本月总天数。",
+    "其他成本 = 总成本 − 食材与佐料成本 − 固定成本。预计其他成本取两个月日均其他成本中的较高值 × 本月总天数。",
+    "上月日均按上月全部日历天数计算，本月日均按截至昨天已过的日历天数计算。",
+    "次月 1 日零时起，显示该月实际净利润（实际收入 − 实际总成本）。"
+  ];
+  if(forecast.closed)lines.unshift(english?"Closed month · showing actual profit/loss.":"已结月 · 当前显示实际盈亏。");
+  else if(forecast.revenue===null)lines.unshift(english?"No completed operating day is available for this month.":"本月暂无已完成日期的经营数据。");
+  else if(!forecast.previous.known)lines.unshift(english?"Previous-month cost records are missing.":"缺少上月成本记录，暂时无法计算预计盈亏。");
+  const id=`forecast-help-${scope}`,help=english?"How month-end profit/loss is calculated":"查看预计月底盈亏计算说明";
+  return `<span class="forecast-title">${title}<button type="button" class="forecast-info-button" aria-label="${help}" aria-expanded="false" aria-describedby="${id}" aria-controls="forecast-help-popup"></button></span><small class="forecast-formula o30-kpi-formula">${caption}</small><span id="${id}" hidden>${escapeHtml(lines.join("\n"))}</span>`;
 }
 function refreshCalendarBoundaryV102() {
   const today=isoDate(new Date()),previous=state.dashboardCalendarDate;
   state.dashboardCalendarDate=today;
-  if(previous&&previous!==today&&state.token)renderDashboard();
+  if(previous&&previous!==today&&state.token){
+    renderDashboard();
+    if(typeof renderForecastBannerV24==="function")renderForecastBannerV24();
+  }
 }
 
 function row(label, value, cls="") { return `<div class="metric-row ${cls}"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`; }
@@ -676,7 +737,7 @@ function renderCard(id, rows) { $(id).querySelector(".metric-list").innerHTML = 
 function renderDashboard() {
   const c = selectedContext();
   $("dayTitle").textContent = c.dateText; $("weekTitle").textContent = `${isoDate(c.weekStart).slice(5)} ${state.language==="en"?"to":"至"} ${isoDate(c.weekEnd).slice(5)}`; $("monthTitle").textContent = state.language==="en"?`${c.year}-${String(c.month).padStart(2,"0")}`:`${c.year} 年 ${c.month} 月`; $("yearTitle").textContent = state.language==="en"?String(c.year):`${c.year} 年`;
-  const d=c.day, monthDays=daysInMonth(c.year,c.month), forecast=monthForecastV102(c.year,c.month),expectedMonthRevenue=forecast.revenue,expectedMonthNet=forecast.net;
+  const d=c.day, forecast=monthForecastV102(c.year,c.month),expectedMonthRevenue=forecast.revenue,expectedMonthNet=forecast.net;
   const monthPaid=c.monthSummary?fixedBreakdown(c.year,c.month).spentTotal:0, monthTotal=c.monthSummary?c.monthSummary.variable+monthPaid:0, monthNet=c.monthSummary?c.monthSummary.revenue-monthTotal:0;
   const dish=d?dishCostForDate(d.date):{has:false,cost:0}, displayedGross=dish.has?d.revenue-dish.cost:(d?.gross||0);
   /* Standard deviation is intentionally limited to the three daily revenue
@@ -684,17 +745,17 @@ function renderDashboard() {
   renderCard("dayCard", d ? [row(mt("revenue"),metricMoneySd(d.revenue,c.monthAverageMetrics,"revenue"),"hero"),spacer(),row(mt("fixed"),money(d.fixedDaily)),row(mt("variable"),money(d.variable)),row(mt("total"),money(d.total)),row(state.language==="en"?"Average total cost":"日均总成本",money(d.total)),row(mt("dish"),money(dish.has?dish.cost:0)),spacer(),row(mt("net"),profit(d.net,d.revenue),d.net>=0?"positive":"negative"),spacer(),row(mt("gross"),profit(displayedGross,d.revenue),displayedGross>=0?"positive":"negative"),row(mt("customers"),compactNumber(d.customers)),row(mt("ticket"),money(d.customers?d.revenue/d.customers:0))] : [row(state.language==="en"?"No data for this date":"当天没有经营数据","—")]);
   const summaryRows=(s,metrics,override={})=>{if(!s)return[row(state.language==="en"?"No operating data":"没有经营数据","—")];const fixedTotal=override.fixedTotal??s.fixed,total=override.total??(s.variable+fixedTotal),net=override.net??(s.revenue-total),avgTotal=override.avgTotal??(total/Math.max(1,s.elapsedDays||s.days)),avgNet=override.avgNet===undefined?net/Math.max(1,s.elapsedDays||s.days):override.avgNet,marginText=override.netMargin===null?"—":override.netMargin===undefined?null:`${Exact.decimal(override.netMargin).toFixed(1)}%`,netText=marginText===null?profit(net,s.revenue):`${money(net)} (${marginText})`,avgNetText=avgNet===null?"—":marginText===null?profit(avgNet,s.avgRevenue):`${money(avgNet)} (${marginText})`;return[row(mt("revenue"),money(s.revenue),"hero"),spacer(),row(mt("fixedTotal"),money(fixedTotal)),row(mt("variable"),money(s.variable)),row(mt("total"),money(total)),row(state.language==="en"?"Average total cost":"日均总成本",money(avgTotal)),spacer(),row(mt("gross"),profit(s.gross,s.revenue),s.gross>=0?"positive":"negative"),row(mt("net"),netText,net>=0?"positive":"negative"),spacer(),row(mt("avgRevenue"),money(s.avgRevenue)),row(mt("avgVariable"),money(s.avgVariable)),row(mt("avgGross"),profit(s.avgGross,s.avgRevenue)),row(mt("avgNet"),avgNetText)];};
   renderCard("weekCard",summaryRows(c.week,c.weekMetrics));
-  if(c.monthSummary){
-    const grossMargin=c.monthSummary.revenue>0?c.monthSummary.gross/c.monthSummary.revenue:0;
-    const breakEvenDailyIncrease=expectedMonthNet===null?null:expectedMonthNet<0&&grossMargin>0?Math.abs(expectedMonthNet)/grossMargin/monthDays:0;
-    const forecastRows=[
-      spacer(),
-      forecastRow(state.language==="en"?"Monthly revenue forecast":"本月收入预测",forecast.closed?(state.language==="en"?"(closed month: actual revenue)":"(已结月：显示实际收入)"):(state.language==="en"?"(current average daily revenue × total days)":"(本月截至目前的日均收入 x 本月总天数)"),expectedMonthRevenue===null?"—":money(expectedMonthRevenue),"hero",true),
-      forecastRow(state.language==="en"?"Estimated month-end profit/loss":"预计月底盈亏",(state.language==="en"?"(based on previous month total cost and monthly revenue forecast)":"(根据 上月总成本 和 本月收入预测 计算)")+(forecast.closed?(state.language==="en"?" · Closed month: actual net profit":" · 已结月：显示实际净利润"):""),expectedMonthNet===null?"—":money(expectedMonthNet),`hero ${expectedMonthNet===null?"":expectedMonthNet>=0?"positive":"negative"}`),
-      forecastRow(state.language==="en"?"Daily Revenue increase needed to break even":"平本 需要 日均收入 增加",state.language==="en"?"((estimated month-end profit/loss ÷ monthly gross margin) ÷ days in month)":"( (预计月底盈亏/本月毛利率) / 本月天数 )",breakEvenDailyIncrease===null?"—":money(breakEvenDailyIncrease),"hero")
-    ];
-    renderCard("monthCard",summaryRows(c.monthSummary,c.monthMetrics,{fixedTotal:monthPaid,total:monthTotal,net:monthNet,avgTotal:monthTotal/Math.max(1,c.monthElapsedDays||c.monthSummary.elapsedDays),avgNet:forecast.current.avgNet,netMargin:forecast.current.netMargin}).concat(forecastRows));
-  }else renderCard("monthCard",summaryRows(c.monthSummary,c.monthMetrics));
+  const monthRows=summaryRows(c.monthSummary,c.monthMetrics,{
+    fixedTotal:monthPaid,total:monthTotal,net:monthNet,avgTotal:c.monthSummary?monthTotal/Math.max(1,c.monthElapsedDays||c.monthSummary.elapsedDays):null,
+    avgNet:forecast.current.avgNet,netMargin:forecast.current.netMargin
+  });
+  const english=state.language==="en";
+  monthRows.push(spacer(),
+    forecastRow(english?"Monthly revenue forecast":"本月收入预测",forecast.closed?(english?"(closed month: actual revenue)":"(已结月：显示实际收入)"):(english?"(average daily revenue through yesterday × days in this month)":"(本月截至昨天的日均收入 × 本月总天数)"),expectedMonthRevenue===null?"—":money(expectedMonthRevenue),"hero",true),
+    `<div class="metric-row forecast-row hero ${expectedMonthNet===null?"":expectedMonthNet>=0?"positive":"negative"}"><span class="forecast-label">${forecastLabelV102("report",forecast)}</span><strong>${expectedMonthNet===null?"—":money(expectedMonthNet)}</strong></div>`,
+    forecastRow(english?"Daily revenue increase needed to break even":"平本 需要 日均收入 增加",english?"(projected loss ÷ gross margin ÷ days in this month)":"(预计亏损额 ÷ 毛利率 ÷ 本月天数)",forecast.breakEven===null?"—":money(forecast.breakEven),"hero")
+  );
+  renderCard("monthCard",monthRows);
   const y=c.yearSummary;let yearRows=summaryRows(y,c.yearMetrics);if(y){const paid=Array.from({length:12},(_,i)=>fixedBreakdown(c.year,i+1).spentTotal).reduce((a,b)=>a+b,0),yearTotal=y.variable+paid,yearNet=y.revenue-yearTotal;yearRows=summaryRows(y,c.yearMetrics,{fixedTotal:paid,total:yearTotal,net:yearNet,avgTotal:yearTotal/Math.max(1,c.yearElapsedDays||y.elapsedDays)});yearRows.splice(5,0,row(mt("totalExpense"),money(yearTotal)));const monthCount=Math.max(1,new Set(c.yearMetrics.map(m=>m.date.slice(0,7))).size);yearRows.push(row(mt("monthGross"),profit(y.gross/monthCount,y.revenue/monthCount)));yearRows.push(row(mt("monthNet"),profit(yearNet/monthCount,y.revenue/monthCount)));}
   renderCard("yearCard",yearRows);renderCostDonut(d);renderTrend(c.monthMetrics);renderWeekdays(c.monthMetrics);renderExpenses(c);if(typeof renderCashPosition==="function")renderCashPosition();
 }

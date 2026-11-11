@@ -1,6 +1,6 @@
 # restaurant-finance-and-inventory-management-system 部署指南
 
-> 本指南适用于 v1.0.2 源码与 `20261110-analytics-english-final` 构建。模块、数据和构建约束见[工程技术参考](ENGINEERING_REFERENCE.zh-CN.md)。
+> 本指南适用于 v1.0.2 源码与 `20261111-forecast-costs-r2` 构建。模块、数据和构建约束见[工程技术参考](ENGINEERING_REFERENCE.zh-CN.md)。
 
 [返回 README](../README%20%28%E4%B8%AD%E6%96%87%29.md) · [English](DEPLOYMENT.md) | 简体中文
 
@@ -253,9 +253,11 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 
 ### 同版本构建修订
 
-同为 v1.0.2 的分发包可能包含不同构建。本次最终包在 HTML 声明 `data-build-revision="20261110-analytics-english-final"`，本地资源缓存查询参数使用 `v1.0.2-20261110-analytics-english-final`。原生部署预检与 `verify_release_files.py` 在逐文件清单哈希之外，验证声明的修订和精确的“版本＋修订”查询值。没有修订字段的旧发布仍使用原先的版本查询规则。不要为同版本升级关闭这些校验。
+同为 v1.0.2 的分发包可能包含不同构建。本次最终包在 HTML 声明 `data-build-revision="20261111-forecast-costs-r2"`，本地资源缓存查询参数使用 `v1.0.2-20261111-forecast-costs-r2`。原生部署预检与 `verify_release_files.py` 在逐文件清单哈希之外，验证声明的修订和精确的“版本＋修订”查询值。没有修订字段的旧发布仍使用原先的版本查询规则。不要为同版本升级关闭这些校验。
 
 部署前应重新检查目标实例状态，并创建数据库、程序和运行配置备份。实际服务器身份、配置值、备份路径和每次部署的验证记录应由运维人员私下保存；本仓库提供可复用的步骤和校验工具。
+
+文件核验后，在同一账本选择同一月份，分别打开主页和完整月报。两个标题的第二行都应显示「(根据 本月预计成本 和 本月预计收入 计算)」。分别打开旁边的 **i**，确认说明列出了三项成本。再选择一个已结束的月份，核对两处金额是否都等于该月实际净利润。整个检查只需查看账目。
 
 ### PostgreSQL 升级前后证据
 

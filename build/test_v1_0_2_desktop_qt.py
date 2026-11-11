@@ -14,8 +14,8 @@ import uuid
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PySide6.QtWidgets import *
-from PySide6.QtCore import Qt, QDate, QTimer
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import Qt, QDate, QDateTime, QEvent, QTime, QTimer
+from PySide6.QtGui import QColor, QFocusEvent, QFont, QHelpEvent
 
 getcontext().prec = 256
 SOURCE = Path(os.environ.get('DESKTOP_SOURCE', str(Path(__file__).resolve().parents[1] / 'desktop/restaurant_cost_manager.py')))
@@ -26,9 +26,9 @@ SCOPE.update(MONEY_CENT=Decimal('.01'), MAX_ABS_AMOUNT=Decimal('999999999999.99'
              _payload_and_hash=lambda payload: ('{}', 'isolated-fixture'),
              _inventory_operation_stamp=lambda rows: '2026-11-10T04:00:00Z')
 FUNCTIONS = {'decimal_number', 'decimal_divide', 'money_amount', 'money_input', 'month_comparison_text',
-             '_elapsed_reference', 'elapsed_month_days', 'calculate_break_even_daily_revenue_increase',
-             'apply_py_charm_run_style', 'calc_dashboard_month_kpis'}
-CLASSES = {'DashboardTab', 'ForecastSummaryPanel', 'CashPositionTab'}
+             '_elapsed_reference', 'elapsed_month_days',
+             'apply_py_charm_run_style', 'workbook_month_kpis', 'calc_dashboard_month_kpis'}
+CLASSES = {'DashboardTab', 'ForecastInfoButton', 'ForecastSummaryPanel', 'CashPositionTab'}
 NODES = [n for n in TREE.body if (isinstance(n, ast.FunctionDef) and n.name in FUNCTIONS)
          or (isinstance(n, ast.ClassDef) and n.name in CLASSES)]
 assert {n.name for n in NODES} == FUNCTIONS | CLASSES
@@ -74,6 +74,21 @@ class MonthlyWidgets(unittest.TestCase):
         refresh(window)
         self.assertEqual(window._last_statistics_date, datetime(2027, 1, 1).date())
 
+    def test_clock_schedules_the_local_midnight_boundary(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        source_class = next(n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name == 'MainWindow')
+        method = next(n for n in source_class.body if isinstance(n, ast.FunctionDef) and n.name == '_check_statistics_clock')
+        clock = Mock()
+        scope = dict(SCOPE, QDateTime=clock)
+        exec(compile(ast.Module(body=[method], type_ignores=[]), str(SOURCE), 'exec'), scope)
+        window = SimpleNamespace(_statistics_date_timer=Mock(), _refresh_statistics_after_date_change=Mock())
+        for time, delay in ((QTime(23, 59, 59, 735), 265), (QTime(0, 0, 0), 5000)):
+            clock.currentDateTime.return_value = QDateTime(QDate(2026, 10, 31), time)
+            scope['_check_statistics_clock'](window)
+            window._statistics_date_timer.start.assert_called_with(delay)
+        self.assertEqual(window._refresh_statistics_after_date_change.call_count, 2)
+
     def test_headline_order_amount_margin_and_responsive_layout(self):
         cls = SCOPE['DashboardTab']
         with patch.object(cls, 'refresh_all', return_value=None):
@@ -85,7 +100,7 @@ class MonthlyWidgets(unittest.TestCase):
         tab._refresh_month_headlines(2026, 11, None, None)
         self.assertEqual(len({card.styleSheet() for card in tab.headline_cards}), 1)
         captions = [card.findChildren(QLabel)[0].text() for card in tab.headline_cards]
-        self.assertEqual(captions, ['日均收入', '日均毛利润 (毛利率)', '预计月底盈亏\n(根据 上个月总成本 和 这个月日均收入 计算)', '日均净利润 (净利率)', '净利润 (净利率)'])
+        self.assertEqual(captions, ['日均收入', '日均毛利润 (毛利率)', '预计月底盈亏\n(根据 本月预计成本 和 本月预计收入 计算)', '日均净利润 (净利率)', '净利润 (净利率)'])
         self.assertEqual(tab.headline_values['avg_gross'].text(), '100.00 元 (50.0%)')
         self.assertEqual(tab.headline_comparisons['avg_revenue'].text(), '比上个月多了 100.0%')
         self.assertEqual(tab.headline_comparisons['net'].text(), '比上个月少了 66.7%')
@@ -129,7 +144,7 @@ class MonthlyWidgets(unittest.TestCase):
                          calc_day_metrics=lambda *args: day, calc_week_summary=lambda *args: None,
                          calc_year_summary=lambda *args: None, dish_total_cost_for_date=lambda *args: (0, False),
                          calc_dashboard_month_kpis=REAL_CALC_KPIS,
-                         calc_month_summary=lambda y, m, *args: summary if m == 10 else None)
+                         calc_month_summary=lambda y, m, *args, **kwargs: summary if m == 10 else None)
         tab.date_edit.blockSignals(True); tab.date_edit.setDate(QDate(2026, 10, 2)); tab.date_edit.blockSignals(False)
         tab.update_charts = lambda *args: None
         with patch.dict(SCOPE, overrides):
@@ -195,9 +210,8 @@ class MonthlyWidgets(unittest.TestCase):
                          calc_day_metrics=lambda *args: day, calc_week_summary=lambda *args: None,
                          calc_year_summary=lambda *args: None, dish_total_cost_for_date=lambda *args: (0, False),
                          calc_dashboard_month_kpis=REAL_CALC_KPIS,
-                         calc_month_summary=lambda y, m, *args: summary if m == 11 else {'本月总成本': Decimal('1600'), '本月收益': Decimal('0'), '本月净利': Decimal('-1600')})
+                         calc_month_summary=lambda y, m, *args, **kwargs: summary if m == 11 else {'本月总成本': Decimal('1600'), '本月收益': Decimal('0'), '本月净利': Decimal('-1600')})
         tab.date_edit.blockSignals(True); tab.date_edit.setDate(QDate(2026, 11, 10)); tab.date_edit.blockSignals(False)
-        tab._refresh_month_headlines = lambda *args: None
         tab.update_charts = lambda *args: None
         with patch.dict(SCOPE, overrides):
             tab.refresh_all()
@@ -258,10 +272,38 @@ class MonthlyWidgets(unittest.TestCase):
 
     def test_report_note_spaces_and_break_even_label(self):
         panel = SCOPE['ForecastSummaryPanel']()
-        self.assertEqual(panel.net_note_label.text(), '(根据 上月总成本 和 本月收入预测 计算)')
+        self.assertEqual(panel.net_note_label.text(), '(根据 本月预计成本 和 本月预计收入 计算)')
         self.assertEqual(panel.break_even_title_label.text().splitlines()[0], '平本 需要 日均收入 增加')
         panel.set_values(6000, -1000, 50)
         self.assertEqual(panel.net_value.text(), '-1,000.00 元')
+        panel.close(); panel.deleteLater()
+
+    def test_forecast_explanation_on_hover_focus_and_click(self):
+        cls = SCOPE['DashboardTab']
+        with patch.object(cls, 'refresh_all', return_value=None):
+            tab = cls()
+        tab.show()
+        APP.processEvents()
+        for button in (tab.headline_cards[2].findChild(QToolButton), tab.month_forecast_panel.net_info_button):
+            self.assertEqual(button.accessibleName(), '预计月底盈亏计算说明')
+            self.assertEqual(button.focusPolicy(), Qt.StrongFocus)
+            for wording in ('截至昨日', '固定支出', '含佐料', '其他成本', '较高', '次月 1 日'):
+                self.assertIn(wording, button.toolTip())
+            point = button.rect().center()
+            QApplication.sendEvent(button, QHelpEvent(QEvent.ToolTip, point, button.mapToGlobal(point)))
+            self.assertEqual(QToolTip.text(), button.toolTip())
+            with patch.object(QToolTip, 'showText') as popup:
+                QApplication.sendEvent(button, QFocusEvent(QEvent.FocusIn, Qt.TabFocusReason))
+                button.click()
+                self.assertEqual(popup.call_count, 2)
+        tab.close(); tab.deleteLater()
+
+    def test_forecast_panel_displays_shared_break_even_result(self):
+        panel = SCOPE['ForecastSummaryPanel']()
+        for increase, displayed in ((Decimal('20'), '20.00 元'), (None, '—'), (0, '0.00 元')):
+            values = dict(projected_revenue=6000, projected_net=-300, forecast_status='', break_even_increase=increase)
+            panel.set_month_forecast(values)
+            self.assertEqual(panel.break_even_value.text(), displayed)
         panel.close(); panel.deleteLater()
 
     def test_cash_correction_removed_manual_force_kept_unlocked(self):

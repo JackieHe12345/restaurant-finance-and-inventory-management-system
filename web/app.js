@@ -577,7 +577,9 @@ function elapsedCalendarDays(start,end,asOf=new Date()) {
   const last=new Date(end.getFullYear(),end.getMonth(),end.getDate());
   const yesterday=new Date(asOf.getFullYear(),asOf.getMonth(),Exact.sub(asOf.getDate(), 1));
   const capped=(Exact.truth(Exact.lt(last, yesterday)) ? last : yesterday);
-  return (Exact.truth(Exact.lt(capped, first)) ? 0 : Exact.add(Exact.math.floor(Exact.div(Exact.sub(capped, first), 86400000)), 1));
+  // Count local calendar dates even when a daylight-saving change makes a day 23 or 25 hours.
+  const calendarDay=date=>Exact.div(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()), 86400000);
+  return (Exact.truth(Exact.lt(capped, first)) ? 0 : Exact.add(Exact.sub(calendarDay(capped), calendarDay(first)), 1));
 }
 function periodElapsedDays(year,month) {
   return Exact.math.max(0,elapsedCalendarDays(new Date(year,Exact.sub(month, 1),1),new Date(year,month,0)));
@@ -591,7 +593,7 @@ function dayRowForDate(key) {
 }
 function hasMeaningfulDayData(row){
   if(Exact.truth(Exact.not(row)))return false;
-  const numericKeys=["收益","总金额","收入","总收入","A店收入","B店收入","学生外卖","A店外卖","B店外卖","A店现金","B店现金","总现金","总线上","食材成本","佐料成本","水电","其他","总客人数","新客人数量"];
+  const numericKeys=["收益","总金额","收入","总收入","A店收入","B店收入","学生外卖","A店外卖","B店外卖","A店现金","B店现金","总现金","总线上","食材成本","佐料成本","水电","其他","手续费","总客人数","新客人数量"];
   if(Exact.truth(numericKeys.some(key=>Exact.and(()=>(entered(row[key])), ()=>(Exact.gt(Exact.math.abs(num(row[key])), 1e-9))))))return true;
   return ["食材明细","佐料明细","其他明细","当日备注"].some(key=>entered(row[key]));
 }
@@ -630,28 +632,87 @@ function monthOverviewMetricsV102(year,month) {
     cutoff=isoDate(new Date(new Date().getFullYear(),new Date().getMonth(),Exact.sub(new Date().getDate(), 1)));
   const items=dataDayMetrics().filter(item=>Exact.and(()=>(item.date.startsWith(key)), ()=>(Exact.lte(item.date, today)))),
     averageItems=items.filter(item=>Exact.lte(item.date, cutoff)),elapsed=periodElapsedDays(year,month);
-  const known=Exact.and(()=>(Exact.lte(key, today.slice(0,7))), ()=>(Exact.or(()=>(Exact.gt(items.length, 0)), ()=>(state.months.has(key))))),hasRevenue=Exact.gt(items.length, 0),hasAverage=Exact.gt(averageItems.length, 0),
-    revenue=Exact.sum(items.map(item=>item.revenue)),variable=Exact.sum(items.map(item=>item.variable)),
-    total=Exact.add(variable,fixedBreakdown(year,month).spentTotal),net=(Exact.truth(known) ? Exact.sub(revenue,total) : null);
-  return {key,known,hasRevenue,hasAverage,items,revenue,total,net,elapsed,
-    avgRevenue:(Exact.truth(Exact.and(()=>(hasAverage), ()=>(Exact.gt(elapsed, 0)))) ? Exact.div(Exact.sum(averageItems.map(item=>item.revenue)),elapsed) : null),
-    avgGross:(Exact.truth(Exact.and(()=>(hasAverage), ()=>(Exact.gt(elapsed, 0)))) ? Exact.div(Exact.sum(averageItems.map(item=>item.gross)),elapsed) : null),
+  const known=Exact.and(()=>(Exact.lte(key, today.slice(0,7))), ()=>(Exact.or(()=>(Exact.gt(items.length, 0)), ()=>(state.months.has(key))))),hasRevenue=Exact.gt(items.length, 0),hasAverage=Exact.gt(averageItems.length, 0);
+  const sum=(rows,key)=>Exact.sum(rows.map(row=>row[key]));
+  const fixed=fixedBreakdown(year,month).spentTotal,revenue=sum(items,"revenue"),total=Exact.add(sum(items,"variable"),fixed);
+  const net=(Exact.truth(known) ? Exact.sub(revenue,total) : null),completedRevenue=sum(averageItems,"revenue"),completedGross=sum(averageItems,"gross");
+  const ingredient=Exact.add(sum(averageItems,"food"),sum(averageItems,"spice"));
+  // Daily variable costs already exclude the monthly fixed total. Subtract food
+  // and seasoning once to retain fees, daily utilities and other expenses.
+  const other=Exact.sub(sum(averageItems,"variable"),ingredient);
+  return {key,known,hasRevenue,hasAverage,items,revenue,total,net,elapsed,fixed,hasSavedFixed:state.months.has(key),
+    ingredient,other,completedRevenue,completedGross,
+    avgRevenue:(Exact.truth(Exact.and(()=>(hasAverage), ()=>(Exact.gt(elapsed, 0)))) ? Exact.div(completedRevenue,elapsed) : null),
+    avgGross:(Exact.truth(Exact.and(()=>(hasAverage), ()=>(Exact.gt(elapsed, 0)))) ? Exact.div(completedGross,elapsed) : null),
     avgNet:(Exact.truth(Exact.and(()=>(known), ()=>(Exact.gt(elapsed, 0)))) ? Exact.div(net,elapsed) : null),
     netMargin:(Exact.truth(Exact.and(()=>(known), ()=>(Exact.sneq(Exact.cmp(revenue,0), 0)))) ? Exact.mul(Exact.div(net,revenue),100) : null)};
 }
 function monthForecastV102(year,month) {
-  const current=monthOverviewMetricsV102(year,month),previousDate=new Date(year,Exact.sub(month, 2),1),
-    previous=monthOverviewMetricsV102(previousDate.getFullYear(),Exact.add(previousDate.getMonth(), 1)),
-    closed=Exact.lt(current.key, isoDate(new Date()).slice(0,7)),
-    revenue=(Exact.truth(closed) ? (Exact.truth(current.known) ? current.revenue : null) : (Exact.truth(current.hasAverage) ? Exact.mul(current.avgRevenue,daysInMonth(year,month)) : null));
-  // At the next month's local calendar boundary, replace the estimate with
-  // this month's actual result. No historical write or close-out job is needed.
-  return {current,previous,closed,revenue,net:(Exact.truth(closed) ? current.net : (Exact.truth(Exact.and(()=>(current.hasAverage), ()=>(previous.known))) ? Exact.sub(revenue,previous.total) : null))};
+  const current=monthOverviewMetricsV102(year,month),previousDate=new Date(year,Exact.sub(month, 2),1);
+  const previous=monthOverviewMetricsV102(previousDate.getFullYear(),Exact.add(previousDate.getMonth(), 1));
+  const closed=Exact.lt(current.key, isoDate(new Date()).slice(0,7)),days=daysInMonth(year,month);
+  const revenue=(Exact.truth(closed) ? (Exact.truth(current.known) ? current.revenue : null) : (Exact.truth(current.hasAverage) ? Exact.div(Exact.mul(current.completedRevenue,days),current.elapsed) : null));
+  let denominator=1,netNumerator=(Exact.truth(closed) ? current.net : null),cost=(Exact.truth(Exact.and(()=>(closed), ()=>(current.known))) ? current.total : null);
+  if(Exact.truth(Exact.and(()=>(Exact.and(()=>(Exact.not(closed)), ()=>(current.hasAverage))), ()=>(previous.known)))){
+    const fixed=(Exact.truth(current.hasSavedFixed) ? Exact.math.max(previous.fixed,current.fixed) : previous.fixed);
+    // Compare rates and combine income and costs before division. Individually
+    // dividing recurring rates can move an exact half cent across its rounding boundary.
+    denominator=Exact.mul(current.elapsed, previous.elapsed);
+    const higherRateNumerator=category=>Exact.math.max(
+      Exact.mul(current[category],previous.elapsed),Exact.mul(previous[category],current.elapsed)
+    );
+    const variableNumerator=Exact.mul(Exact.add(higherRateNumerator("ingredient"),higherRateNumerator("other")),days);
+    const costNumerator=Exact.add(Exact.mul(fixed,denominator),variableNumerator);
+    const revenueNumerator=Exact.mul(current.completedRevenue,Exact.mul(previous.elapsed, days));
+    netNumerator=Exact.sub(revenueNumerator,costNumerator);
+    cost=Exact.div(costNumerator,denominator);
+  }
+  const net=(Exact.truth(Exact.seq(netNumerator, null)) ? null : Exact.div(netNumerator,denominator));
+  let breakEven=null;
+  if(Exact.truth(Exact.sneq(netNumerator, null))){
+    if(Exact.truth(Exact.gte(Exact.cmp(netNumerator,0), 0)))breakEven=Exact.decimal(0);
+    else if(Exact.truth(Exact.and(()=>(Exact.gt(Exact.cmp(current.completedRevenue,0), 0)), ()=>(Exact.gt(Exact.cmp(current.completedGross,0), 0))))){
+      const lossTimesRevenue=Exact.mul(Exact.abs(netNumerator),current.completedRevenue);
+      breakEven=Exact.div(lossTimesRevenue,Exact.mul(current.completedGross,Exact.mul(days, denominator)));
+    }
+  }
+  return {current,previous,closed,revenue,cost,net,breakEven};
+}
+function forecastLabelV102(scope,forecast){
+  const english=Exact.seq(state.language, "en"),title=(Exact.truth(english) ? "Estimated month-end profit/loss" : "预计月底盈亏");
+  const caption=(Exact.truth(english) ? "(based on this month’s projected costs and revenue)" : "(根据 本月预计成本 和 本月预计收入 计算)");
+  const lines=(Exact.truth(english) ? [
+    "Projected profit/loss = projected revenue − projected costs.",
+    "Revenue = average daily revenue through yesterday × calendar days in the selected month.",
+    "Projected costs = fixed costs + ingredient costs + other costs.",
+    "Fixed costs = the higher of last month’s actual fixed spending and this month’s saved fixed spending.",
+    "Ingredients (including seasonings) = the higher of the two monthly daily averages × days in this month.",
+    "Other costs = total costs − ingredients and seasonings − fixed costs. Use the higher of the two daily averages × days in this month.",
+    "Prior daily averages use all calendar days in that month. Current averages use elapsed calendar days through yesterday.",
+    "At local midnight on the first of the next month, the report switches to actual revenue minus actual total costs."
+  ] : [
+    "预计月底盈亏 = 本月预计收入 − 本月预计成本。",
+    "本月预计收入 = 本月截至昨天的日均收入 × 本月总天数。",
+    "本月预计成本 = 预计固定成本 + 预计食材成本 + 预计其他成本。",
+    "预计固定成本：取上月实际固定成本与本月已保存固定成本中的较高值。",
+    "预计食材成本（含佐料）：取上月与本月日均食材成本中的较高值 × 本月总天数。",
+    "其他成本 = 总成本 − 食材与佐料成本 − 固定成本。预计其他成本取两个月日均其他成本中的较高值 × 本月总天数。",
+    "上月日均按上月全部日历天数计算，本月日均按截至昨天已过的日历天数计算。",
+    "次月 1 日零时起，显示该月实际净利润（实际收入 − 实际总成本）。"
+  ]);
+  if(Exact.truth(forecast.closed))lines.unshift((Exact.truth(english) ? "Closed month · showing actual profit/loss." : "已结月 · 当前显示实际盈亏。"));
+  else if(Exact.truth(Exact.seq(forecast.revenue, null)))lines.unshift((Exact.truth(english) ? "No completed operating day is available for this month." : "本月暂无已完成日期的经营数据。"));
+  else if(Exact.truth(Exact.not(forecast.previous.known)))lines.unshift((Exact.truth(english) ? "Previous-month cost records are missing." : "缺少上月成本记录，暂时无法计算预计盈亏。"));
+  const id=`forecast-help-${scope}`,help=(Exact.truth(english) ? "How month-end profit/loss is calculated" : "查看预计月底盈亏计算说明");
+  return `<span class="forecast-title">${title}<button type="button" class="forecast-info-button" aria-label="${help}" aria-expanded="false" aria-describedby="${id}" aria-controls="forecast-help-popup"></button></span><small class="forecast-formula o30-kpi-formula">${caption}</small><span id="${id}" hidden>${escapeHtml(lines.join("\n"))}</span>`;
 }
 function refreshCalendarBoundaryV102() {
   const today=isoDate(new Date()),previous=state.dashboardCalendarDate;
   state.dashboardCalendarDate=today;
-  if(Exact.truth(Exact.and(()=>(Exact.and(()=>(previous), ()=>(Exact.sneq(previous, today)))), ()=>(state.token))))renderDashboard();
+  if(Exact.truth(Exact.and(()=>(Exact.and(()=>(previous), ()=>(Exact.sneq(previous, today)))), ()=>(state.token)))){
+    renderDashboard();
+    if(Exact.truth(Exact.seq(typeof renderForecastBannerV24, "function")))renderForecastBannerV24();
+  }
 }
 
 function row(label, value, cls="") { return `<div class="metric-row ${cls}"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`; }
@@ -666,7 +727,7 @@ function renderCard(id, rows) { $(id).querySelector(".metric-list").innerHTML = 
 function renderDashboard() {
   const c = selectedContext();
   $("dayTitle").textContent = c.dateText; $("weekTitle").textContent = `${isoDate(c.weekStart).slice(5)} ${(Exact.truth(Exact.seq(state.language, "en")) ? "to" : "至")} ${isoDate(c.weekEnd).slice(5)}`; $("monthTitle").textContent = (Exact.truth(Exact.seq(state.language, "en")) ? `${c.year}-${String(c.month).padStart(2,"0")}` : `${c.year} 年 ${c.month} 月`); $("yearTitle").textContent = (Exact.truth(Exact.seq(state.language, "en")) ? String(c.year) : `${c.year} 年`);
-  const d=c.day, monthDays=daysInMonth(c.year,c.month), forecast=monthForecastV102(c.year,c.month),expectedMonthRevenue=forecast.revenue,expectedMonthNet=forecast.net;
+  const d=c.day, forecast=monthForecastV102(c.year,c.month),expectedMonthRevenue=forecast.revenue,expectedMonthNet=forecast.net;
   const monthPaid=(Exact.truth(c.monthSummary) ? fixedBreakdown(c.year,c.month).spentTotal : 0), monthTotal=(Exact.truth(c.monthSummary) ? Exact.add(c.monthSummary.variable, monthPaid) : 0), monthNet=(Exact.truth(c.monthSummary) ? Exact.sub(c.monthSummary.revenue, monthTotal) : 0);
   const dish=(Exact.truth(d) ? dishCostForDate(d.date) : {has:false,cost:0}), displayedGross=(Exact.truth(dish.has) ? Exact.sub(d.revenue, dish.cost) : Exact.or(()=>(d?.gross), ()=>(0)));
   /* Standard deviation is intentionally limited to the three daily revenue
@@ -674,17 +735,17 @@ function renderDashboard() {
   renderCard("dayCard", (Exact.truth(d) ? [row(mt("revenue"),metricMoneySd(d.revenue,c.monthAverageMetrics,"revenue"),"hero"),spacer(),row(mt("fixed"),money(d.fixedDaily)),row(mt("variable"),money(d.variable)),row(mt("total"),money(d.total)),row((Exact.truth(Exact.seq(state.language, "en")) ? "Average total cost" : "日均总成本"),money(d.total)),row(mt("dish"),money((Exact.truth(dish.has) ? dish.cost : 0))),spacer(),row(mt("net"),profit(d.net,d.revenue),(Exact.truth(Exact.gte(d.net, 0)) ? "positive" : "negative")),spacer(),row(mt("gross"),profit(displayedGross,d.revenue),(Exact.truth(Exact.gte(displayedGross, 0)) ? "positive" : "negative")),row(mt("customers"),compactNumber(d.customers)),row(mt("ticket"),money((Exact.truth(d.customers) ? Exact.div(d.revenue, d.customers) : 0)))] : [row((Exact.truth(Exact.seq(state.language, "en")) ? "No data for this date" : "当天没有经营数据"),"—")]));
   const summaryRows=(s,metrics,override={})=>{if(Exact.truth(Exact.not(s)))return[row((Exact.truth(Exact.seq(state.language, "en")) ? "No operating data" : "没有经营数据"),"—")];const fixedTotal=override.fixedTotal??s.fixed,total=override.total??(Exact.add(s.variable, fixedTotal)),net=override.net??(Exact.sub(s.revenue, total)),avgTotal=override.avgTotal??(Exact.div(total, Exact.math.max(1,Exact.or(()=>(s.elapsedDays), ()=>(s.days))))),avgNet=(Exact.truth(Exact.seq(override.avgNet, undefined)) ? Exact.div(net, Exact.math.max(1,Exact.or(()=>(s.elapsedDays), ()=>(s.days)))) : override.avgNet),marginText=(Exact.truth(Exact.seq(override.netMargin, null)) ? "—" : (Exact.truth(Exact.seq(override.netMargin, undefined)) ? null : `${Exact.decimal(override.netMargin).toFixed(1)}%`)),netText=(Exact.truth(Exact.seq(marginText, null)) ? profit(net,s.revenue) : `${money(net)} (${marginText})`),avgNetText=(Exact.truth(Exact.seq(avgNet, null)) ? "—" : (Exact.truth(Exact.seq(marginText, null)) ? profit(avgNet,s.avgRevenue) : `${money(avgNet)} (${marginText})`));return[row(mt("revenue"),money(s.revenue),"hero"),spacer(),row(mt("fixedTotal"),money(fixedTotal)),row(mt("variable"),money(s.variable)),row(mt("total"),money(total)),row((Exact.truth(Exact.seq(state.language, "en")) ? "Average total cost" : "日均总成本"),money(avgTotal)),spacer(),row(mt("gross"),profit(s.gross,s.revenue),(Exact.truth(Exact.gte(s.gross, 0)) ? "positive" : "negative")),row(mt("net"),netText,(Exact.truth(Exact.gte(net, 0)) ? "positive" : "negative")),spacer(),row(mt("avgRevenue"),money(s.avgRevenue)),row(mt("avgVariable"),money(s.avgVariable)),row(mt("avgGross"),profit(s.avgGross,s.avgRevenue)),row(mt("avgNet"),avgNetText)];};
   renderCard("weekCard",summaryRows(c.week,c.weekMetrics));
-  if(Exact.truth(c.monthSummary)){
-    const grossMargin=(Exact.truth(Exact.gt(c.monthSummary.revenue, 0)) ? Exact.div(c.monthSummary.gross, c.monthSummary.revenue) : 0);
-    const breakEvenDailyIncrease=(Exact.truth(Exact.seq(expectedMonthNet, null)) ? null : (Exact.truth(Exact.and(()=>(Exact.lt(expectedMonthNet, 0)), ()=>(Exact.gt(grossMargin, 0)))) ? Exact.div(Exact.div(Exact.math.abs(expectedMonthNet), grossMargin), monthDays) : 0));
-    const forecastRows=[
-      spacer(),
-      forecastRow((Exact.truth(Exact.seq(state.language, "en")) ? "Monthly revenue forecast" : "本月收入预测"),(Exact.truth(forecast.closed) ? (Exact.truth(Exact.seq(state.language, "en")) ? "(closed month: actual revenue)" : "(已结月：显示实际收入)") : (Exact.truth(Exact.seq(state.language, "en")) ? "(current average daily revenue × total days)" : "(本月截至目前的日均收入 x 本月总天数)")),(Exact.truth(Exact.seq(expectedMonthRevenue, null)) ? "—" : money(expectedMonthRevenue)),"hero",true),
-      forecastRow((Exact.truth(Exact.seq(state.language, "en")) ? "Estimated month-end profit/loss" : "预计月底盈亏"),Exact.add((Exact.truth(Exact.seq(state.language, "en")) ? "(based on previous month total cost and monthly revenue forecast)" : "(根据 上月总成本 和 本月收入预测 计算)"), (Exact.truth(forecast.closed) ? (Exact.truth(Exact.seq(state.language, "en")) ? " · Closed month: actual net profit" : " · 已结月：显示实际净利润") : "")),(Exact.truth(Exact.seq(expectedMonthNet, null)) ? "—" : money(expectedMonthNet)),`hero ${(Exact.truth(Exact.seq(expectedMonthNet, null)) ? "" : (Exact.truth(Exact.gte(expectedMonthNet, 0)) ? "positive" : "negative"))}`),
-      forecastRow((Exact.truth(Exact.seq(state.language, "en")) ? "Daily Revenue increase needed to break even" : "平本 需要 日均收入 增加"),(Exact.truth(Exact.seq(state.language, "en")) ? "((estimated month-end profit/loss ÷ monthly gross margin) ÷ days in month)" : "( (预计月底盈亏/本月毛利率) / 本月天数 )"),(Exact.truth(Exact.seq(breakEvenDailyIncrease, null)) ? "—" : money(breakEvenDailyIncrease)),"hero")
-    ];
-    renderCard("monthCard",summaryRows(c.monthSummary,c.monthMetrics,{fixedTotal:monthPaid,total:monthTotal,net:monthNet,avgTotal:Exact.div(monthTotal, Exact.math.max(1,Exact.or(()=>(c.monthElapsedDays), ()=>(c.monthSummary.elapsedDays)))),avgNet:forecast.current.avgNet,netMargin:forecast.current.netMargin}).concat(forecastRows));
-  }else renderCard("monthCard",summaryRows(c.monthSummary,c.monthMetrics));
+  const monthRows=summaryRows(c.monthSummary,c.monthMetrics,{
+    fixedTotal:monthPaid,total:monthTotal,net:monthNet,avgTotal:(Exact.truth(c.monthSummary) ? Exact.div(monthTotal, Exact.math.max(1,Exact.or(()=>(c.monthElapsedDays), ()=>(c.monthSummary.elapsedDays)))) : null),
+    avgNet:forecast.current.avgNet,netMargin:forecast.current.netMargin
+  });
+  const english=Exact.seq(state.language, "en");
+  monthRows.push(spacer(),
+    forecastRow((Exact.truth(english) ? "Monthly revenue forecast" : "本月收入预测"),(Exact.truth(forecast.closed) ? (Exact.truth(english) ? "(closed month: actual revenue)" : "(已结月：显示实际收入)") : (Exact.truth(english) ? "(average daily revenue through yesterday × days in this month)" : "(本月截至昨天的日均收入 × 本月总天数)")),(Exact.truth(Exact.seq(expectedMonthRevenue, null)) ? "—" : money(expectedMonthRevenue)),"hero",true),
+    `<div class="metric-row forecast-row hero ${(Exact.truth(Exact.seq(expectedMonthNet, null)) ? "" : (Exact.truth(Exact.gte(expectedMonthNet, 0)) ? "positive" : "negative"))}"><span class="forecast-label">${forecastLabelV102("report",forecast)}</span><strong>${(Exact.truth(Exact.seq(expectedMonthNet, null)) ? "—" : money(expectedMonthNet))}</strong></div>`,
+    forecastRow((Exact.truth(english) ? "Daily revenue increase needed to break even" : "平本 需要 日均收入 增加"),(Exact.truth(english) ? "(projected loss ÷ gross margin ÷ days in this month)" : "(预计亏损额 ÷ 毛利率 ÷ 本月天数)"),(Exact.truth(Exact.seq(forecast.breakEven, null)) ? "—" : money(forecast.breakEven)),"hero")
+  );
+  renderCard("monthCard",monthRows);
   const y=c.yearSummary;let yearRows=summaryRows(y,c.yearMetrics);if(Exact.truth(y)){const paid=Array.from({length:12},(_,i)=>fixedBreakdown(c.year,Exact.add(i, 1)).spentTotal).reduce((a,b)=>Exact.add(a, b),0),yearTotal=Exact.add(y.variable, paid),yearNet=Exact.sub(y.revenue, yearTotal);yearRows=summaryRows(y,c.yearMetrics,{fixedTotal:paid,total:yearTotal,net:yearNet,avgTotal:Exact.div(yearTotal, Exact.math.max(1,Exact.or(()=>(c.yearElapsedDays), ()=>(y.elapsedDays))))});yearRows.splice(5,0,row(mt("totalExpense"),money(yearTotal)));const monthCount=Exact.math.max(1,new Set(c.yearMetrics.map(m=>m.date.slice(0,7))).size);yearRows.push(row(mt("monthGross"),profit(Exact.div(y.gross, monthCount),Exact.div(y.revenue, monthCount))));yearRows.push(row(mt("monthNet"),profit(Exact.div(yearNet, monthCount),Exact.div(y.revenue, monthCount))));}
   renderCard("yearCard",yearRows);renderCostDonut(d);renderTrend(c.monthMetrics);renderWeekdays(c.monthMetrics);renderExpenses(c);if(Exact.truth(Exact.seq(typeof renderCashPosition, "function")))renderCashPosition();
 }

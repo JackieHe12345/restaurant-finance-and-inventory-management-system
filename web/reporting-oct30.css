@@ -19,3 +19,12 @@
 /* v1.0.2: keep long KPI formulas and the gross-margin parentheses readable. */
 .o30-kpis article{display:flex;flex-direction:column}.o30-kpis article>span{min-height:58px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.o30-kpis .o30-kpi-formula{display:block;font-size:11px;letter-spacing:0;white-space:pre-wrap}.o30-kpis strong{margin-top:12px;margin-bottom:12px}.o30-kpis .o30-kpi-margin{font-size:.62em;letter-spacing:0;white-space:nowrap}.o30-kpis article>small{margin-top:auto}.cash-controls>.operation-result{margin:0;padding:8px 12px}.cash-controls>.operation-result:empty{display:none}
 @media(max-width:700px){.o30-kpis article>span{min-height:74px}.o30-kpis .o30-kpi-formula{font-size:10px}.o30-kpis .o30-kpi-margin{display:inline-block}}
+
+.forecast-info-button{display:inline-grid;place-items:center;vertical-align:middle;margin-inline-start:3px;width:26px;min-height:26px;padding:0;border:0;border-radius:50%;color:#315d86;background:transparent;cursor:help;line-height:1}
+.forecast-info-button::before{content:"i";display:grid;place-items:center;width:15px;height:15px;box-sizing:border-box;border:1.4px solid currentColor;border-radius:50%;font:700 12px/1 Georgia,serif}
+.forecast-info-button:hover,.forecast-info-button[aria-expanded="true"]{background:#eaf2fa}
+.forecast-info-button:focus-visible{outline:2px solid #2269a7;outline-offset:1px}
+.forecast-help-panel{position:fixed;z-index:1000;box-sizing:border-box;width:min(28rem,calc(100vw - 16px));overflow:auto;overscroll-behavior:contain;padding:12px 15px;border:1px solid #b7cadb;border-radius:8px;background:#fff;box-shadow:0 6px 22px #1c344633;color:#24384c;font-size:13px;line-height:1.65;white-space:pre-line;text-align:start;overflow-wrap:anywhere}
+.forecast-help-panel[hidden]{display:none}
+#statsForecastBanner .forecast-formula{display:block}
+@media(pointer:coarse){.forecast-info-button{width:44px;min-height:44px;cursor:pointer}}

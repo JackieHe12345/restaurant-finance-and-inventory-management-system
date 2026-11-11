@@ -219,7 +219,7 @@ class DesktopAcceptance(unittest.TestCase):
 
     def test_D004_empty_days_month_year_keep_fixed_costs(self):
         scope=env();money(scope)
-        functions(scope,{'get_monthly_fixed_breakdown','calc_day_metrics','calc_week_summary','calc_month_summary','calc_year_summary','day_has_meaningful_data','elapsed_week_days','elapsed_month_days','elapsed_year_days','_elapsed_reference'})
+        functions(scope,{'get_monthly_fixed_breakdown','reported_day_revenue','calc_day_metrics','calc_week_summary','calc_month_summary','calc_year_summary','day_has_meaningful_data','elapsed_week_days','elapsed_month_days','elapsed_year_days','_elapsed_reference'})
         fixed=pd.DataFrame([{'月份':'2026-10','人工总额':'3100.00','房租总额':'0.00'},{'月份':'2026-12','人工总额':'3100.00'}]).fillna('');empty=pd.DataFrame(columns=['日期','收益'])
         month=scope['calc_month_summary'](2026,10,empty,fixed);self.assertIsNotNone(month);self.assertEqual(month['本月净利'],Decimal('-3100.00'));self.assertEqual(month['活跃天数'],0)
         year=scope['calc_year_summary'](2026,empty,fixed);self.assertEqual(year['本年固定成本'],Decimal('3100.00'));self.assertEqual(year['月均净利'],Decimal('-3100.00'))

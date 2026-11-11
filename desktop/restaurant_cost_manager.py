@@ -283,7 +283,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QDateEdit, QLineEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QFormLayout, QGroupBox, QGridLayout, QComboBox,
     QDialog, QInputDialog, QFileDialog, QCheckBox, QAbstractItemView, QTextEdit,
-    QFrame, QSizePolicy, QListWidget, QListWidgetItem, QDateTimeEdit, QLayout, QToolButton
+    QFrame, QSizePolicy, QListWidget, QListWidgetItem, QDateTimeEdit, QLayout, QToolButton, QToolTip
 )
 from PySide6.QtCore import Qt, QDate, QDateTime, QEvent, QStandardPaths, QTimer, QSize, QRect
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QIntValidator
@@ -5126,27 +5126,6 @@ def parse_named_amount(text):
     return match.group('name').strip(), money_amount(match.group('amount'))
 
 
-def calculate_break_even_daily_revenue_increase(projected_net, gross_margin, days_in_month):
-    """Return the extra daily Revenue needed to reach break-even.
-
-    ``gross_margin`` is a decimal (for example ``0.35``), not a percent.
-    A profit already forecast needs no increase.  A zero/negative gross
-    margin cannot turn extra Revenue into profit, so it deliberately returns
-    ``None`` instead of presenting a misleading amount.
-    """
-    try:
-        projected_net = decimal_number(projected_net)
-        gross_margin = decimal_number(gross_margin)
-        days_in_month = int(days_in_month)
-    except (TypeError, ValueError, OverflowError):
-        return None
-    if projected_net >= 0:
-        return 0
-    if gross_margin <= 0 or days_in_month <= 0:
-        return None
-    return decimal_divide(decimal_divide(-projected_net, gross_margin), days_in_month)
-
-
 def day_has_meaningful_data(row):
     """Return whether a daily row contains entered business data.
 
@@ -5158,6 +5137,8 @@ def day_has_meaningful_data(row):
     numeric_keys = (
         '收益', '总金额', '收入', '总收入', 'A店收入', 'B店收入', '学生外卖', 'A店外卖', 'B店外卖',
         'A店现金', 'B店现金', '总现金', '总线上', '食材成本', '佐料成本',
+        'A店微信增加', 'A店微信自动', 'A店微信覆盖', 'A店支付宝增加', 'A店支付宝覆盖',
+        'B店微信增加', 'B店微信自动', 'B店微信覆盖', 'B店支付宝增加', 'B店支付宝覆盖',
         '水电', '其他', '手续费', '总客人数', '新客人数量',
     )
     for key in numeric_keys:
@@ -5249,6 +5230,24 @@ def elapsed_year_days(year, anchor_date=None, as_of=None):
         return 1
 
 
+def reported_day_revenue(row):
+    """Resolve payment splits and historical total-only daily rows as in the web report."""
+    raw_fields = ('A店现金', 'B店现金', 'A店外卖', 'B店外卖', '学生外卖',
+                  'A店微信增加', 'A店微信自动', 'A店微信覆盖', 'A店支付宝增加', 'A店支付宝覆盖',
+                  'B店微信增加', 'B店微信自动', 'B店微信覆盖', 'B店支付宝增加', 'B店支付宝覆盖')
+    if any(money_amount(row.get(field, 0)) for field in raw_fields):
+        return recalculate_revenue_fields(dict(row))['收益']
+    for fields in (('A店收入', 'B店收入'), ('总现金', '总线上')):
+        amounts = [money_amount(row.get(field, 0)) for field in fields]
+        if any(amounts):
+            return sum(amounts)
+    for field in ('收益', '总金额', '收入', '总收入'):
+        amount = money_amount(row.get(field, 0))
+        if amount:
+            return amount
+    return Decimal(0)
+
+
 def calc_day_metrics(day_str, df_daily=None, df_fixed=None):
     df = load_daily() if df_daily is None else df_daily
     row = df[df['日期'] == day_str]
@@ -5272,12 +5271,7 @@ def calc_day_metrics(day_str, df_daily=None, df_fixed=None):
     # Daily profit allocates the actual paid fixed costs across calendar days.
     daily_fixed = decimal_divide(fixed['固定支出合计'], dim) if dim > 0 else 0
 
-    # Older app versions could save a total-only entry under 总金额.
-    # Prefer the current 收益 value, but preserve that legacy income when
-    # 收益 is blank/zero and no channel breakdown exists.
-    rev = money_amount(row.get('收益', 0))
-    if abs(rev) < Decimal('1e-9') and abs(money_amount(row.get('总金额', 0))) > Decimal('1e-9'):
-        rev = money_amount(row.get('总金额', 0))
+    rev = reported_day_revenue(row)
     food = money_amount(row.get('食材成本', 0))
     spice = money_amount(row.get('佐料成本', 0))
     daily_water = money_amount(row.get('水电', 0))
@@ -5351,11 +5345,11 @@ def calc_week_summary(day_str, df_daily=None, df_fixed=None):
     }
 
 
-def calc_month_summary(year, month, df_daily=None, df_fixed=None):
+def calc_month_summary(year, month, df_daily=None, df_fixed=None, as_of=None):
     df = load_daily() if df_daily is None else df_daily
     fixed_df = load_monthly_fixed() if df_fixed is None else df_fixed
     date_values = pd.to_datetime(df['日期'], errors='coerce')
-    today = datetime.now().date()
+    today = _elapsed_reference(as_of)
     month_df = df[
         (date_values.dt.year == int(year))
         & (date_values.dt.month == int(month))
@@ -5377,7 +5371,6 @@ def calc_month_summary(year, month, df_daily=None, df_fixed=None):
     total_variable = sum(m['变动成本'] for m in metrics)
     active_days = len(metrics)
     fixed = get_monthly_fixed_breakdown(year, month, fixed_df)
-    dim = calendar.monthrange(year, month)[1]
     total_fixed = fixed['固定支出合计'] if (int(year), int(month)) <= (today.year, today.month) else 0
     # A saved zero-cost month is a known baseline, unlike missing history.
     # Keep future entries out of both actual amounts and forecast baselines.
@@ -5391,10 +5384,11 @@ def calc_month_summary(year, month, df_daily=None, df_fixed=None):
     total_cost = total_variable + total_fixed
     total_net = sum(m['收益'] for m in metrics) - total_cost
 
-    elapsed_days = elapsed_month_days(year, month)
+    elapsed_days = elapsed_month_days(year, month, as_of=today)
     return {
         '本月收益': sum(m['收益'] for m in metrics), '本月毛利': sum(m['毛利'] for m in metrics),
         '本月总成本': total_cost, '本月变动成本': total_variable,
+        '本月食材及佐料成本': food_sum + spice_sum, '已保存固定支出': recorded_fixed_month,
         '本月固定成本': total_fixed, '本月净利': total_net,
         '日均净利': decimal_divide(total_net, elapsed_days), '活跃天数': active_days, '日均天数': elapsed_days,
         '开销明细': {k: v for k, v in
@@ -5424,6 +5418,24 @@ def month_comparison_text(current, previous):
     return f"比上个月{'多了' if difference > 0 else '少了'} {percent:.1f}%"
 
 
+def workbook_month_kpis(year, month, df_daily, df_fixed):
+    """Include December from the same dataset when January uses an annual mirror."""
+    if month == 1 and INTERNAL_FILE_PATH and os.path.isfile(INTERNAL_FILE_PATH):
+        internal = _inventory_read_frames(INTERNAL_FILE_PATH)
+        dataset = str(ACTIVE_DATASET_ID or FIXED_CLOUD_DATASET_ID)
+        december = f"{year - 1}-12"
+        history = _inventory_day_sheet('daily', frames=internal, dataset_id=dataset)
+        if not history.empty:
+            previous = history[history['日期'].str.startswith(december)]
+            df_daily = pd.concat([df_daily, previous], ignore_index=True).drop_duplicates('日期').fillna('')
+        payload = _internal_payload_for_identity(internal, dataset, ('month', december)) or {}
+        rows = payload.get('monthly_fixed')
+        if isinstance(rows, list) and rows and isinstance(rows[-1], dict):
+            fixed = pd.DataFrame([{**rows[-1], '月份': december}])
+            df_fixed = pd.concat([df_fixed, fixed], ignore_index=True).drop_duplicates('月份').fillna('')
+    return calc_dashboard_month_kpis(year, month, df_daily, df_fixed)
+
+
 def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
     """Share headline and report amounts, including the month-close rollover.
 
@@ -5437,14 +5449,14 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
     def summary_for(y, m):
         key = (y, m)
         if key not in summaries:
-            summaries[key] = calc_month_summary(y, m, df_daily, df_fixed)
+            summaries[key] = calc_month_summary(y, m, df_daily, df_fixed, as_of=reference)
         return summaries[key]
 
     def snapshot(y, m):
         summary = summary_for(y, m)
         values = dict(avg_revenue=None, avg_gross=None, gross_margin=None,
                       avg_net=None, net_margin=None, projected_net=None, net=None,
-                      projected_revenue=None, is_closed=False, forecast_status='暂无经营数据')
+                      projected_revenue=None, break_even_increase=None, is_closed=False, forecast_status='暂无经营数据')
         if summary is None or (y, m) > (reference.year, reference.month):
             return values
         values['net'] = decimal_number(summary['本月净利'])
@@ -5455,9 +5467,14 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
         values['avg_net'] = decimal_divide(values['net'], elapsed) if elapsed > 0 else None
         values['net_margin'] = decimal_divide(values['net'], month_revenue) * 100 if month_revenue else None
         values['is_closed'] = (y, m) < (reference.year, reference.month)
+        days = calendar.monthrange(y, m)[1]
+        net_numerator, denominator = None, 1
         if values['is_closed']:
             values['projected_revenue'] = month_revenue
             values['projected_net'] = values['net']
+            net_numerator = values['net']
+            if net_numerator >= 0:
+                values['break_even_increase'] = 0
             values['forecast_status'] = '该月已结束，预计月底盈亏显示本月实际净利润。'
         else:
             values['forecast_status'] = '暂无已完成日期的经营数据，暂时无法预测'
@@ -5479,14 +5496,33 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
         values['avg_gross'] = decimal_divide(gross, elapsed)
         values['gross_margin'] = decimal_divide(gross, revenue) * 100 if revenue else 0
         if not values['is_closed']:
-            values['projected_revenue'] = values['avg_revenue'] * calendar.monthrange(y, m)[1]
+            values['projected_revenue'] = decimal_divide(revenue * days, elapsed)
             prior = datetime(y, m, 1) - timedelta(days=1)
             prior_summary = summary_for(prior.year, prior.month)
             if prior_summary is not None:
-                values['projected_net'] = values['projected_revenue'] - prior_summary['本月总成本']
+                previous_fixed = prior_summary['本月固定成本']
+                fixed = (max(previous_fixed, summary['本月固定成本'])
+                         if summary['已保存固定支出'] else previous_fixed)
+                ingredients = sum(item['食材成本'] + item['佐料成本'] for item in metrics)
+                other = sum(item['变动成本'] for item in metrics) - ingredients
+                previous_ingredients = prior_summary['本月食材及佐料成本']
+                previous_other = prior_summary['本月总成本'] - previous_fixed - previous_ingredients
+                # Put each daily rate over elapsed × prior days. Subtract before
+                # dividing so independently recurring rates cannot shift a half-cent.
+                denominator = elapsed * prior.day
+                ingredient_numerator = max(ingredients * prior.day, previous_ingredients * elapsed)
+                other_numerator = max(other * prior.day, previous_other * elapsed)
+                variable_margin = revenue * prior.day - ingredient_numerator - other_numerator
+                net_numerator = variable_margin * days - fixed * denominator
+                values['projected_net'] = decimal_divide(net_numerator, denominator)
                 values['forecast_status'] = ''
             else:
                 values['forecast_status'] = '缺少上月成本数据，暂时无法计算预计月底盈亏'
+        if net_numerator is not None:
+            if net_numerator >= 0:
+                values['break_even_increase'] = 0
+            elif revenue > 0 and gross > 0:
+                values['break_even_increase'] = decimal_divide(-net_numerator * revenue, denominator * gross * days)
         return values
 
     previous = datetime(year, month, 1) - timedelta(days=1)
@@ -5696,19 +5732,20 @@ def save_inventory_overrides(overrides):
     save_inventory_entries(_load_inventory_payload().get('entries', []), overrides=overrides)
 
 
-def _inventory_day_sheet(sheet_name):
-    """Use the browser's canonical source for inventory purchase/dish adapters.
+def _inventory_day_sheet(sheet_name, frames=None, dataset_id=None):
+    """Resolve canonical daily rows and their matching dish records.
 
     Cloud records arrive in sequence order, which the internal Excel preserves.
     Older stores lack sequence/version columns; original row order is their rank.
-    Stored daily data and financial-report merge behavior remain unchanged.
+    Calendar-year reports can pass the same snapshot used for fixed costs.
     """
     path = str(INTERNAL_FILE_PATH or '').strip()
-    if path and os.path.exists(path):
-        frames = _inventory_read_frames(path)
+    if frames is not None or (path and os.path.exists(path)):
+        if frames is None:
+            frames = _inventory_read_frames(path)
         frame = frames.get('__day_records', pd.DataFrame())
         if {'dataset_id', '日期', 'payload_json'}.issubset(frame.columns):
-            selected = frame[frame['dataset_id'].astype(str) == str(FIXED_CLOUD_DATASET_ID)]
+            selected = frame[frame['dataset_id'].astype(str) == str(dataset_id or FIXED_CLOUD_DATASET_ID)]
             if 'source_order' in selected.columns:
                 selected = selected.assign(_source_order=pd.to_numeric(selected['source_order'], errors='coerce').fillna(0)).sort_values('_source_order', kind='stable')
             daily_rows, daily_ranks, daily_sources, direct_sources, dish_fallback = {}, {}, {}, {}, {}
@@ -8833,6 +8870,45 @@ class InventoryTab(QWidget):
 
 
 # ===================== 更多统计页面 =====================
+class ForecastInfoButton(QToolButton):
+    formula = "(根据 本月预计成本 和 本月预计收入 计算)"
+    explanation = (
+        "预计月底盈亏 = 本月预计收入 − 本月预计成本。\n"
+        "预计收入 = 本月截至昨日的日均收入 × 本月天数。\n\n"
+        "预计成本由三项相加：\n"
+        "① 固定支出：取上月整月与本月已保存固定支出的较高值。\n"
+        "② 食材（含佐料）：取两个月较高的日均成本 × 本月天数。\n"
+        "③ 其他成本 = 总成本 − 食材及佐料 − 固定支出，\n"
+        "同样取两个月较高的日均成本 × 本月天数。\n\n"
+        "上月日均按上月全部日历天数计算，本月日均按截至昨日的\n"
+        "日历天数计算。次月 1 日起显示该月实际净利润。"
+    )
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setText("i")
+        self.setAccessibleName("预计月底盈亏计算说明")
+        self.setAccessibleDescription(self.explanation)
+        self.setToolTip(self.explanation)
+        self.setToolTipDuration(30000)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFixedSize(20, 20)
+        self.setStyleSheet(
+            "QToolButton { border: 1px solid #667085; border-radius: 10px; "
+            "color: #344054; background: white; font-weight: bold; padding: 0; }"
+            "QToolButton:focus, QToolButton:hover { border: 2px solid #2563a6; }"
+        )
+        self.clicked.connect(self.show_explanation)
+
+    def show_explanation(self):
+        QToolTip.showText(self.mapToGlobal(self.rect().bottomLeft()), self.toolTip(), self,
+                          self.rect(), self.toolTipDuration())
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.show_explanation()
+
+
 class ForecastSummaryPanel(QWidget):
     """Compact, wrapping forecast display shared by desktop statistic views.
 
@@ -8848,7 +8924,7 @@ class ForecastSummaryPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        self.revenue_note_label = QLabel("(本月截至目前的日均收入 x 本月总天数)")
+        self.revenue_note_label = QLabel("(本月截至昨日的日均收入 × 本月总天数)")
         self.revenue_note_label.setWordWrap(True)
         layout.addWidget(self.revenue_note_label)
 
@@ -8856,9 +8932,10 @@ class ForecastSummaryPanel(QWidget):
         # Keep one clearly visible blank line between the two forecast blocks.
         self.revenue_blank_line = QLabel(" ")
         layout.addWidget(self.revenue_blank_line)
-        self.net_value = self._add_amount_row(layout, "预计月底盈亏")
+        self.net_info_button = ForecastInfoButton()
+        self.net_value = self._add_amount_row(layout, "预计月底盈亏", self.net_info_button)
 
-        self.net_note_label = QLabel("(根据 上月总成本 和 本月收入预测 计算)")
+        self.net_note_label = QLabel(ForecastInfoButton.formula)
         self.net_note_label.setWordWrap(True)
         layout.addWidget(self.net_note_label)
         self.net_blank_line = QLabel(" ")
@@ -8914,7 +8991,7 @@ class ForecastSummaryPanel(QWidget):
             QTimer.singleShot(0, self._sync_wrapping_height)
 
     @staticmethod
-    def _add_amount_row(layout, title):
+    def _add_amount_row(layout, title, info_button=None):
         row = QWidget()
         row.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row_layout = QHBoxLayout(row)
@@ -8925,7 +9002,10 @@ class ForecastSummaryPanel(QWidget):
             title_label.setWordWrap(True)
             title_label.setMinimumWidth(0)
             title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            row_layout.addWidget(title_label, 1)
+            row_layout.addWidget(title_label)
+            if info_button is not None:
+                row_layout.addWidget(info_button)
+            row_layout.addStretch(1)
         else:
             row_layout.addStretch(1)
         value_label = QLabel("-")
@@ -8950,6 +9030,10 @@ class ForecastSummaryPanel(QWidget):
         self.status_label.setText(str(status or ""))
         self.status_label.setVisible(bool(status))
         self._sync_wrapping_height()
+
+    def set_month_forecast(self, values):
+        self.set_values(values['projected_revenue'], values['projected_net'],
+                        values['break_even_increase'], status=values['forecast_status'])
 
 
 class AnalyticsFlowLayout(QLayout):
@@ -10970,17 +11054,8 @@ class MoreStatsTab(QWidget):
         today = QDate.currentDate()
         preferred = today.month() if self._current_year() == today.year() and today.month() in months else months[0]
         all_daily, fixed = load_daily(), load_monthly_fixed()
-        current = calc_dashboard_month_kpis(self._current_year(), preferred, all_daily, fixed)['current']
-        days_in_month = calendar.monthrange(self._current_year(), preferred)[1]
-        projected_net = current['projected_net']
-        gross_margin = decimal_divide(current['gross_margin'], 100) if current['gross_margin'] is not None else 0
-        break_even_increase = calculate_break_even_daily_revenue_increase(
-            projected_net, gross_margin, days_in_month
-        ) if projected_net is not None else None
-        self.month_forecast_panel.set_values(
-            current['projected_revenue'], projected_net, break_even_increase,
-            status=current['forecast_status']
-        )
+        current = workbook_month_kpis(self._current_year(), preferred, all_daily, fixed)['current']
+        self.month_forecast_panel.set_month_forecast(current)
 
     def refresh_inventory_balance(self):
         rows = calculate_inventory_balances()
@@ -11265,7 +11340,7 @@ class DashboardTab(QWidget):
         headline_specs = (
             ('avg_revenue', '日均收入'),
             ('avg_gross', '日均毛利润 (毛利率)'),
-            ('projected_net', '预计月底盈亏\n(根据 上个月总成本 和 这个月日均收入 计算)'),
+            ('projected_net', '预计月底盈亏\n' + ForecastInfoButton.formula),
             ('avg_net', '日均净利润 (净利率)'),
             ('net', '净利润 (净利率)'),
         )
@@ -11289,7 +11364,13 @@ class DashboardTab(QWidget):
             comparison.setWordWrap(True)
             comparison.setMinimumWidth(0)
             comparison.setStyleSheet('color:#657486;')
-            card_layout.addWidget(title)
+            if key == 'projected_net':
+                title_layout = QHBoxLayout()
+                title_layout.addWidget(title, 1)
+                title_layout.addWidget(ForecastInfoButton(card), 0, Qt.AlignTop)
+                card_layout.addLayout(title_layout)
+            else:
+                card_layout.addWidget(title)
             card_layout.addWidget(value)
             card_layout.addWidget(comparison)
             self.headline_cards.append(card)
@@ -11653,7 +11734,7 @@ class DashboardTab(QWidget):
                 canvas.wheelEvent = make_passthrough(orig_wheel)
 
     def _refresh_month_headlines(self, year, month, df_daily, df_fixed):
-        summary = calc_dashboard_month_kpis(year, month, df_daily, df_fixed)
+        summary = workbook_month_kpis(year, month, df_daily, df_fixed)
         self.headline_title.setText(f"{year}-{month:02d} 经营表现")
         current, previous = summary['current'], summary['previous']
         for key, label in self.headline_values.items():
@@ -11669,6 +11750,7 @@ class DashboardTab(QWidget):
             label.setToolTip(current['forecast_status'] if key == 'projected_net'
                              else '净利率按本月实际净利润 ÷ 本月实际收入计算；收入为 0 时显示 —。'
                              if key in ('avg_net', 'net') else '')
+        return current
 
     def refresh_all(self):
         df_daily, df_fixed = load_daily(), load_monthly_fixed()
@@ -11776,7 +11858,7 @@ class DashboardTab(QWidget):
                 lbl.setText("-")
 
         # Month logic
-        self._refresh_month_headlines(year, month, df_daily, df_fixed)
+        month_kpis = self._refresh_month_headlines(year, month, df_daily, df_fixed)
         m_m = calc_month_summary(year, month, df_daily, df_fixed)
         if m_m:
             d = m_m.get('日均天数', elapsed_month_days(year, month))
@@ -11808,7 +11890,6 @@ class DashboardTab(QWidget):
             self.lbl_month_avg_var.setText(money_sd(decimal_divide(average_month_variable, d), [x['变动成本'] for x in average_month_metrics]) + "/天")
             self.lbl_month_avg_cost.setText(money_sd(decimal_divide(average_month_total, d), [x['总成本'] for x in average_month_metrics]) + "/天")
             self.lbl_month_avg_gross.setText(margin_sd(decimal_divide(average_month_gross, d), decimal_divide(average_month_revenue, d), [x['毛利'] for x in average_month_metrics]) + "/天")
-            month_kpis = calc_dashboard_month_kpis(year, month, df_daily, df_fixed)['current']
             if month_kpis['avg_net'] is not None:
                 margin_text = f"{month_kpis['net_margin']:.1f}%" if month_kpis['net_margin'] is not None else '—'
                 self.lbl_month_avg_net.setText(f"{month_kpis['avg_net']:,.2f} 元 ({margin_text})/天")
@@ -11818,17 +11899,7 @@ class DashboardTab(QWidget):
                 for label in (self.lbl_month_avg_rev, self.lbl_month_avg_var, self.lbl_month_avg_cost,
                               self.lbl_month_avg_gross):
                     label.setText("—")
-            days_in_month = calendar.monthrange(year, month)[1]
-            projected_revenue = month_kpis['projected_revenue']
-            projected_net = month_kpis['projected_net']
-            gross_margin = decimal_divide(m_m['本月毛利'], m_m['本月收益']) if m_m['本月收益'] > 0 else 0
-            break_even_increase = calculate_break_even_daily_revenue_increase(
-                projected_net, gross_margin, days_in_month
-            ) if projected_net is not None else None
-            self.month_forecast_panel.set_values(
-                projected_revenue, projected_net, break_even_increase,
-                status=month_kpis['forecast_status']
-            )
+            self.month_forecast_panel.set_month_forecast(month_kpis)
         else:
             for lbl in [self.lbl_month_revenue, self.lbl_month_a_revenue, self.lbl_month_b_revenue, self.lbl_month_fixed, self.lbl_month_var_cost, self.lbl_month_cost,
                         self.lbl_month_gross, self.lbl_month_net, self.lbl_month_avg_rev, self.lbl_month_avg_var, self.lbl_month_avg_cost,
@@ -17500,10 +17571,20 @@ class MainWindow(QMainWindow):
         # cloud sequence remain unchanged, including after sleeping overnight.
         self._last_statistics_date = datetime.now().date()
         self._statistics_date_timer = QTimer(self)
-        self._statistics_date_timer.setInterval(5000)
-        self._statistics_date_timer.timeout.connect(self._refresh_statistics_after_date_change)
-        self._statistics_date_timer.start()
+        self._statistics_date_timer.setTimerType(Qt.PreciseTimer)
+        self._statistics_date_timer.setSingleShot(True)
+        self._statistics_date_timer.timeout.connect(self._check_statistics_clock)
+        QApplication.instance().applicationStateChanged.connect(self._check_statistics_clock)
+        self._check_statistics_clock()
         self.statusBar().showMessage('网站数据每 2 秒检查一次；断网时自动只读。', 5000)
+
+    def _check_statistics_clock(self, *_args):
+        now = QDateTime.currentDateTime()
+        midnight = now.date().addDays(1).startOfDay(now.timeZone())
+        # Wake at local midnight. Keep the five-second check for system-clock
+        # changes, sleep, or a deferred refresh while a dialog is open.
+        self._statistics_date_timer.start(max(1, min(5000, now.msecsTo(midnight))))
+        self._refresh_statistics_after_date_change()
 
     def _refresh_statistics_after_date_change(self):
         """Recompute date-sensitive read-only views without changing their filters."""

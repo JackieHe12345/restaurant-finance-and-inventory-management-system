@@ -21,7 +21,7 @@ from matplotlib.ticker import FuncFormatter
 
 SOURCE = Path(os.environ.get('DESKTOP_SOURCE', str(Path(__file__).resolve().parents[1]/'desktop/restaurant_cost_manager.py')))
 TREE = ast.parse(SOURCE.read_text())
-NAMES = {'AnalyticsFlowLayout', 'MoreStatsTab', 'ForecastSummaryPanel', 'WheelPassThroughTableWidget'}
+NAMES = {'AnalyticsFlowLayout', 'MoreStatsTab', 'ForecastInfoButton', 'ForecastSummaryPanel', 'WheelPassThroughTableWidget'}
 SCOPE = dict(globals(), decimal_number=lambda value: Decimal(str(value)))
 NODES = [node for node in TREE.body if isinstance(node, ast.ClassDef) and node.name in NAMES]
 assert {node.name for node in NODES} == NAMES

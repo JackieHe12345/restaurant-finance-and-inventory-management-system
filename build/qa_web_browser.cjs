@@ -26,6 +26,19 @@ async function chartGeometry(page,tag){
   for(const item of result){assert(item.ticks.length>0,tag+' no x ticks');assert.deepEqual(item.overlaps,[],tag+' overlap '+JSON.stringify(item));assert.deepEqual(item.outside,[],tag+' clipped labels');}
   report.charts.push({tag,charts:result});
 }
+async function seedLedger(){
+   const rows=[];
+   for(const [month,count,revenue,food]of [['09',30,1500,900],['10',31,2000,700],['11',10,2600,800]]){
+    for(let i=1;i<=count;i++){
+     const day=`2026-${month}-${String(i).padStart(2,'0')}`;
+     rows.push({record_type:'day',record_key:day,version:1,payload:{daily:[{'日期':day,'收益':String(revenue),'食材成本':String(food),'佐料成本':'50','总客人数':'45'}],fixed_expenses:i%3===1?[{'日期':day,'类别':i===1?'人工':i===4?'房租':i===7?'水费':i===10?'电费':i===13?'煤气费':'其它固定成本','明细':'Synthetic acceptance expense','金额':String(100+i*10)}]:[]}});
+    }
+    rows.push({record_type:'month',record_key:`2026-${month}`,version:1,payload:{monthly_fixed:[{'月份':`2026-${month}`,'人工总额':'6000','房租总额':'8000','水费支出':'400','电费支出':'600','煤气费':'300'}]}});
+   }
+   rows.push({record_type:'global',record_key:'cash_position',version:1,payload:{opening_balance:'1000.00',opening_date:'2026-09-01',transactions:[{id:'historical-lock',date:'2026-10-01',type:'余额强制修改',amount:'5000',mode:'force',system_locked:true,created_at:'2026-10-01T12:00:00Z'}]}});
+   const originalApi=api;api=async function(url,options){if(url==='/devices/register')return {id:'synthetic-browser-device',device_id:'synthetic-browser-device'};if(url.endsWith('/cash-position'))return {opening_balance:'1000.00',summary_month:'2026-11'};return originalApi(url,options);};
+   previewRecordStores.set('preview',rows);setSession('preview',previewUser);await enterApp();clearInterval(state.autoRefresh);state.autoRefresh=null;
+}
 (async()=>{
  const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
  try{
@@ -36,19 +49,7 @@ async function chartGeometry(page,tag){
   await page.goto(pathToFileURL(path.join(source,'web/index.html')).href);
   report.revision=await page.locator('html').getAttribute('data-build-revision');
   assert(report.revision,'The loaded application must expose its build revision');
-  await page.evaluate(async()=>{
-   const rows=[];
-   for(const [month,count,revenue,food]of [['09',30,1500,500],['10',31,2000,700],['11',10,2600,800]]){
-    for(let i=1;i<=count;i++){
-     const day=`2026-${month}-${String(i).padStart(2,'0')}`;
-     rows.push({record_type:'day',record_key:day,version:1,payload:{daily:[{'日期':day,'收益':String(revenue),'食材成本':String(food),'佐料成本':'50','总客人数':'45'}],fixed_expenses:i%3===1?[{'日期':day,'类别':i===1?'人工':i===4?'房租':i===7?'水费':i===10?'电费':i===13?'煤气费':'其它固定成本','明细':'Synthetic acceptance expense','金额':String(100+i*10)}]:[]}});
-    }
-    rows.push({record_type:'month',record_key:`2026-${month}`,version:1,payload:{monthly_fixed:[{'月份':`2026-${month}`,'人工总额':'6000','房租总额':'8000','水费支出':'400','电费支出':'600','煤气费':'300'}]}});
-   }
-   rows.push({record_type:'global',record_key:'cash_position',version:1,payload:{opening_balance:'1000.00',opening_date:'2026-09-01',transactions:[{id:'historical-lock',date:'2026-10-01',type:'余额强制修改',amount:'5000',mode:'force',system_locked:true,created_at:'2026-10-01T12:00:00Z'}]}});
-   const originalApi=api;api=async function(url,options){if(url==='/devices/register')return {id:'synthetic-browser-device',device_id:'synthetic-browser-device'};if(url.endsWith('/cash-position'))return {opening_balance:'1000.00',summary_month:'2026-11'};return originalApi(url,options);};
-   previewRecordStores.set('preview',rows);setSession('preview',previewUser);await enterApp();clearInterval(state.autoRefresh);state.autoRefresh=null;
-  });
+  await page.evaluate(seedLedger);
   await selectMonth(page,'11');
   let cards=await page.locator('.o30-kpis article').allTextContents();
   const keys=await page.locator('.o30-kpis article').evaluateAll(es=>es.map(e=>e.dataset.overviewMetric));
@@ -59,12 +60,29 @@ async function chartGeometry(page,tag){
   report.currentCards=cards;
   await page.locator('#o30DashboardDetails').evaluate(e=>e.open=true);
   const monthly=await page.locator('#monthCard').textContent();
-  assert(monthly.includes('(根据 上月总成本 和 本月收入预测 计算)'));assert(monthly.includes('平本 需要 日均收入 增加'));
+  assert(monthly.includes('(根据 本月预计成本 和 本月预计收入 计算)'));
+  assert(monthly.includes('37,200.00'));assert(cards[2].includes('37,200.00'));assert(monthly.includes('平本 需要 日均收入 增加'));
   const netRows=await page.locator('#monthCard .metric-row').evaluateAll(es=>es.filter(e=>['净利润 (净利率)','日均净利润 (净利率)'].includes(e.querySelector('span')?.textContent)).map(e=>e.textContent));
   assert.equal(netRows.length,2);assert(netRows.every(row=>row.includes('(8.5%)')),JSON.stringify(netRows));report.monthlyNetRows=netRows;
   await page.locator('#monthCard').screenshot({path:path.join(out,'monthly-report-current.png')});
   for(const lang of ['zh','en']){
    await page.evaluate(lang=>{state.language=lang;applyLanguage();renderDashboard();},lang);
+   for(const scope of ['overview','report']){
+    const selector=`.forecast-info-button[aria-describedby="forecast-help-${scope}"]`;
+    const trigger=page.locator(selector),popup=page.getByRole('tooltip');
+    await trigger.hover();await popup.waitFor({state:'visible'});
+    const formulas=await popup.innerText();
+    assert(formulas.includes(lang==='zh'?'预计其他成本':'Other costs = total costs'));
+    assert(formulas.includes(lang==='zh'?'含佐料':'including seasonings'));
+    assert(formulas.includes(lang==='zh'?'零时':'midnight'));
+    await popup.hover();assert.equal(await trigger.getAttribute('aria-expanded'),'true');
+    await page.keyboard.press('Escape');await popup.waitFor({state:'hidden'});
+    await trigger.focus();await popup.waitFor({state:'visible'});
+    await page.evaluate(()=>renderDashboard());assert.equal(await trigger.evaluate(b=>document.activeElement===b),true);
+    assert.equal(await popup.innerText(),formulas);
+    await page.keyboard.press('Escape');await popup.waitFor({state:'hidden'});
+    await page.keyboard.press('Tab');
+   }
    for(const width of [2048,1600,1280,1024,768,430,375,320]){
     await page.setViewportSize({width,height:1100});await stable(page);
     const result=await page.locator('#o30Overview').evaluate(e=>{
@@ -81,19 +99,73 @@ async function chartGeometry(page,tag){
     if((width===1600||width===375)&&lang==='zh')await page.locator('#o30Overview').screenshot({path:path.join(out,`homepage-${width}.png`)});
    }
   }
+  await page.setViewportSize({width:780,height:360});await stable(page);
+  const keyButton=page.locator('.forecast-info-button[aria-describedby="forecast-help-overview"]');
+  await keyButton.scrollIntoViewIfNeeded();await keyButton.focus();
+  const keyPanel=page.getByRole('tooltip');await keyPanel.waitFor({state:'visible'});
+  await page.keyboard.press('End');
+  assert(await keyPanel.evaluate(e=>e.scrollTop>0&&e.scrollHeight-e.clientHeight-e.scrollTop<=1),'keyboard must reach the final line in a short viewport');
+  await page.keyboard.press('Home');assert.equal(await keyPanel.evaluate(e=>e.scrollTop),0);
+  await page.keyboard.press('Escape');await keyPanel.waitFor({state:'hidden'});
+  report.keyboard={focus:true,refreshPreservesFocus:true,escape:true,scrollToEnd:true};
   await page.evaluate(()=>{state.language='zh';applyLanguage();});
   await page.setViewportSize({width:1600,height:1100});await selectMonth(page,'10');
   const closed=await page.locator('[data-overview-metric="forecast"] strong').textContent();assert(closed.includes('23,450.00'),closed);
   report.closedMonthActual=closed;
   await page.locator('#o30Overview').screenshot({path:path.join(out,'homepage-closed-october.png')});
-  await page.clock.setFixedTime(new Date('2026-10-31T23:59:59+08:00'));await page.evaluate(()=>renderDashboard());
-  const before=await page.locator('[data-overview-metric="forecast"] strong').textContent();assert(before.includes('30,200.00'),before);
-  await page.clock.setFixedTime(new Date('2026-11-01T00:00:00+08:00'));
-  await page.waitForFunction(()=>document.querySelector('[data-overview-metric="forecast"] strong')?.textContent.includes('23,450.00'),null,{timeout:7000});
-  const after=await page.locator('[data-overview-metric="forecast"] strong').textContent();assert(after.includes('23,450.00'),after);
-  report.rollover={before,after,timezone:'Asia/Shanghai',automaticWithoutDataChange:true,passed:true};
-  await selectMonth(page,'11');assert((await page.locator('[data-overview-metric="avgNet"] strong').textContent()).includes('—'));
-  await page.clock.setFixedTime(new Date('2026-11-10T12:00:00+08:00'));
+  // Pause a fresh browser clock before page load so the application's actual
+  // midnight timeout is installed. Its five-second polling fallback is not due.
+  const timedContext=await browser.newContext({timezoneId:'Asia/Shanghai'});
+  await timedContext.route(/^https?:\/\//,r=>r.abort());
+  const timed=await timedContext.newPage();timed.on('pageerror',e=>report.errors.push(e.message));
+  await timed.clock.install({time:new Date('2026-10-31T23:59:55+08:00')});
+  await timed.clock.pauseAt(new Date('2026-10-31T23:59:59.500+08:00'));
+  await timed.goto(pathToFileURL(path.join(source,'web/index.html')).href);await timed.evaluate(seedLedger);
+  await timed.evaluate(()=>{showPage('overview');$('selectedDate').value='2026-10-31';$('selectedMonth').value='10';$('selectedYear').value='2026';renderDashboard();});
+  const headline=timed.locator('[data-overview-metric="forecast"] strong');
+  await timed.clock.runFor(499);
+  const before=await headline.textContent();assert(before.includes('17,250.00'),before);
+  await timed.clock.runFor(1);
+  const after=await headline.textContent();assert(after.includes('23,450.00'),after);
+  assert((await timed.locator('#monthCard .forecast-row').nth(1).textContent()).includes('23,450.00'));
+  report.rollover={before,after,timezone:'Asia/Shanghai',atLocalMidnight:true,automaticWithoutDataChange:true,passed:true};
+  await timed.clock.setSystemTime(new Date('2026-11-29T12:00:00+08:00'));
+  await timed.evaluate(()=>{
+    normalizeRecords([
+      {record_type:'month',record_key:'2026-10',payload:{monthly_fixed:[{月份:'2026-10',人工总额:'0.00'}]}},
+      {record_type:'day',record_key:'2026-11-01',payload:{daily:[{日期:'2026-11-01',收益:'2800.01',食材成本:'270.00',佐料成本:'10.02',其他:'280.06'}]}}
+    ]);
+    $('selectedDate').value='2026-11-29';$('selectedMonth').value='11';renderDashboard();
+  });
+  const headlineRounded=await headline.textContent(),reportRounded=await timed.locator('#monthCard .forecast-row').nth(1).locator('strong').textContent();
+  assert(headlineRounded.includes('2,399.93'),headlineRounded);assert.equal(headlineRounded,reportRounded);
+  report.rounding={date:'2026-11-29',expectedExact:'2399.925',headlineRounded,reportRounded,passed:true};
+  await timedContext.close();
+  report.touch=[];
+  for(const [width,height] of [[390,844],[820,1040]]){
+   const touchContext=await browser.newContext({viewport:{width,height},hasTouch:true,timezoneId:'Asia/Shanghai'});
+   await touchContext.route(/^https?:\/\//,r=>r.abort());
+   const touch=await touchContext.newPage();touch.on('pageerror',e=>report.errors.push(e.message));
+   await touch.clock.setFixedTime(new Date('2026-11-10T12:00:00+08:00'));
+   await touch.goto(pathToFileURL(path.join(source,'web/index.html')).href);await touch.evaluate(seedLedger);await selectMonth(touch,'11');
+   await touch.locator('#o30DashboardDetails').evaluate(e=>e.open=true);
+   for(const lang of ['zh','en']){
+    await touch.evaluate(lang=>{state.language=lang;applyLanguage();renderDashboard();},lang);
+    for(const scope of ['overview','report']){
+     const button=touch.locator(`.forecast-info-button[aria-describedby="forecast-help-${scope}"]`),panel=touch.getByRole('tooltip');
+     await button.tap();await panel.waitFor({state:'visible'});
+     assert((await panel.innerText()).includes(lang==='zh'?'日历天数':'calendar days'));
+     const box=await panel.boundingBox(),target=await button.boundingBox();
+     assert(target.width>=44&&target.height>=44,`small tap target at ${width}`);
+     assert(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=height+1,`clipped ${scope} at ${width}`);
+     const endReachable=await panel.evaluate(e=>{e.scrollTop=e.scrollHeight;return e.scrollHeight-e.clientHeight-e.scrollTop<=1;});assert(endReachable);
+     if(lang==='zh'&&scope==='overview')await touch.screenshot({path:path.join(out,`forecast-help-${width}.png`)});
+     await button.tap();await panel.waitFor({state:'hidden'});
+     report.touch.push({width,height,scope,lang,box,target,endReachable});
+    }
+   }
+   await touchContext.close();
+  }
   for(const lang of ['zh','en']){
    await page.evaluate(lang=>{state.language=lang;applyLanguage();Oct30Analytics.open({month:'2026-10',view:'overview'});},lang);
    for(const width of [1600,1024,768,430,375,320]){

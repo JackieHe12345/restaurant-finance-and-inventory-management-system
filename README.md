@@ -4,14 +4,15 @@
 
 A restaurant bookkeeping system with a responsive browser interface, a FastAPI/PostgreSQL backend and a Python desktop client. It connects income, expenses, purchasing, inventory, dish consumption and operating reports.
 
-Current version: **v1.0.2**. Browser build revision: **`20261110-analytics-english-final`**. Historical source is retained on `old/v1.0.0` and `old/V1.0.1`; the original V1.0.0 program uses the internal name `Oct30LingChen`.
+Current version: **v1.0.2**. Browser build revision: **`20261111-forecast-costs-r2`**. Historical source is retained on `old/v1.0.0` and `old/V1.0.1`; the original V1.0.0 program uses the internal name `Oct30LingChen`.
 
 ## Features
 
 - Independent ledgers, store income channels, user roles and time-limited editing permissions.
 - Income, customer counts, purchases, fixed expenses, cash transactions and Excel exchange.
 - Ingredient receipts, issues, losses, stocktakes and FIFO lot costs, with explicit unknown-price quantities.
-- Five dashboard metrics, actual net profit for closed months, business/expense/customer analytics and source details.
+- Five dashboard metrics and a monthly report with the same month-end estimate. The estimate projects revenue through month-end and compares fixed, ingredient and other costs with the previous month. Hover over or select **i** for the calculation. Completed months show actual net profit.
+- Operating, expense and customer statistics with links to the underlying records.
 - Responsive desktop/mobile charts, filtering, sorting and CSV export.
 - Chinese and English browser interfaces that preserve user names and notes. The native desktop interface is Chinese.
 

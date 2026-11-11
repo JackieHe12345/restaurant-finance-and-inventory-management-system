@@ -1,6 +1,6 @@
 # restaurant-finance-and-inventory-management-system deployment guide
 
-> This guide applies to v1.0.2 and build `20261110-analytics-english-final`. See the [engineering reference](ENGINEERING_REFERENCE.md) for module, data and build contracts.
+> This guide applies to v1.0.2 and build `20261111-forecast-costs-r2`. See the [engineering reference](ENGINEERING_REFERENCE.md) for module, data and build contracts.
 
 [Back to README](../README.md) · English | [简体中文](DEPLOYMENT.zh-CN.md)
 
@@ -253,9 +253,11 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 
 ### Same-version build revisions
 
-A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261110-analytics-english-final"` and uses `v1.0.2-20261110-analytics-english-final` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
+A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261111-forecast-costs-r2"` and uses `v1.0.2-20261111-forecast-costs-r2` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
 
 Before deploying, recheck the target instance and create database, program and runtime-configuration backups. Operators should retain actual server identities, configuration values, backup paths and per-deployment evidence privately. This repository provides reusable procedures and verification tools.
+
+After file verification, open the dashboard and the full monthly report for the same book and month. Both forecast captions should refer to this month’s projected costs and revenue. Open **i** in each view, check that the instructions describe all three cost components, then select a completed month and compare both figures with its actual net profit. This check only reads the selected ledger.
 
 ### PostgreSQL evidence before and after an upgrade
 

@@ -87,7 +87,7 @@ assert.equal(currency(Exact.sum(Array.from(loanHistory).filter(row=>row.date.sta
 const releaseVersion = fs.readFileSync(path.join(root, '../VERSION'), 'utf8').trim();
 const revision = html.match(/data-build-revision="([^"]+)"/)?.[1];
 assert.ok(revision, 'a same-version rebuild must identify its cache revision');
-assert.equal(revision, '20261110-analytics-english-final');
+assert.equal(revision, '20261111-forecast-costs-r2');
 assert.ok(html.includes(`data-build="${releaseVersion}"`));
 // Asset count may grow; every current local stylesheet/script must exist and
 // use the current version, including the decimal runtime and adaptive layout.
@@ -110,10 +110,10 @@ assert.doesNotMatch(html, /cashFlowSummary|基准日之后现金流/);
 assert.doesNotMatch(cashJs, /payload\.base_balance\s*=\s*payload\.opening_balance/);
 
 for (const line of [
-  "(本月截至目前的日均收入 x 本月总天数)",
+  "(本月截至昨天的日均收入 × 本月总天数)",
   "平本 需要 日均收入 增加",
-  "(根据 上月总成本 和 本月收入预测 计算)",
-  "( (预计月底盈亏/本月毛利率) / 本月天数 )",
+  "(根据 本月预计成本 和 本月预计收入 计算)",
+  "(预计亏损额 ÷ 毛利率 ÷ 本月天数)",
 ]) assert.ok(appJs.includes(line), `missing exact forecast line: ${line}`);
 // Long translated labels/formulas must wrap within a report card.
 assert.match(css, /\.forecast-row \.forecast-title\{[^}]*white-space:normal/);
