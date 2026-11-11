@@ -20,7 +20,7 @@ vm.runInContext(sourceBeforeHooks,context);vm.runInContext("validateCustomerCoun
 
 const packed={record_key:"2026-10-20",payload:{dishes:[{日期:"2026/10/20",菜品数据:JSON.stringify([{菜品名称:"一"}])},{日期:"2026/10/21",菜品数据:JSON.stringify([{菜品名称:"二"}])}]}};context.packed=packed;assert.equal(vm.runInContext('inventoryStoredDishRows(packed,"2026-10-20")[0].菜品名称',context),"一");assert.equal(vm.runInContext('inventoryStoredDishRows(packed,"2026-10-21")[0].菜品名称',context),"二");
 const html=fs.readFileSync(path.join(__dirname,"index.html"),"utf8"),releaseVersion=fs.readFileSync(path.join(__dirname,'../VERSION'),'utf8').trim(),revision=html.match(/data-build-revision="([^"]+)"/)?.[1];
-assert.ok(revision,'a same-version rebuild must identify its cache revision');assert.equal(revision,'20261111-forecast-costs-r2');assert.ok(html.includes(`data-build="${releaseVersion}"`));
+assert.ok(revision,'a same-version rebuild must identify its cache revision');assert.equal(revision,'20261111-live-forecast-r2');assert.ok(html.includes(`data-build="${releaseVersion}"`));
 for(const match of html.matchAll(/(?:src|href)="([^"?]+)\?v=([^" ]+)"/g)){assert.equal(match[2],`${releaseVersion}-${revision}`);assert.ok(fs.existsSync(path.join(__dirname,match[1])));}assert.ok(html.indexOf("oct29.js")>html.indexOf("sep07.js"));assert.ok(html.indexOf("money.js")<html.indexOf("app.js"),"decimal runtime loads before business scripts");
 assert.throws(()=>Exact.decimal("0.1")+Exact.decimal("0.2"),/禁止/,"production rejects implicit floating-point conversion");
 console.log("v1.0.2 FIFO/customer/cache regression checks passed.");

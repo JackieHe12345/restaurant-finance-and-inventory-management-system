@@ -87,7 +87,7 @@ assert.equal(currency(Exact.sum(Array.from(loanHistory).filter(row=>row.date.sta
 const releaseVersion = fs.readFileSync(path.join(root, '../VERSION'), 'utf8').trim();
 const revision = html.match(/data-build-revision="([^"]+)"/)?.[1];
 assert.ok(revision, 'a same-version rebuild must identify its cache revision');
-assert.equal(revision, '20261111-forecast-costs-r2');
+assert.equal(revision, '20261111-live-forecast-r2');
 assert.ok(html.includes(`data-build="${releaseVersion}"`));
 // Asset count may grow; every current local stylesheet/script must exist and
 // use the current version, including the decimal runtime and adaptive layout.

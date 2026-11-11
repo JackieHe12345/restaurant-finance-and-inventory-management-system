@@ -285,7 +285,7 @@ from PySide6.QtWidgets import (
     QDialog, QInputDialog, QFileDialog, QCheckBox, QAbstractItemView, QTextEdit,
     QFrame, QSizePolicy, QListWidget, QListWidgetItem, QDateTimeEdit, QLayout, QToolButton, QToolTip
 )
-from PySide6.QtCore import Qt, QDate, QDateTime, QEvent, QStandardPaths, QTimer, QSize, QRect
+from PySide6.QtCore import Qt, QDate, QDateTime, QEvent, QStandardPaths, QTimer, QSize, QRect, QObject, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QIntValidator
 
 # Keep the product version in the source as well as in the packaged bundle.  The
@@ -4441,12 +4441,22 @@ def ensure_widget_user_excel_year(widget, date_value):
         return False
 
 
+class WorkbookEvents(QObject):
+    forecast_inputs_saved = Signal()
+
+
+WORKBOOK_EVENTS = WorkbookEvents()
+
+
 def save_current_user_sheet(sheet_name, df, sort_column=None):
     """Commit to internal first; regenerate annual Excel only after that succeeds."""
     require_network_edit()
     if not FILE_PATH:
         raise ExcelAccessError('尚未选择年度用户 Excel，无法保存。')
-    return _commit_user_sheet_to_internal(sheet_name, df, sort_column)
+    result = _commit_user_sheet_to_internal(sheet_name, df, sort_column)
+    if sheet_name in ('daily', 'monthly_fixed'):
+        WORKBOOK_EVENTS.forecast_inputs_saved.emit()
+    return result
 
 
 # ===================== 数据读写层 =====================
@@ -5436,6 +5446,41 @@ def workbook_month_kpis(year, month, df_daily, df_fixed):
     return calc_dashboard_month_kpis(year, month, df_daily, df_fixed)
 
 
+def forecast_cost_inputs(current, previous, elapsed, prior_days):
+    """Compare exact costs using a common divisor, retaining both inputs for the UI."""
+    def totals(summary):
+        if summary is None:
+            return None, None, None
+        fixed = summary['本月固定成本']
+        ingredients = summary['本月食材及佐料成本']
+        return fixed, ingredients, summary['本月总成本'] - fixed - ingredients
+
+    current_known = current is not None
+    current_fixed, ingredients, other = totals(current)
+    previous_fixed, previous_ingredients, previous_other = totals(previous)
+    if current is not None and not current['已保存固定支出']:
+        current_fixed = None
+
+    def compare(prior, prior_divisor, current, current_divisor, fixed=False):
+        # Missing history cannot establish a baseline. An unsaved current
+        # fixed bill uses last month's figure, which can itself be a known zero.
+        selected = numerator = None
+        if prior is not None and current is not None and current_divisor:
+            previous_scaled = prior * current_divisor
+            current_scaled = current * prior_divisor
+            selected = ('tie' if previous_scaled == current_scaled else
+                        'previous' if previous_scaled > current_scaled else 'current')
+            numerator = max(previous_scaled, current_scaled)
+        elif fixed and prior is not None and current_known:
+            selected, numerator = 'previous', prior
+        return dict(previous=prior, previous_days=prior_divisor, current=current,
+                    current_days=current_divisor, selected=selected, numerator=numerator)
+
+    return dict(fixed=compare(previous_fixed, 1, current_fixed, 1, fixed=True),
+                ingredients=compare(previous_ingredients, prior_days, ingredients, elapsed),
+                other=compare(previous_other, prior_days, other, elapsed))
+
+
 def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
     """Share headline and report amounts, including the month-close rollover.
 
@@ -5457,16 +5502,24 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
         values = dict(avg_revenue=None, avg_gross=None, gross_margin=None,
                       avg_net=None, net_margin=None, projected_net=None, net=None,
                       projected_revenue=None, break_even_increase=None, is_closed=False, forecast_status='暂无经营数据')
+        prior = datetime(y, m, 1) - timedelta(days=1)
+        prior_summary = summary_for(prior.year, prior.month)
+        closed = (y, m) < (reference.year, reference.month)
+        elapsed = 0
+        if closed:
+            elapsed = calendar.monthrange(y, m)[1]
+        elif (y, m) == (reference.year, reference.month):
+            elapsed = reference.day - 1
+        inputs = forecast_cost_inputs(summary, prior_summary, elapsed, prior.day)
+        values.update(month=f"{y}-{m:02d}", previous_month=prior.strftime('%Y-%m'),
+                      cost_inputs=inputs, is_closed=closed, actual_cost=None)
         if summary is None or (y, m) > (reference.year, reference.month):
             return values
         values['net'] = decimal_number(summary['本月净利'])
         month_revenue = decimal_number(summary['本月收益'])
-        elapsed = elapsed_month_days(y, m, as_of=reference)
-        if (y, m) == (reference.year, reference.month) and reference.day == 1:
-            elapsed = 0
+        values['actual_cost'] = summary['本月总成本']
         values['avg_net'] = decimal_divide(values['net'], elapsed) if elapsed > 0 else None
         values['net_margin'] = decimal_divide(values['net'], month_revenue) * 100 if month_revenue else None
-        values['is_closed'] = (y, m) < (reference.year, reference.month)
         days = calendar.monthrange(y, m)[1]
         net_numerator, denominator = None, 1
         if values['is_closed']:
@@ -5497,21 +5550,13 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
         values['gross_margin'] = decimal_divide(gross, revenue) * 100 if revenue else 0
         if not values['is_closed']:
             values['projected_revenue'] = decimal_divide(revenue * days, elapsed)
-            prior = datetime(y, m, 1) - timedelta(days=1)
-            prior_summary = summary_for(prior.year, prior.month)
             if prior_summary is not None:
-                previous_fixed = prior_summary['本月固定成本']
-                fixed = (max(previous_fixed, summary['本月固定成本'])
-                         if summary['已保存固定支出'] else previous_fixed)
-                ingredients = sum(item['食材成本'] + item['佐料成本'] for item in metrics)
-                other = sum(item['变动成本'] for item in metrics) - ingredients
-                previous_ingredients = prior_summary['本月食材及佐料成本']
-                previous_other = prior_summary['本月总成本'] - previous_fixed - previous_ingredients
-                # Put each daily rate over elapsed × prior days. Subtract before
-                # dividing so independently recurring rates cannot shift a half-cent.
+                fixed = inputs['fixed']['numerator']
+                # Keep both rates on the same exact denominator until the
+                # final division, including today's saved variable costs.
                 denominator = elapsed * prior.day
-                ingredient_numerator = max(ingredients * prior.day, previous_ingredients * elapsed)
-                other_numerator = max(other * prior.day, previous_other * elapsed)
+                ingredient_numerator = inputs['ingredients']['numerator']
+                other_numerator = inputs['other']['numerator']
                 variable_margin = revenue * prior.day - ingredient_numerator - other_numerator
                 net_numerator = variable_margin * days - fixed * denominator
                 values['projected_net'] = decimal_divide(net_numerator, denominator)
@@ -8872,24 +8917,69 @@ class InventoryTab(QWidget):
 # ===================== 更多统计页面 =====================
 class ForecastInfoButton(QToolButton):
     formula = "(根据 本月预计成本 和 本月预计收入 计算)"
-    explanation = (
-        "预计月底盈亏 = 本月预计收入 − 本月预计成本。\n"
-        "预计收入 = 本月截至昨日的日均收入 × 本月天数。\n\n"
-        "预计成本由三项相加：\n"
-        "① 固定支出：取上月整月与本月已保存固定支出的较高值。\n"
-        "② 食材（含佐料）：取两个月较高的日均成本 × 本月天数。\n"
-        "③ 其他成本 = 总成本 − 食材及佐料 − 固定支出，\n"
-        "同样取两个月较高的日均成本 × 本月天数。\n\n"
-        "上月日均按上月全部日历天数计算，本月日均按截至昨日的\n"
-        "日历天数计算。次月 1 日起显示该月实际净利润。"
-    )
+    explanation = """预计月底盈亏 = 本月预计收入 − 本月预计成本。
+
+本月预计收入 = 本月截至昨天的日均收入 × 本月总天数。
+本月预计成本 = 预计固定成本 + 预计食材成本 + 预计其他成本。
+
+预计固定成本：取上月实际固定成本与本月已保存固定成本中的较高值。
+预计食材成本 (含佐料): 取上月与本月日均食材成本中的较高值 × 本月总天数。
+预计其他成本:取上个月与本月日均其他成本中的较高值 × 本月总天数。
+(其他成本 = 总成本 − 食材与佐料成本 − 固定成本)
+
+上月日均按上月全部日历天数计算，本月日均按截至昨天已过的日历天数计算。
+次月 1 日零时起，显示该月实际净利润 (实际收入 − 实际总成本)。"""
+
+    def set_forecast(self, values=None):
+        values = values or {}
+        lines = [self.explanation, "", "本月食材、佐料和其他成本包含今天已保存的支出，保存或同步后立即更新。"]
+        status = values.get('forecast_status')
+        if status:
+            lines.append(status)
+        costs = values.get('cost_inputs')
+        if costs:
+            closed = values['is_closed']
+            available = values.get('projected_net') is not None
+            if closed and available:
+                lines.extend(["", f"实际收入 {values['projected_revenue']:,.2f} 元　实际总成本 {values['actual_cost']:,.2f} 元",
+                              f"实际净利润 {values['net']:,.2f} 元"])
+                ingredients = costs['ingredients']['current']
+                other = costs['other']['current']
+                fixed = values['actual_cost'] - ingredients - other
+                lines.append(f"固定成本 {fixed:,.2f} 元　食材及佐料 {ingredients:,.2f} 元　其他成本 {other:,.2f} 元")
+            lines.extend(["", "两月成本对照（仅供参考）" if closed or not available else "本次估算的成本取值"])
+            for key, label in [('fixed', '固定成本'), ('ingredients', '日均食材成本 (含佐料)'), ('other', '日均其他成本')]:
+                row = costs[key]
+                def format_amount(source, show_inputs=False):
+                    amount, divisor = row[source], row[source + '_days']
+                    if amount is None:
+                        return '未保存' if key == 'fixed' and source == 'current' else '无记录'
+                    if not divisor:
+                        return f'暂无日均（{amount:,.2f} 元 ÷ 0 天）'
+                    if key == 'fixed':
+                        return f'{amount:,.2f} 元'
+                    rate = f'{decimal_divide(amount, divisor):,.4f}'.rstrip('0').rstrip('.')
+                    inputs = f'（{amount:,.2f} 元 ÷ {divisor} 天）' if show_inputs else ''
+                    return f'{rate} 元/天{inputs}'
+                prior, current = values['previous_month'], values['month']
+                lines.append(f"{label}　{prior} {format_amount('previous', True)}　{current} {format_amount('current', True)}")
+                chosen = row['selected']
+                if chosen is None:
+                    lines.append('无法比较')
+                else:
+                    source = 'previous' if chosen == 'tie' else chosen
+                    month = {'tie': '两月持平', 'previous': prior, 'current': current}[chosen]
+                    prefix = '较高值' if closed or not available else '采用'
+                    lines.append(f"{prefix} {month}　{format_amount(source)}")
+        text = "\n".join(lines)
+        self.setToolTip(text)
+        self.setAccessibleDescription(text)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setText("i")
         self.setAccessibleName("预计月底盈亏计算说明")
-        self.setAccessibleDescription(self.explanation)
-        self.setToolTip(self.explanation)
+        self.set_forecast()
         self.setToolTipDuration(30000)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFixedSize(20, 20)
@@ -9021,7 +9111,8 @@ class ForecastSummaryPanel(QWidget):
     def _money(value):
         return f"{decimal_number(value):,.2f} 元" if value is not None else "—"
 
-    def set_values(self, projected_revenue=None, projected_net=None, break_even_increase=None, status=""):
+    def set_values(self, projected_revenue=None, projected_net=None, break_even_increase=None, status="", forecast=None):
+        self.net_info_button.set_forecast(forecast or dict(forecast_status=status))
         self.revenue_value.setText(self._money(projected_revenue))
         # Expected month-end P/L is intentionally only an amount.  Its sign is
         # enough to distinguish profit from loss; no percentage belongs here.
@@ -9033,7 +9124,7 @@ class ForecastSummaryPanel(QWidget):
 
     def set_month_forecast(self, values):
         self.set_values(values['projected_revenue'], values['projected_net'],
-                        values['break_even_increase'], status=values['forecast_status'])
+                        values['break_even_increase'], status=values['forecast_status'], forecast=values)
 
 
 class AnalyticsFlowLayout(QLayout):
@@ -10987,6 +11078,7 @@ class MoreStatsTab(QWidget):
         months = self._selected_months()
         weekdays = self._selected_weekdays()
         self._update_analysis_context()
+        self._update_month_forecast()
         if not months:
             message = "请至少选择一个月份"
             for canvas in (self.canvas_trend, self.canvas_compare, self.canvas_weekday):
@@ -11011,7 +11103,6 @@ class MoreStatsTab(QWidget):
 
         self._refresh_food_button_options()
         self._refresh_consumption_button_options()
-        self._update_month_forecast()
 
         if self._is_consumption_analysis_active():
             frame = self._consumption_frame()
@@ -11046,14 +11137,15 @@ class MoreStatsTab(QWidget):
         self._update_analysis_context(frame)
         self._reflow_statistics_layout()
 
-    def _update_month_forecast(self):
+    def _update_month_forecast(self, all_daily=None, fixed=None):
         months = self._selected_months()
         if not months:
             self.month_forecast_panel.set_values(status="请至少选择一个月份")
             return
         today = QDate.currentDate()
         preferred = today.month() if self._current_year() == today.year() and today.month() in months else months[0]
-        all_daily, fixed = load_daily(), load_monthly_fixed()
+        if all_daily is None:
+            all_daily, fixed = load_daily(), load_monthly_fixed()
         current = workbook_month_kpis(self._current_year(), preferred, all_daily, fixed)['current']
         self.month_forecast_panel.set_month_forecast(current)
 
@@ -11367,7 +11459,8 @@ class DashboardTab(QWidget):
             if key == 'projected_net':
                 title_layout = QHBoxLayout()
                 title_layout.addWidget(title, 1)
-                title_layout.addWidget(ForecastInfoButton(card), 0, Qt.AlignTop)
+                self.headline_forecast_info = ForecastInfoButton(card)
+                title_layout.addWidget(self.headline_forecast_info, 0, Qt.AlignTop)
                 card_layout.addLayout(title_layout)
             else:
                 card_layout.addWidget(title)
@@ -11558,36 +11651,24 @@ class DashboardTab(QWidget):
         self.pie_canvas_day, self.pie_canvas_month, self.bar_canvas = FigureCanvas(Figure()), FigureCanvas(
             Figure()), FigureCanvas(Figure())
 
-        # Trend Chart with Dropdown Component
-        self.trend_widget = QWidget()
-        trend_vbox = QVBoxLayout(self.trend_widget)
-        trend_vbox.setContentsMargins(0, 0, 0, 0)
-
-        trend_header = QHBoxLayout()
-        self.trend_combo = QComboBox()
-        self.trend_combo.addItems(["净利润 (净利率)", "毛利润 (毛利率)", "食材成本 (包括佐料)", "收入 (Revenue)"])
-        self.trend_combo.setStyleSheet("padding: 3px; border: 1px solid #ccc; border-radius: 4px;")
-        trend_header.addWidget(QLabel(" 切换指标:"))
-        trend_header.addWidget(self.trend_combo)
-        trend_header.addStretch()
-
         self.trend_canvas = FigureCanvas(Figure())
-        trend_vbox.addLayout(trend_header)
-        trend_vbox.addWidget(self.trend_canvas)
+        self.trend_widget, self.trend_combo = self._chart_with_metric(self.trend_canvas, "每日走势指标")
+        self.weekday_widget, self.weekday_combo = self._chart_with_metric(self.bar_canvas, "星期分布指标")
+        self.chart_month_data = {}
 
         # Charts reflow between two columns and one column.  Bound their
         # height as well as their width: matplotlib otherwise asks for about
         # 500 px per chart, which makes the dashboard several screens tall.
         for chart_widget in (
                 self.pie_canvas_day, self.trend_widget,
-                self.pie_canvas_month, self.bar_canvas):
+                self.pie_canvas_month, self.weekday_widget):
             chart_widget.setMinimumSize(0, 210)
             chart_widget.setMaximumHeight(250)
             chart_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         self.chart_widgets = [
             self.pie_canvas_day, self.trend_widget,
-            self.pie_canvas_month, self.bar_canvas,
+            self.pie_canvas_month, self.weekday_widget,
         ]
         main_layout.addLayout(self.chart_layout)
 
@@ -11619,6 +11700,7 @@ class DashboardTab(QWidget):
         self.month_combo.currentTextChanged.connect(self.sync_dates_from_combo)
         self.year_combo.currentTextChanged.connect(self.sync_dates_from_combo)
         self.trend_combo.currentTextChanged.connect(self.update_trend_chart_only)
+        self.weekday_combo.currentTextChanged.connect(self.update_weekday_chart_only)
         if self.create_user_excel_callback:
             self.btn_create_user_excel.clicked.connect(self.create_user_excel_callback)
         else:
@@ -11737,6 +11819,7 @@ class DashboardTab(QWidget):
         summary = workbook_month_kpis(year, month, df_daily, df_fixed)
         self.headline_title.setText(f"{year}-{month:02d} 经营表现")
         current, previous = summary['current'], summary['previous']
+        self.headline_forecast_info.set_forecast(current)
         for key, label in self.headline_values.items():
             value = current[key]
             text = f"{decimal_number(value):,.2f} 元" if value is not None else "—"
@@ -11747,7 +11830,7 @@ class DashboardTab(QWidget):
                 text += f" ({decimal_number(margin):.1f}%)" if margin is not None else " (—)"
             label.setText(text)
             self.headline_comparisons[key].setText(month_comparison_text(value, previous[key]))
-            label.setToolTip(current['forecast_status'] if key == 'projected_net'
+            label.setToolTip(self.headline_forecast_info.toolTip() if key == 'projected_net'
                              else '净利率按本月实际净利润 ÷ 本月实际收入计算；收入为 0 时显示 —。'
                              if key in ('avg_net', 'net') else '')
         return current
@@ -11899,13 +11982,12 @@ class DashboardTab(QWidget):
                 for label in (self.lbl_month_avg_rev, self.lbl_month_avg_var, self.lbl_month_avg_cost,
                               self.lbl_month_avg_gross):
                     label.setText("—")
-            self.month_forecast_panel.set_month_forecast(month_kpis)
         else:
             for lbl in [self.lbl_month_revenue, self.lbl_month_a_revenue, self.lbl_month_b_revenue, self.lbl_month_fixed, self.lbl_month_var_cost, self.lbl_month_cost,
                         self.lbl_month_gross, self.lbl_month_net, self.lbl_month_avg_rev, self.lbl_month_avg_var, self.lbl_month_avg_cost,
                         self.lbl_month_avg_gross, self.lbl_month_avg_net]:
                 lbl.setText("-")
-            self.month_forecast_panel.set_values(status=f"{year}年{month}月暂无经营数据")
+        self.month_forecast_panel.set_month_forecast(month_kpis)
 
         # Year logic
         y_y = calc_year_summary(year, df_daily, df_fixed)
@@ -11992,117 +12074,127 @@ class DashboardTab(QWidget):
         self.pie_canvas_month.figure.tight_layout(pad=1.5);
         self.pie_canvas_month.draw()
 
-        month_df = df_daily[df_daily['日期'].astype(str).str.startswith(f"{year}-{month:02d}")].copy()
-        if not month_df.empty:
-            month_dates = pd.to_datetime(month_df['日期'], errors='coerce').dt.date
-            month_df = month_df[month_dates <= datetime.now().date()]
-        self.bar_canvas.figure.clear();
-        ax4 = self.bar_canvas.figure.add_subplot(111)
+        month_rows = df_daily[df_daily['日期'].astype(str).str.startswith(f"{year}-{month:02d}-")]
+        self.chart_month_data = {}
+        today = datetime.now().date()
+        for _, row in month_rows.iterrows():
+            date = pd.to_datetime(row['日期'], errors='coerce')
+            if pd.isna(date) or date.date() > today:
+                continue
+            metrics = calc_day_metrics(str(row['日期']), df_daily, df_fixed)
+            if metrics:
+                self.chart_month_data[date.day] = (metrics, day_has_meaningful_data(row))
+        self.update_weekday_chart_only()
+        self.update_trend_chart_only()
 
-        if not month_df.empty:
-            month_df['日期_obj'] = pd.to_datetime(month_df['日期'])
-            month_df['净利润'] = [calc_day_metrics(row['日期'], df_daily, df_fixed)['净利润'] for _, row in
-                                  month_df.iterrows()]
-            month_df['星期'] = month_df['日期_obj'].dt.dayofweek
-            weekly_avg = month_df.groupby('星期')['净利润'].agg(lambda values: decimal_sum(values) / len(values)).reindex(range(7), fill_value=0)
-            bars = ax4.bar(['周一', '周二', '周三', '周四', '周五', '周六', '周日'], list(map(float, weekly_avg.values)), color='#03A9F4',
-                           width=0.6)
-            ax4.set_title(f"{year}年{month}月 各星期平均净利润")
-            ax4.set_ylabel("平均净利 (元)")
-            min_h, max_h = float(min(weekly_avg.values)), float(max(weekly_avg.values))
-            rng = max_h - min_h if max_h != min_h else abs(max_h) + 100
-            ax4.set_ylim(min_h - rng * 0.3, max_h + rng * 0.3)
-            for bar in bars:
-                height = bar.get_height()
-                ax4.text(bar.get_x() + bar.get_width() / 2, height + (rng * 0.05 if height >= 0 else -rng * 0.05),
-                         f"{height:.0f}", ha='center', va='bottom' if height >= 0 else 'top')
+    @staticmethod
+    def _chart_with_metric(canvas, label):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        header = QHBoxLayout()
+        combo = QComboBox()
+        combo.setAccessibleName(label)
+        combo.addItems(["收入", "毛利润", "净利润", "食材成本"])
+        combo.setItemData(3, "食材成本包含佐料", Qt.ToolTipRole)
+        header.addWidget(QLabel(label))
+        header.addWidget(combo)
+        header.addStretch()
+        layout.addLayout(header)
+        layout.addWidget(canvas)
+        return widget, combo
+
+    @staticmethod
+    def _chart_amount(metrics, mode):
+        if mode == '食材成本':
+            return metrics['食材成本'] + metrics['佐料成本']
+        return metrics[{'净利润': '净利润', '毛利润': '毛利', '收入': '收益'}[mode]]
+
+    @staticmethod
+    def _chart_hover(canvas, axis, first_x, tips):
+        # The selected series and its tooltips share the same exact amounts.
+        # Disconnect the previous series when the metric or month changes.
+        previous = getattr(canvas, '_metric_hover', None)
+        if previous is not None:
+            canvas.mpl_disconnect(previous)
+        def on_motion(event):
+            if event.inaxes != axis or event.xdata is None or not event.guiEvent:
+                QToolTip.hideText()
+                return
+            index = round(event.xdata) - first_x
+            if 0 <= index < len(tips) and tips[index]:
+                QToolTip.showText(event.guiEvent.globalPosition().toPoint(), tips[index], canvas)
+            else:
+                QToolTip.hideText()
+        canvas._metric_hover = canvas.mpl_connect('motion_notify_event', on_motion)
+
+    def update_weekday_chart_only(self):
+        selected = self.date_edit.date()
+        year, month = selected.year(), selected.month()
+        mode = self.weekday_combo.currentText()
+        label = '食材成本（含佐料）' if mode == '食材成本' else mode
+        names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+        groups = [[] for _ in names]
+        for day, (metrics, meaningful) in self.chart_month_data.items():
+            if meaningful:
+                groups[datetime(year, month, day).weekday()].append(self._chart_amount(metrics, mode))
+        averages = [decimal_divide(sum(group), len(group)) if group else None for group in groups]
+        self.bar_canvas.figure.clear()
+        axis = self.bar_canvas.figure.add_subplot(111)
+        axis.set_title(f"{year}年{month}月 各星期平均{label}")
+        axis.set_ylabel(f"平均{label} (元)")
+        axis.set_xticks(range(7), names)
+        axis.set_xlim(-0.5, 6.5)
+        points = [(index, float(value)) for index, value in enumerate(averages) if value is not None]
+        if points:
+            positions, heights = zip(*points)
+            bars = axis.bar(positions, heights, color='#03A9F4', width=0.6)
+            axis.bar_label(bars, fmt='%.0f', padding=2)
+            axis.margins(y=0.22)
         else:
-            ax4.text(0.5, 0.5, "本月暂无数据", ha='center', va='center')
-
+            axis.text(0.5, 0.5, "本月暂无数据", transform=axis.transAxes, ha='center', va='center')
+        tips = [f"{name} · 平均{label}\n{value:,.2f} 元" if value is not None else f"{name} · 暂无数据"
+                for name, value in zip(names, averages)]
+        self._chart_hover(self.bar_canvas, axis, 0, tips)
         self.bar_canvas.figure.tight_layout(pad=2.0)
         self.bar_canvas.draw()
 
-        self.update_trend_chart_only()
-
     def update_trend_chart_only(self):
-        df_daily, df_fixed = load_daily(), load_monthly_fixed()
-        year = int(
-            self.year_combo.currentText()) if self.year_combo.currentText().isdigit() else QDate.currentDate().year()
-        month = int(
-            self.month_combo.currentText()) if self.month_combo.currentText().isdigit() else QDate.currentDate().month()
-
+        selected = self.date_edit.date()
+        year, month = selected.year(), selected.month()
         mode = self.trend_combo.currentText()
+        label = '食材成本（含佐料）' if mode == '食材成本' else mode
+        days = list(range(1, calendar.monthrange(year, month)[1] + 1))
+        values = [self._chart_amount(self.chart_month_data[d][0], mode) if d in self.chart_month_data
+                  else None for d in days]
         self.trend_canvas.figure.clear()
-        ax3 = self.trend_canvas.figure.add_subplot(111)
-
-        days_in_month = calendar.monthrange(year, month)[1]
-        x_labels = list(range(1, days_in_month + 1))
-
-        vals, revs, actives = [], [], []
-        for d in x_labels:
-            day_value = datetime(year, month, d).date()
-            m = (
-                calc_day_metrics(f"{year}-{month:02d}-{d:02d}", df_daily, df_fixed)
-                if day_value <= datetime.now().date() else None
-            )
-            if m:
-                # 【终极防误判】只有这一天真正填了收入，或者有除了分摊固定成本之外的真实变动花销，才认为这天营业了
-                is_active = (abs(m['收益']) > 0.01 or abs(m['变动成本']) > 0.01)
-                actives.append(is_active)
-
-                if "净利润" in mode:
-                    vals.append(m['净利润']);
-                    revs.append(m['收益'])
-                elif "毛利润" in mode:
-                    vals.append(m['毛利']);
-                    revs.append(m['收益'])
-                elif "食材" in mode:
-                    vals.append(m['食材成本'] + m['佐料成本']);
-                    revs.append(0)
-                else:
-                    vals.append(m['收益']);
-                    revs.append(0)
-            else:
-                vals.append(0);
-                revs.append(0);
-                actives.append(False)
-
-        color = '#00BCD4' if '净利润' in mode else (
-            '#596d82' if '毛利润' in mode else ('#E91E63' if '食材' in mode else '#315f88'))
-
-        ax3.plot(x_labels, list(map(float, vals)), marker='o', label=mode.split(' ')[0], color=color, linewidth=2)
-        ax3.axhline(0, color='gray', linestyle='--', linewidth=0.8)
-        ax3.set_title(f"{year}年{month}月 每日{mode.split(' ')[0]}走势")
-        ax3.set_xlabel("日期 (日)");
-        ax3.set_ylabel("金额 (元)")
-        ax3.set_xticks(x_labels);
-        ax3.tick_params(axis='x', labelsize=8)
-
-        y_min, y_max = float(min(vals)), float(max(vals))
-        pad = (y_max - y_min) * 0.4 if y_max != y_min else 800
-        ax3.set_ylim(y_min - pad, y_max + pad)
-
-        # 【终极排布逻辑】高低交错，绝不重叠
-        for i, (d, val, rev, active) in enumerate(zip(x_labels, vals, revs, actives)):
-            if active:
-                if "利润" in mode and rev > 0:
-                    txt = f"{val:.0f}\n({val / rev * 100:.1f}%)"
-                elif "利润" in mode and rev == 0:
-                    txt = f"{val:.0f}\n(0.0%)"
-                else:
-                    txt = f"{val:.0f}"
-
-                # 单双数天数高度错开，彻底解决横向挤压的物理碰撞问题
-                offset = pad * 0.12
-                if i % 2 == 0:
-                    y_pos = float(val) + offset if val >= 0 else float(val) - offset
-                    va = 'bottom' if val >= 0 else 'top'
-                else:
-                    y_pos = float(val) - offset if val >= 0 else float(val) + offset
-                    va = 'top' if val >= 0 else 'bottom'
-
-                ax3.text(d, y_pos, txt, ha='center', va=va, fontsize=8)
-
+        axis = self.trend_canvas.figure.add_subplot(111)
+        color = {'净利润': '#00BCD4', '毛利润': '#596d82', '食材成本': '#E91E63', '收入': '#315f88'}[mode]
+        axis.plot(days, [float(v) if v is not None else float('nan') for v in values],
+                  marker='o', label=label, color=color, linewidth=2)
+        axis.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+        axis.set_title(f"{year}年{month}月 每日{label}走势")
+        axis.set_xlabel("日期 (日)")
+        axis.set_ylabel("金额 (元)")
+        axis.set_xticks(days)
+        axis.tick_params(axis='x', labelsize=8)
+        axis.margins(y=0.35)
+        tips = []
+        for day, value in zip(days, values):
+            if value is None:
+                tips.append(None)
+                continue
+            metrics, meaningful = self.chart_month_data[day]
+            margin = ''
+            if '利润' in mode and metrics['收益'] > 0:
+                margin = f"\n({decimal_divide(value, metrics['收益']) * 100:.1f}%)"
+            tips.append(f"{year}-{month:02d}-{day:02d} · {label}\n{value:,.2f} 元{margin}")
+            if meaningful:
+                offset = 5 if day % 2 else -5
+                axis.annotate(f"{value:.0f}{margin}", (day, float(value)), xytext=(0, offset),
+                              textcoords='offset points', ha='center',
+                              va='bottom' if offset > 0 else 'top', fontsize=8)
+        self._chart_hover(self.trend_canvas, axis, 1, tips)
         self.trend_canvas.figure.tight_layout(pad=2.0)
         self.trend_canvas.draw()
 
@@ -17511,6 +17603,7 @@ class MainWindow(QMainWindow):
         self._is_handling_tab_switch = False
         self.last_tab_index = self.tabs.currentIndex()
         self.tabs.currentChanged.connect(self.on_tab_changed)
+        WORKBOOK_EVENTS.forecast_inputs_saved.connect(self._refresh_saved_forecasts, Qt.QueuedConnection)
         # The global error handler uses the native Load/Create chooser after an
         # access preflight fails. Selecting a file there also gives a packaged macOS
         # app the best chance to recover its user-selected-file permission.
@@ -17577,6 +17670,13 @@ class MainWindow(QMainWindow):
         QApplication.instance().applicationStateChanged.connect(self._check_statistics_clock)
         self._check_statistics_clock()
         self.statusBar().showMessage('网站数据每 2 秒检查一次；断网时自动只读。', 5000)
+
+    def _refresh_saved_forecasts(self):
+        daily, fixed = load_daily(), load_monthly_fixed()
+        date = self.dashboard.date_edit.date()
+        current = self.dashboard._refresh_month_headlines(date.year(), date.month(), daily, fixed)
+        self.dashboard.month_forecast_panel.set_month_forecast(current)
+        self.more_stats._update_month_forecast(daily, fixed)
 
     def _check_statistics_clock(self, *_args):
         now = QDateTime.currentDateTime()

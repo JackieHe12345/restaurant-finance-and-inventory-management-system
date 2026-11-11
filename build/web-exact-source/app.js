@@ -506,7 +506,7 @@ async function loadCloudData({silent=false,datasetId=""}={}) {
         state.entryWindows = [];
       }
     }
-    initializeFilters(); renderDashboard();
+    initializeFilters(previousDatasetId===selectedId); renderDashboard();
     if(!silent || !state.editorDirty){refreshOpenEditors();state.editorDirty=Object.keys(state.editorDrafts).length>0;}
     if(state.activePage==="stats")renderStats();
     if(typeof renderEntryTiming==="function")renderEntryTiming();
@@ -522,16 +522,21 @@ async function loadCloudData({silent=false,datasetId=""}={}) {
   }
 }
 
-function initializeFilters() {
+function initializeFilters(preservePeriod=true) {
   const latest = state.days.length ? String(state.days[state.days.length-1].日期) : isoDate(new Date());
   const current = $("selectedDate").value;
   if (!current) $("selectedDate").value = latest;
-  const years = [...new Set([...state.days.map(row => String(row.日期).slice(0,4)),$("selectedDate").value.slice(0,4)].filter(Boolean))].sort().reverse();
+  // The day and month/year report controls can be set independently. A save
+  // or cloud poll in this ledger must leave the displayed report in place.
+  const date=$("selectedDate").value;
+  const year=preservePeriod&&$("selectedYear").value||date.slice(0,4);
+  const month=preservePeriod&&$("selectedMonth").value||Number(date.slice(5,7));
+  const years = [...new Set([...state.days.map(row => String(row.日期).slice(0,4)),date.slice(0,4),year].filter(Boolean))].sort().reverse();
   if (!years.length) years.push(String(new Date().getFullYear()));
   $("selectedYear").innerHTML = years.map(y => `<option value="${y}">${state.language==="en"?y:`${y} 年`}</option>`).join("");
-  $("selectedYear").value = $("selectedDate").value.slice(0,4);
+  $("selectedYear").value = year;
   $("selectedMonth").innerHTML = Array.from({length:12},(_,i) => `<option value="${i+1}">${String(i+1).padStart(2,"0")}${state.language==="en"?"":" 月"}</option>`).join("");
-  $("selectedMonth").value = Number($("selectedDate").value.slice(5,7));
+  $("selectedMonth").value = month;
 }
 
 function fixedBreakdown(year, month) {
@@ -644,12 +649,12 @@ function monthOverviewMetricsV102(year,month) {
     averageItems=items.filter(item=>item.date<=cutoff),elapsed=periodElapsedDays(year,month);
   const known=key<=today.slice(0,7)&&(items.length>0||state.months.has(key)),hasRevenue=items.length>0,hasAverage=averageItems.length>0;
   const sum=(rows,key)=>Exact.sum(rows.map(row=>row[key]));
-  const fixed=fixedBreakdown(year,month).spentTotal,revenue=sum(items,"revenue"),total=Exact.add(sum(items,"variable"),fixed);
+  const fixed=fixedBreakdown(year,month).spentTotal,revenue=sum(items,"revenue"),variable=sum(items,"variable"),total=Exact.add(variable,fixed);
   const net=known?Exact.sub(revenue,total):null,completedRevenue=sum(averageItems,"revenue"),completedGross=sum(averageItems,"gross");
-  const ingredient=Exact.add(sum(averageItems,"food"),sum(averageItems,"spice"));
+  const ingredient=Exact.add(sum(items,"food"),sum(items,"spice"));
   // Daily variable costs already exclude the monthly fixed total. Subtract food
   // and seasoning once to retain fees, daily utilities and other expenses.
-  const other=Exact.sub(sum(averageItems,"variable"),ingredient);
+  const other=Exact.sub(variable,ingredient);
   return {key,known,hasRevenue,hasAverage,items,revenue,total,net,elapsed,fixed,hasSavedFixed:state.months.has(key),
     ingredient,other,completedRevenue,completedGross,
     avgRevenue:hasAverage&&elapsed>0?Exact.div(completedRevenue,elapsed):null,
@@ -657,22 +662,44 @@ function monthOverviewMetricsV102(year,month) {
     avgNet:known&&elapsed>0?Exact.div(net,elapsed):null,
     netMargin:known&&Exact.cmp(revenue,0)!==0?Exact.mul(Exact.div(net,revenue),100):null};
 }
+// Each candidate retains its ledger amount and day count. Cross multiplication
+// gives the same winner for both the forecast and its explanation, even when
+// the two daily rates look identical rounded to cents.
+function forecastCostChoiceV102(previous,current,category){
+  const daily=category!=="fixed";
+  function candidate(month,prior){
+    if(!month.known||!daily&&!prior&&!month.hasSavedFixed)return null;
+    return {key:month.key,amount:month[category],days:daily?month.elapsed:1};
+  }
+  const before=candidate(previous,true),now=candidate(current,false);
+  let winner=null,chosen=null;
+  if(before&&now&&before.days>0&&now.days>0){
+    const difference=Exact.cmp(Exact.mul(now.amount,before.days),Exact.mul(before.amount,now.days));
+    winner=difference>0?"current":difference<0?"previous":"tie";
+    chosen=difference>0?now:before;
+  }else if(before&&!daily&&current.known){
+    winner="previous";chosen=before;
+  }
+  return {before,now,winner,chosen};
+}
 function monthForecastV102(year,month) {
   const current=monthOverviewMetricsV102(year,month),previousDate=new Date(year,month-2,1);
   const previous=monthOverviewMetricsV102(previousDate.getFullYear(),previousDate.getMonth()+1);
   const closed=current.key<isoDate(new Date()).slice(0,7),days=daysInMonth(year,month);
+  const choices={
+    fixed:forecastCostChoiceV102(previous,current,"fixed"),
+    ingredient:forecastCostChoiceV102(previous,current,"ingredient"),
+    other:forecastCostChoiceV102(previous,current,"other")
+  };
   const revenue=closed?(current.known?current.revenue:null):current.hasAverage?Exact.div(Exact.mul(current.completedRevenue,days),current.elapsed):null;
   let denominator=1,netNumerator=closed?current.net:null,cost=closed&&current.known?current.total:null;
   if(!closed&&current.hasAverage&&previous.known){
-    const fixed=current.hasSavedFixed?Exact.math.max(previous.fixed,current.fixed):previous.fixed;
-    // Compare rates and combine income and costs before division. Individually
+    // Sum exact rational costs and income before dividing. Individually
     // dividing recurring rates can move an exact half cent across its rounding boundary.
     denominator=current.elapsed*previous.elapsed;
-    const higherRateNumerator=category=>Exact.math.max(
-      Exact.mul(current[category],previous.elapsed),Exact.mul(previous[category],current.elapsed)
-    );
-    const variableNumerator=Exact.mul(Exact.add(higherRateNumerator("ingredient"),higherRateNumerator("other")),days);
-    const costNumerator=Exact.add(Exact.mul(fixed,denominator),variableNumerator);
+    const scale=choice=>Exact.mul(choice.chosen.amount,denominator/choice.chosen.days);
+    const variableNumerator=Exact.mul(Exact.add(scale(choices.ingredient),scale(choices.other)),days);
+    const costNumerator=Exact.add(scale(choices.fixed),variableNumerator);
     const revenueNumerator=Exact.mul(current.completedRevenue,previous.elapsed*days);
     netNumerator=Exact.sub(revenueNumerator,costNumerator);
     cost=Exact.div(costNumerator,denominator);
@@ -686,35 +713,57 @@ function monthForecastV102(year,month) {
       breakEven=Exact.div(lossTimesRevenue,Exact.mul(current.completedGross,days*denominator));
     }
   }
-  return {current,previous,closed,revenue,cost,net,breakEven};
+  return {current,previous,closed,choices,revenue,cost,net,breakEven};
 }
 function forecastLabelV102(scope,forecast){
-  const english=state.language==="en",title=english?"Estimated month-end profit/loss":"预计月底盈亏";
-  const caption=english?"(based on this month’s projected costs and revenue)":"(根据 本月预计成本 和 本月预计收入 计算)";
-  const lines=english?[
-    "Projected profit/loss = projected revenue − projected costs.",
-    "Revenue = average daily revenue through yesterday × calendar days in the selected month.",
-    "Projected costs = fixed costs + ingredient costs + other costs.",
-    "Fixed costs = the higher of last month’s actual fixed spending and this month’s saved fixed spending.",
-    "Ingredients (including seasonings) = the higher of the two monthly daily averages × days in this month.",
-    "Other costs = total costs − ingredients and seasonings − fixed costs. Use the higher of the two daily averages × days in this month.",
-    "Prior daily averages use all calendar days in that month. Current averages use elapsed calendar days through yesterday.",
-    "At local midnight on the first of the next month, the report switches to actual revenue minus actual total costs."
+  const english=state.language==="en",t=(zh,en)=>english?en:zh;
+  const title=t("预计月底盈亏","Estimated month-end profit/loss");
+  const caption=forecast.closed?t("(已结月：实际收入 − 实际总成本)","(closed month: actual revenue − actual total costs)"):
+    t("(根据 本月预计成本 和 本月预计收入 计算)","(based on this month’s projected costs and revenue)");
+  const paragraphs=english?[
+    "Projected month-end profit/loss = projected monthly revenue − projected monthly costs.",
+    "Projected monthly revenue = average daily revenue through yesterday × days in this month.\nProjected monthly costs = projected fixed costs + projected ingredient costs + projected other costs.",
+    "Projected fixed costs: use the higher of last month’s actual fixed costs and this month’s saved fixed costs.\nProjected ingredient costs (including seasonings): use the higher daily ingredient cost of the two months × days in this month.\nProjected other costs: use the higher daily other cost of the two months × days in this month.\n(Other costs = total costs − ingredients and seasonings − fixed costs)",
+    "Last month’s averages use all its calendar days. This month’s averages use elapsed calendar days through yesterday.\nAt local midnight on the first of the next month, the report shows actual net profit (actual revenue − actual total costs)."
   ]:[
     "预计月底盈亏 = 本月预计收入 − 本月预计成本。",
-    "本月预计收入 = 本月截至昨天的日均收入 × 本月总天数。",
-    "本月预计成本 = 预计固定成本 + 预计食材成本 + 预计其他成本。",
-    "预计固定成本：取上月实际固定成本与本月已保存固定成本中的较高值。",
-    "预计食材成本（含佐料）：取上月与本月日均食材成本中的较高值 × 本月总天数。",
-    "其他成本 = 总成本 − 食材与佐料成本 − 固定成本。预计其他成本取两个月日均其他成本中的较高值 × 本月总天数。",
-    "上月日均按上月全部日历天数计算，本月日均按截至昨天已过的日历天数计算。",
-    "次月 1 日零时起，显示该月实际净利润（实际收入 − 实际总成本）。"
+    "本月预计收入 = 本月截至昨天的日均收入 × 本月总天数。\n本月预计成本 = 预计固定成本 + 预计食材成本 + 预计其他成本。",
+    "预计固定成本：取上月实际固定成本与本月已保存固定成本中的较高值。\n预计食材成本 (含佐料): 取上月与本月日均食材成本中的较高值 × 本月总天数。\n预计其他成本:取上个月与本月日均其他成本中的较高值 × 本月总天数。\n(其他成本 = 总成本 − 食材与佐料成本 − 固定成本)",
+    "上月日均按上月全部日历天数计算，本月日均按截至昨天已过的日历天数计算。\n次月 1 日零时起，显示该月实际净利润 (实际收入 − 实际总成本)。"
   ];
-  if(forecast.closed)lines.unshift(english?"Closed month · showing actual profit/loss.":"已结月 · 当前显示实际盈亏。");
-  else if(forecast.revenue===null)lines.unshift(english?"No completed operating day is available for this month.":"本月暂无已完成日期的经营数据。");
-  else if(!forecast.previous.known)lines.unshift(english?"Previous-month cost records are missing.":"缺少上月成本记录，暂时无法计算预计盈亏。");
-  const id=`forecast-help-${scope}`,help=english?"How month-end profit/loss is calculated":"查看预计月底盈亏计算说明";
-  return `<span class="forecast-title">${title}<button type="button" class="forecast-info-button" aria-label="${help}" aria-expanded="false" aria-describedby="${id}" aria-controls="forecast-help-popup"></button></span><small class="forecast-formula o30-kpi-formula">${caption}</small><span id="${id}" hidden>${escapeHtml(lines.join("\n"))}</span>`;
+  const {current,previous,closed,choices}=forecast;
+  const amount=value=>value===null?"—":money(value);
+  if(closed){
+    paragraphs.push(t("已结月 · 实际净利润","Closed month · actual net profit")+` (${current.key})\n`+
+      t("实际收入","Actual revenue")+" "+amount(forecast.revenue)+" − "+t("实际总成本","Actual total costs")+" "+amount(forecast.cost)+" = "+amount(forecast.net)+
+      "\n"+t("实际成本明细","Actual costs")+" · "+t("固定成本","Fixed costs")+" "+amount(current.known?current.fixed:null)+" · "+
+      t("食材与佐料","Ingredients and seasonings")+" "+amount(current.known?current.ingredient:null)+" · "+t("其他成本","Other costs")+" "+amount(current.known?current.other:null));
+  }else{
+    paragraphs.push(t("本月食材、佐料和其他成本包含今天已保存的支出，保存或同步后立即更新。","This month’s ingredient, seasoning and other costs include expenses saved today and update when you save or sync."));
+    if(forecast.revenue===null)paragraphs.push(t("本月暂无已完成日期的经营数据。","No completed operating day is available for this month."));
+    else if(!previous.known)paragraphs.push(t("缺少上月成本记录，暂时无法计算预计盈亏。","Previous-month cost records are missing."));
+  }
+  const labels={fixed:t("固定成本","Fixed costs"),ingredient:t("日均食材成本 (含佐料)","Daily ingredient costs (including seasonings)"),other:t("日均其他成本","Daily other costs")};
+  const referenceOnly=closed||forecast.net===null;
+  const rows=[referenceOnly?t("两月成本对照（仅供参考）","Two-month cost comparison (reference only)"):t("本次估算的成本取值","Cost inputs for this forecast")];
+  for(const [category,choice] of Object.entries(choices)){
+    const daily=category!=="fixed";
+    function display(candidate,showBasis){
+      if(!candidate)return t("无记录","No record");
+      if(!daily)return money(candidate.amount);
+      if(!candidate.days)return t("暂无日均","Daily average unavailable")+` (${money(candidate.amount)} ÷ 0)`;
+      const rate=Exact.div(candidate.amount,candidate.days).toLocaleString(english?"en-US":"zh-CN",{minimumFractionDigits:2,maximumFractionDigits:4});
+      const value=english?`CNY ${rate}/day`:`${rate} 元/天`;
+      return showBasis?`${value} (${money(candidate.amount)} ÷ ${candidate.days})`:value;
+    }
+    const currentValue=!daily&&current.known&&!current.hasSavedFixed?t("未保存","Not saved"):display(choice.now,true);
+    const selected=referenceOnly?t("较高值","Higher value"):t("采用","Selected");
+    const result=choice.chosen?(choice.winner==="tie"?t("两月持平","Tie"):choice.chosen.key)+" · "+display(choice.chosen,false):t("无法比较","Unavailable");
+    rows.push(labels[category]+"\n"+previous.key+" "+display(choice.before,true)+"\n"+current.key+" "+currentValue+"\n"+selected+" "+result);
+  }
+  paragraphs.push(rows.join("\n\n"));
+  const id=`forecast-help-${scope}`,help=t("查看预计月底盈亏计算说明","How month-end profit/loss is calculated");
+  return `<span class="forecast-title">${title}<button type="button" class="forecast-info-button" aria-label="${help}" aria-expanded="false" aria-describedby="${id}" aria-controls="forecast-help-popup"></button></span><small class="forecast-formula o30-kpi-formula">${caption}</small><span id="${id}" hidden>${escapeHtml(paragraphs.join("\n\n"))}</span>`;
 }
 function refreshCalendarBoundaryV102() {
   const today=isoDate(new Date()),previous=state.dashboardCalendarDate;
@@ -757,7 +806,7 @@ function renderDashboard() {
   );
   renderCard("monthCard",monthRows);
   const y=c.yearSummary;let yearRows=summaryRows(y,c.yearMetrics);if(y){const paid=Array.from({length:12},(_,i)=>fixedBreakdown(c.year,i+1).spentTotal).reduce((a,b)=>a+b,0),yearTotal=y.variable+paid,yearNet=y.revenue-yearTotal;yearRows=summaryRows(y,c.yearMetrics,{fixedTotal:paid,total:yearTotal,net:yearNet,avgTotal:yearTotal/Math.max(1,c.yearElapsedDays||y.elapsedDays)});yearRows.splice(5,0,row(mt("totalExpense"),money(yearTotal)));const monthCount=Math.max(1,new Set(c.yearMetrics.map(m=>m.date.slice(0,7))).size);yearRows.push(row(mt("monthGross"),profit(y.gross/monthCount,y.revenue/monthCount)));yearRows.push(row(mt("monthNet"),profit(yearNet/monthCount,y.revenue/monthCount)));}
-  renderCard("yearCard",yearRows);renderCostDonut(d);renderTrend(c.monthMetrics);renderWeekdays(c.monthMetrics);renderExpenses(c);if(typeof renderCashPosition==="function")renderCashPosition();
+  renderCard("yearCard",yearRows);renderCostDonut(d);renderTrend();renderWeekdays(c.monthMetrics);renderExpenses(c);if(typeof renderCashPosition==="function")renderCashPosition();
 }
 
 function renderCostDonut(day) {
@@ -785,15 +834,50 @@ function lineChartMarkup(items,metric,key,{includeEmpty=false}={}){
   const marks=items.map((m,i)=>{const value=values[i],label=pointValue(metric,value,m.revenue),yy=y(value),labelY=Math.max(16,yy-(16+(i%3)*20));const tooltip=`${m.date}\n${label}`;return `<line class="point-leader" x1="${x(i)}" y1="${yy-4}" x2="${x(i)}" y2="${labelY+4}"/><text class="point-value" x="${x(i)}" y="${labelY}" text-anchor="middle">${label}</text><circle data-chart-point data-tooltip="${escapeHtml(tooltip)}" class="trend-point" cx="${x(i)}" cy="${yy}" r="5"/><text class="chart-label" x="${x(i)}" y="${height-10}" text-anchor="middle">${m.date.slice(5)}</text>`;}).join("");
   return `<svg viewBox="0 0 ${width} ${height}" style="width:${width}px" preserveAspectRatio="none"><defs><linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#19aeca" stop-opacity=".22"/><stop offset="1" stop-color="#19aeca" stop-opacity="0"/></linearGradient></defs>${grid}<line class="axis-line" x1="${pad.l}" y1="${y(0)}" x2="${width-pad.r}" y2="${y(0)}"/><polygon class="trend-area" points="${area}"/><polyline class="trend-line" points="${points}"/>${marks}</svg>`;
 }
-function renderTrend(metrics) {
-  if (!metrics.length){$("trendChart").innerHTML=`<div class="empty-chart">${state.language==="en"?"No data this month":"本月没有经营数据"}</div>`;$("trendSummary").textContent="—";return;}
-  const metric=$("trendMetric").value;const meta={net:[state.language==="en"?"Net Profit":"净利润","net"],gross:[state.language==="en"?"Gross Profit":"毛利润","gross"],food:[state.language==="en"?"Ingredient + Seasoning Cost":"食材成本（包括佐料）","foodTotal"],revenue:[state.language==="en"?"Revenue":"收入（Revenue）","revenue"]}[metric];$("trendTitle").textContent=(state.language==="en"?"Daily ":"每日")+meta[0];
-  const source=new Map(metrics.map(m=>[Number(m.date.slice(-2)),m]));const first=parseDate(metrics[0].date);const count=daysInMonth(first.getFullYear(),first.getMonth()+1);const full=Array.from({length:count},(_,i)=>source.get(i+1)||{date:`${metrics[0].date.slice(0,8)}${String(i+1).padStart(2,"0")}`,net:0,gross:0,food:0,spice:0,revenue:0});full.forEach(m=>m.foodTotal=num(m.food)+num(m.spice));
-  $("trendChart").innerHTML=lineChartMarkup(full,metric,meta[1]);bindInteractiveChart($("trendChart"));
-  const total=full.reduce((sum,item)=>sum+num(item[meta[1]]),0);$("trendSummary").textContent=(state.language==="en"?"Total ":"累计 ")+money(total);
+function dashboardChartValue(metric,key){
+  return key==='food'?Exact.add(metric.food,metric.spice):metric[key];
 }
-
-function renderWeekdays(metrics){const names=state.language==="en"?["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]:["周一","周二","周三","周四","周五","周六","周日"],groups=Array.from({length:7},()=>[]);metrics.forEach(m=>groups[(parseDate(m.date).getDay()+6)%7].push(m));const values=groups.map(group=>{const net=group.length?group.reduce((sum,item)=>sum+item.net,0)/group.length:0,revenue=group.length?group.reduce((sum,item)=>sum+item.revenue,0)/group.length:0;return {net,revenue};}),max=Math.max(1,...values.map(item=>Math.abs(item.net)));$("weekdayChart").innerHTML=values.map((item,i)=>`<div class="vertical-bar" data-chart-point data-tooltip="${names[i]}\n${pointValue("net",item.net,item.revenue)}"><b>${pointValue("net",item.net,item.revenue)}</b><i style="height:${Math.max(2,Math.abs(item.net)/max*82)}%;background:${item.net<0?'linear-gradient(#ed7780,#d14e58)':''}"></i><em>${names[i]}</em></div>`).join("");bindInteractiveChart($("weekdayChart"));}
+function renderTrend(){
+  if(!window.Oct30Charts||!$('selectedYear')?.value)return;
+  const t=(zh,en)=>state.language==='en'?en:zh;
+  const year=Number($('selectedYear').value),month=Number($('selectedMonth').value),key=$('trendMetric').value;
+  const prefix=`${year}-${String(month).padStart(2,'0')}`;
+  const lookup=new Map(state.days.filter(row=>String(row.日期).startsWith(prefix)).map(row=>[String(row.日期),dayMetrics(row)]));
+  const labels=[],values=[];
+  for(let day=1;day<=daysInMonth(year,month);day++){
+    const date=`${prefix}-${String(day).padStart(2,'0')}`,metric=lookup.get(date);
+    labels.push(`${month}/${day}`);
+    values.push(metric?dashboardChartValue(metric,key):null);
+  }
+  const title={
+    revenue:t('每日营业收入','Daily revenue'),gross:t('每日毛利润','Daily gross profit'),
+    net:t('每日净利润','Daily net profit'),food:t('食材与佐料成本','Ingredient and seasoning costs')
+  }[key];
+  $('trendTitle').textContent=title;
+  $('trendSummary').textContent=t('已录入累计 ','Recorded total ')+money(Exact.sum(values.filter(value=>value!==null)));
+  Oct30Charts.render($('trendChart'),{title,labels,series:[{name:title,values,color:'#2563a6'}],format:money,height:300});
+  const hint=$('trendChart').parentElement.querySelector('.chart-hint');
+  if(hint)hint.textContent=t('空白日期表示未录入；每日利润按当日成本口径，月度利润含整月固定成本。','Gaps indicate no record. Daily profit uses daily costs; monthly profit includes full-month fixed costs.');
+}
+function renderWeekdays(metrics){
+  if(!window.Oct30Charts)return;
+  const english=state.language==='en',t=(zh,en)=>english?en:zh;
+  const key=$('weekdayMetric').value;
+  const name={
+    revenue:t('平均营业收入','Average revenue'),gross:t('平均毛利润','Average gross profit'),
+    net:t('平均净利润','Average net profit'),food:t('平均食材成本（含佐料）','Average ingredient and seasoning cost')
+  }[key];
+  const title=english?`${name} by weekday`:`各星期${name}`;
+  const labels=english?['Mon','Tue','Wed','Thu','Fri','Sat','Sun']:['周一','周二','周三','周四','周五','周六','周日'];
+  const groups=labels.map(()=>[]);
+  for(const metric of metrics){
+    const weekday=(parseDate(metric.date).getDay()+6)%7;
+    groups[weekday].push(dashboardChartValue(metric,key));
+  }
+  const values=groups.map(group=>group.length?Exact.div(Exact.sum(group),group.length):null);
+  $('weekdayTitle').textContent=title;
+  Oct30Charts.render($('weekdayChart'),{title,labels,kind:'bar',series:[{name,values,color:'#0f8a7c'}],format:money,height:240});
+}
 
 function costSharePercentages(entries){
   const total=entries.reduce((sum,[,value])=>sum+value,0);if(total<=0)return [];
@@ -1298,7 +1382,8 @@ async function safely(action){try{await action();}catch(error){showError(error);
 function shiftStatsYear(amount){const target=String(Number($("statsYear").value||new Date().getFullYear())+amount);if(![...$("statsYear").options].some(option=>option.value===target))$("statsYear").add(new Option(target,target));$("statsYear").value=target;renderStats();}
 
 document.querySelectorAll("[data-page]").forEach(button=>button.addEventListener("click",()=>{if(state.activePage==="overview"&&state.editorDirty&&editorDirtyEntries().some(entry=>entry.section==="ledger")){state.editorNavigationBypass=true;try{showPage("ledger");}finally{state.editorNavigationBypass=false;}return;}showPage(button.dataset.page);}));
-$("loginForm").addEventListener("submit",login);$("testLoginButton").addEventListener("click",loginAsTest);$("logoutButton").addEventListener("click",()=>logout(false));$("loginLanguageButton").addEventListener("click",toggleLanguage);$("languageButton").addEventListener("click",toggleLanguage);$("datasetSelect").addEventListener("change",()=>{const target=$("datasetSelect").value;if(state.editorDirty){renderDatasetSwitcher();allowEditorNavigation(()=>loadCloudData({datasetId:target}).catch(showError));return;}loadCloudData({datasetId:target}).catch(showError);});$("previousDay").addEventListener("click",()=>shiftDay(-1));$("nextDay").addEventListener("click",()=>shiftDay(1));$("todayButton").addEventListener("click",()=>{$("selectedDate").value=isoDate(new Date());syncPeriodToDate();renderDashboard();});$("selectedDate").addEventListener("change",()=>{syncPeriodToDate();renderDashboard();});$("selectedMonth").addEventListener("change",renderDashboard);$("selectedYear").addEventListener("change",renderDashboard);$("trendMetric").addEventListener("change",renderDashboard);
+$("loginForm").addEventListener("submit",login);$("testLoginButton").addEventListener("click",loginAsTest);$("logoutButton").addEventListener("click",()=>logout(false));$("loginLanguageButton").addEventListener("click",toggleLanguage);$("languageButton").addEventListener("click",toggleLanguage);$("datasetSelect").addEventListener("change",()=>{const target=$("datasetSelect").value;if(state.editorDirty){renderDatasetSwitcher();allowEditorNavigation(()=>loadCloudData({datasetId:target}).catch(showError));return;}loadCloudData({datasetId:target}).catch(showError);});$("previousDay").addEventListener("click",()=>shiftDay(-1));$("nextDay").addEventListener("click",()=>shiftDay(1));$("todayButton").addEventListener("click",()=>{$("selectedDate").value=isoDate(new Date());syncPeriodToDate();renderDashboard();});$("selectedDate").addEventListener("change",()=>{syncPeriodToDate();renderDashboard();});$("selectedMonth").addEventListener("change",renderDashboard);$("selectedYear").addEventListener("change",renderDashboard);$("trendMetric").addEventListener("change",renderTrend);
+$("weekdayMetric").addEventListener("change",()=>renderWeekdays(selectedContext().monthMetrics));
 $("historyMonth").addEventListener("change",renderHistory);$("statsPreviousYear").addEventListener("click",()=>shiftStatsYear(-1));$("statsThisYear").addEventListener("click",()=>{const year=String(new Date().getFullYear()),select=$("statsYear");if(![...select.options].some(option=>option.value===year))select.add(new Option(year,year));select.value=year;renderStats();});$("statsNextYear").addEventListener("click",()=>shiftStatsYear(1));$("createUserButton").addEventListener("click",()=>safely(createUser));$("newUserDatasets").addEventListener("change",()=>syncDefaultDataset($("newUserDatasets"),$("newUserDefaultDataset")));$("downloadUserWorkbook").addEventListener("click",downloadUserWorkbook);$("downloadInternalWorkbook").addEventListener("click",downloadInternalWorkbook);$("uploadUserWorkbook").addEventListener("change",event=>uploadWorkbook(event,"user"));$("mergeUserWorkbook").addEventListener("change",event=>uploadWorkbook(event,"user_merge"));$("uploadInternalWorkbook").addEventListener("change",event=>uploadWorkbook(event,"internal"));$("renameDatasetButton").addEventListener("click",()=>safely(renameCurrentDataset));$("deleteDatasetButton").addEventListener("click",()=>safely(deleteCurrentDataset));$("createDatasetButton").addEventListener("click",()=>safely(createDataset));
 document.addEventListener("pointerdown",touchSession,{passive:true});document.addEventListener("keydown",touchSession,{passive:true});
 /* Auto-refresh performs API calls every few seconds, but only direct activity
@@ -1314,4 +1399,9 @@ setInterval(()=>{
 document.addEventListener("input",event=>{const target=event.target;if(target.closest?.("#appView")&&!target.matches('input[type="date"],input[type="month"],select')){const tracked=window.captureWebEditorDraft?.(target);if(tracked)updateEditorDirty();}});
 document.addEventListener("change",event=>{const target=event.target;if(target.closest?.("#appView")&&!target.matches('input[type="date"],input[type="month"]')){const tracked=window.captureWebEditorDraft?.(target);if(tracked)updateEditorDirty();}});
 $("username").value=localStorage.getItem("restaurant_last_username")||"";applyLanguage();
-if(restoreSession()){enterApp().catch(()=>logout(true));}else{$("bootView").classList.add("hidden");$("loginView").classList.remove("hidden");document.body.classList.remove("booting");}
+// Restoring a session renders the dashboard and editors, which use the chart
+// and language scripts loaded after this file.
+document.addEventListener("DOMContentLoaded",()=>{
+  if(restoreSession()){enterApp().catch(()=>logout(true));return;}
+  $("bootView").classList.add("hidden");$("loginView").classList.remove("hidden");document.body.classList.remove("booting");
+},{once:true});

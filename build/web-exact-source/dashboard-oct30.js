@@ -28,10 +28,12 @@
     }
     function show(button){
       clearTimeout(leaveTimer);
-      if(trigger!==button){close();trigger=button;sourceId=button.getAttribute('aria-describedby');}
+      const opening=trigger!==button;
+      if(opening){close();trigger=button;sourceId=button.getAttribute('aria-describedby');}
       const source=document.getElementById(sourceId);if(!source){close();return;}
       if(panel.textContent!==source.textContent)panel.textContent=source.textContent;
       trigger.setAttribute('aria-expanded','true');panel.hidden=false;position();
+      if(opening)panel.scrollTop=0;
     }
     function sync(){
       if(!trigger)return;
@@ -76,6 +78,11 @@
       const distance={ArrowDown:32,ArrowUp:-32,PageDown:panel.clientHeight,PageUp:-panel.clientHeight,Home:-panel.scrollHeight,End:panel.scrollHeight};
       if(Object.hasOwn(distance,event.key)){panel.scrollTop+=distance[event.key];event.preventDefault();}
     });
+    // Advanced analytics redraws its forecast after the dashboard has rendered.
+    const statsBanner=$('statsForecastBanner');
+    if(statsBanner)new MutationObserver(()=>{
+      if(sourceId==='forecast-help-stats')sync();
+    }).observe(statsBanner,{childList:true});
     window.addEventListener('resize',sync);
     document.addEventListener('scroll',event=>{if(!panel.contains(event.target))sync();},true);
     return sync;
@@ -109,17 +116,11 @@
     const subtitle=pageSubtitle();if(subtitle)subtitle.textContent=t('先看本月表现，再查看趋势、成本与具体来源。','Start with monthly performance, then inspect trends and costs.');
   }
   function pageSubtitle(){let p=$('pageOverview').querySelector('.page-title-row p');if(!p){p=document.createElement('p');$('pageOverview').querySelector('.page-title-row h1').after(p);}return p;}
-  fitDashboardMonthChart=function(){if(!$('selectedYear')?.value)return;const y=Number($('selectedYear').value),m=Number($('selectedMonth').value),key=$('trendMetric').value,prefix=`${y}-${String(m).padStart(2,'0')}`,lookup=new Map(state.days.filter(r=>String(r.日期).startsWith(prefix)).map(r=>[String(r.日期),dayMetrics(r)])),labels=[],values=[];
-    for(let day=1;day<=daysInMonth(y,m);day++){const date=`${prefix}-${String(day).padStart(2,'0')}`,metric=lookup.get(date);labels.push(`${m}/${day}`);values.push(!metric?null:key==='food'?Exact.add(metric.food,metric.spice):metric[key==='revenue'?'revenue':key==='gross'?'gross':'net']);}
-    const names={net:t('每日净利润','Daily net profit'),gross:t('每日毛利润','Daily gross profit'),food:t('食材与佐料成本','Ingredient and seasoning costs'),revenue:t('每日营业收入','Daily revenue')};$('trendTitle').textContent=names[key];$('trendSummary').textContent=t('已录入累计 ','Recorded total ')+money(Exact.sum(values.filter(v=>v!==null)));
-    Oct30Charts.render($('trendChart'),{labels,series:[{name:names[key],values,color:'#2563a6'}],format:money,height:300});const hint=$('trendChart').parentElement.querySelector('.chart-hint');if(hint)hint.textContent=t('空白日期表示未录入；每日利润按当日成本口径，月度利润含整月固定成本。','Gaps indicate no record. Daily profit uses daily costs; monthly profit includes full-month fixed costs.');
-  };
-  renderWeekdays=function(metrics){const names=en()?['Mon','Tue','Wed','Thu','Fri','Sat','Sun']:['周一','周二','周三','周四','周五','周六','周日'],groups=names.map(()=>[]);metrics.forEach(m=>groups[(parseDate(m.date).getDay()+6)%7].push(m));Oct30Charts.render($('weekdayChart'),{labels:names,kind:'bar',series:[{name:t('平均净利润','Average net profit'),color:'#0f8a7c',values:groups.map(g=>g.length?Exact.div(Exact.sum(g.map(m=>m.net)),g.length):null)}],format:money,height:240});};
   const donutBase=renderCostDonut;renderCostDonut=function(day){donutBase(day);const entries=day?Object.entries(day.expense).filter(([,v])=>Exact.cmp(v,0)>0):[],total=Exact.sum(entries.map(([,v])=>v));$('costLegend').innerHTML=entries.map(([name,value],i)=>`<div class="legend-row"><i style="background:${colors[i%colors.length]}"></i><span>${escapeHtml(name)}</span><strong>${money(value)}<small>${percent(value,total)}</small></strong></div>`).join('')||`<div class="o30-empty">${t('当天没有成本记录','No cost records for this date')}</div>`;};
   const base=renderDashboard;renderDashboard=function(...args){setup();const result=base.apply(this,args);summary();return result;};
   // Earlier handlers retain references to older wrappers. Schedule the final
   // responsive rendering after any of their date/filter handlers complete.
-  ['selectedDate','selectedMonth','selectedYear','trendMetric'].forEach(id=>$(id)?.addEventListener('change',()=>setTimeout(()=>{summary();fitDashboardMonthChart();},0)));
+  ['selectedDate','selectedMonth','selectedYear'].forEach(id=>$(id)?.addEventListener('change',()=>setTimeout(summary,0)));
   // Expand keeps native responsive charts; no artificial chart padding/pan frame.
   const expandBase=toggleChartExpanded;toggleChartExpanded=function(button){const card=button.closest('.chart-card');if(!card?.querySelector('.o30-chart,.o30-facets'))return expandBase(button);const opening=!card.classList.contains('chart-expanded');closeExpandedCharts();if(opening){card.classList.add('chart-expanded','o30-expanded');document.body.classList.add('chart-modal-open');button.textContent=t('退出全屏','Exit full screen');button.focus();}};
   const bindBase=bindInteractiveChart;bindInteractiveChart=function(host){if(host.querySelector('.o30-svg'))return;return bindBase(host);};

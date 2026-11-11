@@ -1,7 +1,7 @@
 /* v1.0.2: Decimal-safe business expressions; source and rebuild tool accompany this release. */
 "use strict";
 
-/* Sep05V1: cache-safe inventory consumption and desktop-quality dashboard line. */
+/* Sep05V1: cache-safe inventory consumption. */
 (() => {
   function stockCategoryMaps(){
     const exact=new Map(),byName=new Map();
@@ -49,33 +49,6 @@
       const remaining=(Exact.truth(row.override) ? Exact.sub(Exact.sub(Exact.add(row.override.quantity, futureReceived), futureUsed), futureManual) : Exact.sub(Exact.sub(row.received, row.used), row.manualUsed));
       return {...row,remaining,overridden:Boolean(row.override)};
     }).sort(Exact.sortComparator((a,b)=>Exact.or(()=>(Exact.or(()=>(a.category.localeCompare(b.category,"zh-CN")), ()=>(a.name.localeCompare(b.name,"zh-CN")))), ()=>(a.unit.localeCompare(b.unit,"zh-CN")))));
-  };
-
-  function dashboardLineSvg(points,key){
-    const width=Exact.math.max(1180,Exact.add(Exact.mul(points.length, 46), 120)),height=390,pad={l:74,r:34,t:38,b:62},values=points.map(point=>point.value);
-    const rawMin=Exact.math.min(0,...values),rawMax=Exact.math.max(0,...values),padding=Exact.math.max(1,Exact.mul(Exact.or(()=>(Exact.sub(rawMax, rawMin)), ()=>(1)), 0.12)),min=Exact.sub(rawMin, padding),max=Exact.add(rawMax, padding),range=Exact.or(()=>(Exact.sub(max, min)), ()=>(1));
-    const x=index=>Exact.add(pad.l, Exact.div(Exact.mul(index, Exact.sub(Exact.sub(width, pad.l), pad.r)), Exact.math.max(1,Exact.sub(points.length, 1)))),y=value=>Exact.add(pad.t, Exact.mul(Exact.div(Exact.sub(max, value), range), Exact.sub(Exact.sub(height, pad.t), pad.b))),zero=y(0);
-    const path=points.map((point,index)=>`${(Exact.truth(index) ? "L" : "M")}${x(index).toFixed(1)},${y(point.value).toFixed(1)}`).join(" ");
-    const area=`${path} L${x(Exact.sub(points.length, 1)).toFixed(1)},${zero.toFixed(1)} L${x(0).toFixed(1)},${zero.toFixed(1)} Z`;
-    const grid=Array.from({length:5},(_,index)=>{const value=Exact.sub(max, Exact.div(Exact.mul(range, index), 4)),py=y(value);return `<g><line class="sep05-grid" x1="${pad.l}" x2="${Exact.sub(width, pad.r)}" y1="${py}" y2="${py}"/><text class="sep05-y-label" x="${Exact.sub(pad.l, 12)}" y="${Exact.add(py, 4)}" text-anchor="end">${compactNumber(value)}</text></g>`;}).join("");
-    const dots=points.map((point,index)=>{
-      const px=x(index),py=y(point.value),label=pointValue(key,point.value,point.revenue),day=String(Exact.toNumber(point.date.slice(8)));
-      const labelY=(Exact.truth(Exact.gte(point.value, 0)) ? Exact.sub(py, 13) : Exact.add(py, 23));
-      return `<g class="sep05-point" data-chart-point data-tooltip="${escapeHtml(point.date)}&#10;${escapeHtml(label)}" tabindex="0"><circle class="sep05-point-halo" cx="${px}" cy="${py}" r="9"/><circle class="sep05-point-dot" cx="${px}" cy="${py}" r="4.8"/><text class="sep05-value" x="${px}" y="${labelY}" text-anchor="middle">${escapeHtml(label)}</text><text class="sep05-x-label" x="${px}" y="${Exact.sub(height, 20)}" text-anchor="middle">${day}</text></g>`;
-    }).join("");
-    return `<svg class="sep05-dashboard-svg" style="width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="本月每日趋势"><defs><linearGradient id="sep05TrendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0baac6" stop-opacity=".28"/><stop offset="1" stop-color="#0baac6" stop-opacity=".02"/></linearGradient><filter id="sep05Shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#087fa2" flood-opacity=".25"/></filter></defs>${grid}<line class="sep05-zero" x1="${pad.l}" x2="${Exact.sub(width, pad.r)}" y1="${zero}" y2="${zero}"/><path class="sep05-area" d="${area}"/><path class="sep05-line" d="${path}" filter="url(#sep05Shadow)"/>${dots}</svg>`;
-  }
-
-  fitDashboardMonthChart=function(){
-    if(Exact.truth(Exact.or(()=>(Exact.not($("trendChart"))), ()=>(Exact.not($("selectedYear")?.value)))))return;
-    const year=Exact.toNumber($("selectedYear").value),month=Exact.toNumber($("selectedMonth").value),key=$("trendMetric").value,monthPrefix=`${year}-${String(month).padStart(2,"0")}`;
-    const lookup=new Map(state.days.filter(row=>String(row.日期).startsWith(monthPrefix)).map(row=>[Exact.toNumber(String(row.日期).slice(8)),dayMetrics(row)])),points=[];
-    for(let day=1;Exact.truth(Exact.lte(day, daysInMonth(year,month)));day++){
-      const metric=lookup.get(day),value=(Exact.truth(metric) ? (Exact.truth(Exact.seq(key, "revenue")) ? metric.revenue : (Exact.truth(Exact.seq(key, "food")) ? Exact.add(metric.food, metric.spice) : (Exact.truth(Exact.seq(key, "gross")) ? metric.gross : metric.net))) : 0);
-      points.push({date:`${monthPrefix}-${String(day).padStart(2,"0")}`,value,revenue:Exact.or(()=>(metric?.revenue), ()=>(0))});
-    }
-    const chart=$("trendChart");chart.classList.add("fit-month-chart","sep05-chart-ready");chart.innerHTML=dashboardLineSvg(points,key);bindInteractiveChart(chart);
-    const hint=chart.parentElement.querySelector(".chart-hint");if(Exact.truth(hint))hint.textContent=`整月 1–${points.length} 日；悬停或点按查看。图表与桌面端使用同样的“每日趋势”口径。`;
   };
 
   if(Exact.truth(state.token)){

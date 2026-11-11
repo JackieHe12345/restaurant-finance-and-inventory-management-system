@@ -26,7 +26,7 @@ SCOPE.update(MONEY_CENT=Decimal('.01'), MAX_ABS_AMOUNT=Decimal('999999999999.99'
              _payload_and_hash=lambda payload: ('{}', 'isolated-fixture'),
              _inventory_operation_stamp=lambda rows: '2026-11-10T04:00:00Z')
 FUNCTIONS = {'decimal_number', 'decimal_divide', 'money_amount', 'money_input', 'month_comparison_text',
-             '_elapsed_reference', 'elapsed_month_days',
+             'forecast_cost_inputs', '_elapsed_reference', 'elapsed_month_days',
              'apply_py_charm_run_style', 'workbook_month_kpis', 'calc_dashboard_month_kpis'}
 CLASSES = {'DashboardTab', 'ForecastInfoButton', 'ForecastSummaryPanel', 'CashPositionTab'}
 NODES = [n for n in TREE.body if (isinstance(n, ast.FunctionDef) and n.name in FUNCTIONS)
@@ -136,7 +136,7 @@ class MonthlyWidgets(unittest.TestCase):
         day = dict(收益=Decimal('1000'), 毛利=Decimal('500'), 净利润=Decimal('480'),
                    固定分摊=Decimal('20'), 变动成本=Decimal('500'), 总成本=Decimal('520'))
         summary = {'本月收益': Decimal('1000'), '本月毛利': Decimal('500'), '本月净利': Decimal('-100'),
-                   '本月总成本': Decimal('1100'), '本月固定成本': Decimal('600'), '本月变动成本': Decimal('500'),
+                   '本月总成本': Decimal('1100'), '本月固定成本': Decimal('600'), '本月食材及佐料成本': Decimal('500'), '已保存固定支出': True, '本月变动成本': Decimal('500'),
                    '活跃天数': 1, '日均天数': 31}
         overrides = dict(pd=pd, datetime=Now, load_daily=lambda: frame.copy(),
                          load_monthly_fixed=lambda: pd.DataFrame(columns=['月份']),
@@ -162,6 +162,13 @@ class MonthlyWidgets(unittest.TestCase):
             SCOPE['_update_month_forecast'](stats)
             self.assertEqual(stats.month_forecast_panel.net_value.text(), '-100.00 元')
             self.assertIn('实际净利润', stats.month_forecast_panel.status_label.text())
+            text = stats.month_forecast_panel.net_info_button.toolTip()
+            self.assertEqual(text, tab.headline_forecast_info.toolTip())
+            self.assertIn('实际净利润 -100.00 元', text)
+            self.assertIn('实际总成本 1,100.00 元', text)
+            self.assertIn('两月成本对照（仅供参考）', text)
+            self.assertIn('无记录', text)
+            self.assertNotIn('本次估算的成本取值', text)
             stats.month_forecast_panel.close(); stats.month_forecast_panel.deleteLater()
         tab.close(); tab.deleteLater(); APP.processEvents()
 
@@ -202,7 +209,7 @@ class MonthlyWidgets(unittest.TestCase):
         day = dict(收益=Decimal('1000'), 毛利=Decimal('500'), 净利润=Decimal('450'),
                    固定分摊=Decimal('50'), 变动成本=Decimal('500'), 总成本=Decimal('550'))
         summary = {'本月收益': Decimal('1000'), '本月毛利': Decimal('500'), '本月净利': Decimal('450'),
-                   '本月总成本': Decimal('550'), '本月固定成本': Decimal('50'), '本月变动成本': Decimal('500'),
+                   '本月总成本': Decimal('550'), '本月固定成本': Decimal('50'), '本月食材及佐料成本': Decimal('460'), '已保存固定支出': True, '本月变动成本': Decimal('500'),
                    '活跃天数': 1, '日均天数': 9}
         overrides = dict(pd=pd, datetime=Now, load_daily=lambda: frame.copy(),
                          load_monthly_fixed=lambda: pd.DataFrame(columns=['月份']),
@@ -210,7 +217,7 @@ class MonthlyWidgets(unittest.TestCase):
                          calc_day_metrics=lambda *args: day, calc_week_summary=lambda *args: None,
                          calc_year_summary=lambda *args: None, dish_total_cost_for_date=lambda *args: (0, False),
                          calc_dashboard_month_kpis=REAL_CALC_KPIS,
-                         calc_month_summary=lambda y, m, *args, **kwargs: summary if m == 11 else {'本月总成本': Decimal('1600'), '本月收益': Decimal('0'), '本月净利': Decimal('-1600')})
+                         calc_month_summary=lambda y, m, *args, **kwargs: summary if m == 11 else {'本月固定成本': Decimal('600'), '本月食材及佐料成本': Decimal('500'), '已保存固定支出': True, '本月总成本': Decimal('1600'), '本月收益': Decimal('0'), '本月净利': Decimal('-1600')})
         tab.date_edit.blockSignals(True); tab.date_edit.setDate(QDate(2026, 11, 10)); tab.date_edit.blockSignals(False)
         tab.update_charts = lambda *args: None
         with patch.dict(SCOPE, overrides):
@@ -219,6 +226,8 @@ class MonthlyWidgets(unittest.TestCase):
             self.assertEqual(tab.month_forecast_panel.net_value.text(), '—')
             self.assertEqual(tab.month_forecast_panel.break_even_value.text(), '—')
             self.assertIn('已完成日期', tab.month_forecast_panel.status_label.text())
+            self.assertIn('暂无已完成日期', tab.month_forecast_panel.net_info_button.toolTip())
+            self.assertIn('两月成本对照（仅供参考）', tab.headline_forecast_info.toolTip())
             self.assertEqual(tab.lbl_month_avg_rev.text(), '—')
             self.assertIn('450.00', tab.lbl_month_net.text())
             # The other shared statistics view must have the same unavailable result.
@@ -287,7 +296,7 @@ class MonthlyWidgets(unittest.TestCase):
         for button in (tab.headline_cards[2].findChild(QToolButton), tab.month_forecast_panel.net_info_button):
             self.assertEqual(button.accessibleName(), '预计月底盈亏计算说明')
             self.assertEqual(button.focusPolicy(), Qt.StrongFocus)
-            for wording in ('截至昨日', '固定支出', '含佐料', '其他成本', '较高', '次月 1 日'):
+            for wording in ('截至昨天', '固定成本', '含佐料', '其他成本', '较高', '次月 1 日', '今天已保存'):
                 self.assertIn(wording, button.toolTip())
             point = button.rect().center()
             QApplication.sendEvent(button, QHelpEvent(QEvent.ToolTip, point, button.mapToGlobal(point)))
@@ -361,5 +370,132 @@ class MonthlyWidgets(unittest.TestCase):
             tab.delete_item()
         self.assertEqual(saved[-1]['transactions'], [historic])
         tab.close(); tab.deleteLater()
+
+class SavedForecastAndCharts(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        import sys
+        spec = importlib.util.spec_from_file_location('v102_dashboard_integration', SOURCE)
+        cls.module = importlib.util.module_from_spec(spec)
+        previous_hook = sys.excepthook
+        try:
+            spec.loader.exec_module(cls.module)
+        finally:
+            sys.excepthook = previous_hook
+
+    def test_purchase_save_updates_both_views_without_navigation(self):
+        from contextlib import ExitStack
+        from tempfile import TemporaryDirectory
+        from types import SimpleNamespace
+        m = self.module
+        class Now(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 11, 10, 12, tzinfo=tz)
+        with TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            dataset = 'forecast-test'
+            internal, mirror = str(root / 'internal.xlsx'), str(root / 'year.xlsx')
+            for name, value in dict(CONFIG_FILE=str(root/'paths.json'), INTERNAL_FILE_PATH=internal,
+                                    FILE_PATH=mirror, ACTIVE_USER_EXCEL_YEAR=2026, ACTIVE_DATASET_ID=dataset,
+                                    APP_BASELINE_RECORD_HASHES={}, APP_BASELINE_SHEET_FRAMES={}, USER_MIRROR_SIGNATURES={},
+                                    NETWORK_ACCESS_DECIDED=False, datetime=Now).items():
+                stack.enter_context(patch.object(m, name, value))
+            stack.enter_context(patch.object(m, '_desktop_cloud_role', return_value='admin'))
+            frames = m._default_internal_frames()
+            frames['__meta'] = m.pd.DataFrame([dict(dataset_id=dataset, schema_version=2, last_synced_at='')])
+            for day, row in [('2026-10-01', {'收益':'100.00'}), ('2026-11-09', {'收益':'1000.00'}),
+                             ('2026-11-10', {'收益':'5000.00', '食材成本':'10.00',
+                                             '食材明细':'[{"name":"米","total":"10.00"}]'})]:
+                payload = {'daily':[{'日期': day, **row}], 'dishes':[], 'fixed_expenses':[]}
+                raw, digest = m._payload_and_hash(payload)
+                frames['__day_records'] = m._replace_internal_record(
+                    frames['__day_records'], dataset, '日期', day, raw, digest)
+            m._write_internal_frames(internal, frames)
+            m.recreate_user_mirror_from_internal(mirror, year=2026, dataset_id=dataset, internal_path=internal)
+            m._write_path_config(dict(DATASET_ID=dataset, ACTIVE_USER_EXCEL_YEAR=2026, FILE_PATH=mirror,
+                                      INTERNAL_FILE_PATH=internal, YEARLY_USER_EXCEL_PATHS={'2026':mirror}))
+            m._set_app_baseline_from_internal(frames, dataset, 2026)
+            with patch.object(m.DashboardTab, 'refresh_all'), patch.object(m.MoreStatsTab, 'refresh'):
+                dashboard, stats = m.DashboardTab(), m.MoreStatsTab()
+            purchase = m.PurchaseDetailTab('食材')
+            for widget in (dashboard, stats, purchase):
+                stack.callback(widget.deleteLater)
+            for date in (dashboard.date_edit, purchase.date_edit):
+                date.blockSignals(True)
+                date.setDate(QDate(2026, 11, 10))
+                date.blockSignals(False)
+            stack.enter_context(patch.object(stats, '_selected_months', return_value=[11]))
+            stack.enter_context(patch.object(stats, '_current_year', return_value=2026))
+            stack.enter_context(patch.object(m.QMessageBox, 'information', return_value=m.QMessageBox.Ok))
+            window = SimpleNamespace(dashboard=dashboard, more_stats=stats)
+            def refresh():
+                m.MainWindow._refresh_saved_forecasts(window)
+            m.WORKBOOK_EVENTS.forecast_inputs_saved.connect(refresh, Qt.QueuedConnection)
+            stack.callback(m.WORKBOOK_EVENTS.forecast_inputs_saved.disconnect, refresh)
+            refresh()
+            purchase.refresh_data()
+            self.assertEqual(dashboard.headline_values['projected_net'].text(), '3,300.00 元')
+            purchase.table.item(0, 5).setText('100.00')
+            self.assertEqual(dashboard.headline_values['projected_net'].text(), '3,300.00 元')
+            purchase.btn_save.click()
+            APP.processEvents()
+            self.assertEqual(m.money_amount(m.load_daily().iloc[-1]['食材成本']), 100)
+            self.assertEqual(dashboard.headline_values['projected_net'].text(), '3,000.00 元')
+            for panel in (dashboard.month_forecast_panel, stats.month_forecast_panel):
+                self.assertEqual(panel.net_value.text(), '3,000.00 元')
+                self.assertEqual(panel.revenue_value.text(), '3,333.33 元')
+                text = panel.net_info_button.toolTip()
+                self.assertEqual(text, dashboard.headline_forecast_info.toolTip())
+                self.assertIn('100.00 元 ÷ 9 天', text)
+                self.assertIn('采用 2026-11　11.1111 元/天', text)
+                self.assertIn('两月持平', text)
+                self.assertIn('未保存', text)
+                self.assertEqual(text.split('\n\n')[0], '预计月底盈亏 = 本月预计收入 − 本月预计成本。')
+                self.assertEqual(text, panel.net_info_button.accessibleDescription())
+
+    def test_independent_charts_use_revenue_by_default_and_exact_selected_series_on_hover(self):
+        from types import SimpleNamespace
+        from matplotlib.backend_bases import MouseEvent
+        from PySide6.QtCore import QPointF
+        m = self.module
+        with patch.object(m.DashboardTab, 'refresh_all'):
+            tab = m.DashboardTab()
+        self.addCleanup(tab.deleteLater)
+        tab.date_edit.blockSignals(True)
+        tab.date_edit.setDate(QDate(2025, 10, 1))
+        tab.date_edit.blockSignals(False)
+        frame = m.pd.DataFrame([{'日期':'2025-10-06', '收益':'100', '食材成本':'10.00', '佐料成本':'.11', '其他':'3'},
+                                {'日期':'2025-10-13', '收益':'300', '食材成本':'20.00', '佐料成本':'.33', '其他':'7'}])
+        fixed = m.pd.DataFrame(columns=['月份'])
+        tab.update_charts('2025-10-06', 2025, 10, frame, fixed)
+        self.assertEqual([combo.currentText() for combo in (tab.trend_combo, tab.weekday_combo)], ['收入', '收入'])
+        def hover(canvas, x_value, y_value):
+            axis = canvas.figure.axes[0]
+            x, y = axis.transData.transform((x_value, y_value))
+            event = MouseEvent('motion_notify_event', canvas, x, y,
+                               guiEvent=SimpleNamespace(globalPosition=lambda: QPointF(4, 4)))
+            with patch.object(QToolTip, 'showText') as popup:
+                canvas.callbacks.process('motion_notify_event', event)
+            return popup.call_args.args[1]
+        for mode, expected in [('收入', '200.00'), ('毛利润', '184.78'), ('净利润', '179.78'), ('食材成本', '15.22')]:
+            tab.weekday_combo.setCurrentText(mode)
+            axis = tab.bar_canvas.figure.axes[0]
+            self.assertEqual(len(axis.patches), 1)
+            self.assertAlmostEqual(axis.patches[0].get_height(), float(expected))
+            self.assertIn(mode, axis.get_title())
+            self.assertIn(mode, axis.get_ylabel())
+            tooltip = hover(tab.bar_canvas, 0, float(expected) / 2)
+            self.assertIn(f'{expected} 元', tooltip)
+            self.assertIn('周一', tooltip)
+            self.assertIn(mode, tooltip)
+            self.assertEqual(tab.trend_combo.currentText(), '收入')
+        tab.trend_combo.setCurrentText('食材成本')
+        self.assertIn('食材成本（含佐料）', hover(tab.trend_canvas, 6, 10.11))
+        self.assertIn('10.11 元', hover(tab.trend_canvas, 6, 10.11))
+        tab.weekday_combo.setCurrentText('净利润')
+        self.assertEqual(tab.trend_combo.currentText(), '食材成本')
+
 
 if __name__ == '__main__': unittest.main(verbosity=2)

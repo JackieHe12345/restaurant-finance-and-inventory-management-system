@@ -17,7 +17,7 @@ getcontext().rounding = ROUND_HALF_UP
 SOURCE = Path(os.environ.get('DESKTOP_SOURCE', str(Path(__file__).resolve().parents[1] / 'desktop/restaurant_cost_manager.py')))
 TREE = ast.parse(SOURCE.read_text())
 NAMES = {'decimal_number', 'decimal_divide', '_elapsed_reference', 'elapsed_month_days',
-         'month_comparison_text', 'calc_dashboard_month_kpis', 'calc_month_summary', 'calc_day_metrics',
+         'forecast_cost_inputs', 'month_comparison_text', 'calc_dashboard_month_kpis', 'calc_month_summary', 'calc_day_metrics',
          'day_has_meaningful_data', 'safe_float', 'get_monthly_fixed_breakdown',
          'money_amount', 'money_value_was_entered', 'workbook_month_kpis', '_inventory_day_sheet', '_internal_payload_for_identity',
          'reported_day_revenue', 'recalculate_revenue_fields'}
@@ -47,15 +47,15 @@ class MonthlyHeadlines(unittest.TestCase):
         fixed = pd.DataFrame(self.fixed).fillna('') if self.fixed else pd.DataFrame(columns=['月份'])
         return SCOPE['calc_dashboard_month_kpis'](year, month, daily, fixed, as_of=as_of)
 
-    def test_prior_fixed_current_ingredients_prior_other(self):
+    def test_todays_saved_costs_and_yesterdays_revenue_use_elapsed_calendar_days(self):
         result = self.calculate()
         current, previous = result['current'], result['previous']
         self.assertEqual(current['avg_revenue'], Decimal('200'))
         self.assertEqual(current['avg_gross'], Decimal('1665') / 9)
         self.assertEqual(current['gross_margin'], Decimal('92.5'))
         self.assertEqual(current['projected_revenue'], Decimal('6000'))
-        # max(930.03, 900) + max(341/31, 135/9)*30 + max(124/31, 9/9)*30.
-        self.assertEqual(current['projected_net'], Decimal('4499.97'))
+        # The two current cost totals include Nov 10, revenue still excludes it.
+        self.assertEqual(current['projected_net'], Decimal('-9410.03'))
         self.assertEqual(current['net'], Decimal('-2444'))
         self.assertEqual(current['avg_net'], Decimal('-2444') / 9)
         self.assertEqual(current['net_margin'], Decimal('-2444') / 2800 * 100)
@@ -66,10 +66,28 @@ class MonthlyHeadlines(unittest.TestCase):
         self.assertEqual(SCOPE['month_comparison_text'](current['avg_revenue'], previous['avg_revenue']), '比上个月多了 100.0%')
 
     def test_current_fixed_prior_ingredients_current_other(self):
+        self.daily[3] = {'日期': '2026-11-10', '收益': '1000'}
         self.fixed[1]['人工总额'] = '1200.55'
         self.daily[0]['食材成本'] = '589'  # with seasonings: 651/31 = 21 per day
         self.daily[1].update(水电='18', 其他='63', 手续费='9')  # 90/9 = 10 per day
         self.assertEqual(self.calculate()['current']['projected_net'], Decimal('6000') - Decimal('1200.55') - 21*30 - 10*30)
+
+    def test_forecast_comparisons_follow_edits_deletions_and_independent_maxima(self):
+        self.daily[3] = {'日期': '2026-11-10', '收益': '9999999999'}
+        baseline = self.calculate()['current']
+        self.assertEqual(baseline['projected_net'], Decimal('4499.97'))
+        costs = baseline['cost_inputs']
+        self.assertEqual([costs[key]['selected'] for key in ('fixed', 'ingredients', 'other')],
+                         ['previous', 'current', 'previous'])
+        self.daily[3].update(食材成本='9.01', 佐料成本='2.99', 其他='27')
+        updated = self.calculate()['current']
+        self.assertEqual(updated['projected_net'], baseline['projected_net'] - Decimal(40))
+        self.assertEqual(updated['projected_revenue'], baseline['projected_revenue'])
+        self.assertEqual(updated['cost_inputs']['other']['selected'], 'tie')
+        self.assertEqual(updated['cost_inputs']['ingredients']['current'], Decimal(147))
+        self.assertEqual(updated['cost_inputs']['ingredients']['current_days'], 9)
+        self.daily.pop(3)
+        self.assertEqual(self.calculate()['current']['projected_net'], baseline['projected_net'])
 
     def test_no_intermediate_rounding_and_missing_current_fixed(self):
         self.fixed = [{'月份': '2026-10', '人工总额': '99.99'}]

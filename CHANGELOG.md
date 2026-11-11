@@ -20,14 +20,15 @@ The dashboard and full monthly report show the same estimate. Projected revenue 
 | Ingredients, including seasonings | Compare the two months’ daily ingredient costs. Multiply the higher daily rate by the number of days in this month. |
 | Other costs | For each month, subtract ingredients (including seasonings) and fixed expenses from total cost. Compare the two daily rates and multiply the higher one by the number of days in this month. |
 
-Last month’s daily rates use its full calendar month. This month’s use all elapsed calendar days through yesterday, including days without an entry. The estimate is unavailable on the first day of the month, when the current month has no operating records through yesterday, or when the previous month has no cost basis. A recorded zero is valid. From the first day of the next month, both views show that month’s actual net profit, including across December and January. The figure updates if the ledger is corrected later.
+Saving a purchase, seasoning or other expense dated today immediately updates the cost comparison. Today’s revenue enters the projection tomorrow. Last month’s daily rates use its full calendar month. This month divides by the days elapsed through yesterday, including days with no entries. The estimate is unavailable on the first day of the month, when the current month has no operating records through yesterday, or when the previous month has no cost basis. A recorded zero is valid. From the first day of the next month, both views show that month’s actual net profit, including across December and January. The figure updates if the ledger is corrected later.
 
-Both views label the figure **Estimated month-end profit/loss** with **(based on this month’s projected costs and revenue)** on the next line. Hover over or select the adjacent **i** to see the calculation and the month-end switch. Browser help follows the selected language.
+Both views label the figure **Estimated month-end profit/loss** with **(based on this month’s projected costs and revenue)** on the next line. Saving or syncing the same book keeps the selected reporting month. Open **i** in either view to see both months’ fixed costs and daily ingredient and other costs, the amount used and which month supplied it. The explanation follows the selected language and refreshes its amounts while open, including in Advanced analytics.
 
 ### Dashboard and reports
 
 - The five cards show average daily revenue, average daily gross profit and gross margin, estimated month-end profit/loss, average daily net profit and net margin, and net profit and net margin. Each compares the same measure with the previous month. The cards share the same layout, with colors indicating gains and losses.
 - Daily revenue and gross-profit averages use records through yesterday. Actual monthly net profit includes today’s entries and the whole month’s saved fixed expenses. Average daily net profit divides that monthly net by elapsed calendar days. Both net margins use actual month-to-date revenue, including today. For a projected loss with a positive gross margin, the full report also shows the extra daily revenue needed to break even.
+- The daily trend and weekday averages open on revenue. Each chart has its own selector for revenue, gross profit, net profit or ingredient costs including seasonings. Weekday averages count only dates with records.
 - Operating, expense and customer statistics show the selected period, how many days have records and the previous-month comparison. Users can trace the largest expense category, profitable recorded days, differences between saved and itemized fixed expenses, and the busiest customer day back to the source records.
 - Trends switch between lines and bars and show the mean, range and number of observations. Sorting and filtering apply to the entire detail table, its totals and the CSV export. Charts adapt to the screen width and expose exact values by mouse, touch or keyboard. On desktop, the statistics window shows the active filters, folds away detail sections and exports the current selection even when its table is hidden.
 
@@ -35,7 +36,7 @@ Both views label the figure **Estimated month-end profit/loss** with **(based on
 
 - English browser mode covers forms, reports, charts, dialogs, errors and audit summaries. Book names, dish names, notes and other user-entered text keep their original wording. Currency remains CNY. The native app uses Chinese.
 - On the cash sheet, **Add an item → Force balance adjustment** sets the actual balance on a selected date. The adjustment changes the cash balance without adding operating revenue or expense. Earlier transactions stay in the ledger, and historically locked entries keep their protection.
-- The browser build is `20261111-forecast-costs-r2`. The application and API version is v1.0.2. Deployment verification checks the browser revision, asset URLs and file hashes. [Deployment guide](docs/DEPLOYMENT.md) · [Engineering reference and formulas](docs/ENGINEERING_REFERENCE.md)
+- The browser build is `20261111-live-forecast-r2`. The application and API version is v1.0.2. Deployment verification checks the browser revision, asset URLs and file hashes. [Deployment guide](docs/DEPLOYMENT.md) · [Engineering reference and formulas](docs/ENGINEERING_REFERENCE.md)
 
 ## 2026 Nov 07 V1.0.1
 

@@ -4,19 +4,37 @@
 
 A restaurant bookkeeping system with a responsive browser interface, a FastAPI/PostgreSQL backend and a Python desktop client. It connects income, expenses, purchasing, inventory, dish consumption and operating reports.
 
-Current version: **v1.0.2**. Browser build revision: **`20261111-forecast-costs-r2`**. Historical source is retained on `old/v1.0.0` and `old/V1.0.1`; the original V1.0.0 program uses the internal name `Oct30LingChen`.
+Current version: **v1.0.2**. Browser build revision: **`20261111-live-forecast-r2`**. Historical source is retained on `old/v1.0.0` and `old/V1.0.1`; the original V1.0.0 program uses the internal name `Oct30LingChen`.
 
 ## Features
 
 - Independent ledgers, store income channels, user roles and time-limited editing permissions.
 - Income, customer counts, purchases, fixed expenses, cash transactions and Excel exchange.
 - Ingredient receipts, issues, losses, stocktakes and FIFO lot costs, with explicit unknown-price quantities.
-- Five dashboard metrics and a monthly report with the same month-end estimate. The estimate projects revenue through month-end and compares fixed, ingredient and other costs with the previous month. Hover over or select **i** for the calculation. Completed months show actual net profit.
+- Five dashboard metrics and a full monthly report. Both use revenue through yesterday and costs saved through today to estimate month-end profit. Open **i** to compare last month’s and this month’s figures and see which was used for each cost. Completed months show actual net profit.
+- The daily trend and weekday averages open on revenue. Each chart can independently show revenue, gross profit, net profit or ingredient costs including seasonings.
 - Operating, expense and customer statistics with links to the underlying records.
 - Responsive desktop/mobile charts, filtering, sorting and CSV export.
 - Chinese and English browser interfaces that preserve user names and notes. The native desktop interface is Chinese.
 
 Money uses Python `Decimal` and a browser decimal runtime backed by `BigInt`. Purchasing expense and FIFO consumption cost are separate accounting bases. The [engineering reference](docs/ENGINEERING_REFERENCE.md) documents formulas, modules, APIs, tables and development contracts.
+
+## Dashboard preview
+
+These screenshots use a synthetic ledger. The daily trend and weekday averages both open on revenue. Each chart has its own selector for revenue, gross profit, net profit, or ingredient and seasoning costs.
+
+![October daily revenue with a selected day and its amount in CNY](docs/images/daily-revenue-en.png)
+
+![Average revenue by weekday with Saturday selected and its mean in CNY](docs/images/weekday-revenue-en.png)
+
+<details>
+<summary>View the cost inputs behind the November forecast</summary>
+
+The forecast help compares October and November for each cost. In this example, October supplies the fixed cost and November supplies both daily variable-cost rates.
+
+<img src="docs/images/forecast-inputs-en.png" alt="October and November cost inputs and the selected source month for each cost" width="400">
+
+</details>
 
 ## Run a new instance
 
@@ -105,7 +123,7 @@ The archive has a `restaurant-cloud-v1.0.2/` root and contains `api/`, `web_fron
 
 `deploy/verify_release_files.py` compares installed API/static files with a supplied release and checks the API health, version and required routes. `deploy/verify_deployment.py` captures PostgreSQL records in a read-only transaction and compares before/after evidence without printing payloads. The latter checks deployment preservation, not whether every user workflow is correct. Both need an explicitly chosen private evidence directory in the documented commands.
 
-Write generated logs, screenshots, CSV exports, build manifests and deployment evidence into ignored directories such as `work/` or `dist/`. Application bundles, ZIPs, business data and runtime credentials stay outside the source repository. Test scripts, synthetic fixtures, reusable build tools and third-party license notices remain version controlled.
+Write generated logs, QA screenshots, CSV exports, build manifests and deployment evidence into ignored directories such as `work/` or `dist/`. Application bundles, ZIPs, business data and runtime credentials stay outside the source repository. Test scripts, synthetic fixtures, reusable build tools and third-party license notices remain version controlled.
 
 Browser acceptance, desktop tests, macOS universal rebuilding and complete-distribution packaging are documented in the [engineering reference](docs/ENGINEERING_REFERENCE.md).
 

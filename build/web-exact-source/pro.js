@@ -284,7 +284,6 @@ function bindProUI(){
   $("clearPurchaseIngredients").addEventListener("click",()=>{proSelectedPurchase=[];$("purchaseIngredients").innerHTML=escapeHtml(systemMessage("选择食材（不选则看经营指标）"));renderStats();});
   $("clearConsumptionIngredients").addEventListener("click",()=>{proSelectedConsumption=[];$("consumptionIngredients").innerHTML=escapeHtml(systemMessage("选择消耗食材（未选择）"));renderStats();});
   document.querySelectorAll("[data-stats-metrics]").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll("#statsMetricChecks input").forEach(i=>i.checked=b.dataset.statsMetrics==="all");if(b.dataset.statsMetrics==="none")document.querySelector('#statsMetricChecks input[value="net"]').checked=true;renderStats();}));document.querySelectorAll("[data-stats-views]").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".stats-view-check").forEach(i=>i.checked=b.dataset.statsViews==="all"||(b.dataset.statsViews==="table"&&i.value==="table"));renderStats();}));
-  ["selectedDate","selectedMonth","selectedYear","trendMetric"].forEach(id=>$(id)?.addEventListener("change",()=>setTimeout(fitDashboardMonthChart,0)));
   document.addEventListener("click",event=>{const button=event.target.closest?.("[data-expand-chart]");if(button)toggleChartExpanded(button);});
   document.addEventListener("keydown",event=>{if(event.key==="Escape")closeExpandedCharts();});
 }
@@ -713,12 +712,8 @@ function exportStatsCsv(){
 }
 function selectStatIngredients(type){const selected=type==="purchase"?proSelectedPurchase:proSelectedConsumption,current=selected.join(", ");openItemPicker("食材",current,items=>{const names=[...new Set(items.map(i=>i.name).filter(Boolean))];if(type==="purchase"){proSelectedPurchase=names;proSelectedConsumption=[];$("consumptionIngredients").innerHTML=escapeHtml(systemMessage("选择消耗食材（未选择）"));}else{proSelectedConsumption=names;proSelectedPurchase=[];$("purchaseIngredients").innerHTML=escapeHtml(systemMessage("选择食材（不选则看经营指标）"));}$(type==="purchase"?"purchaseIngredients":"consumptionIngredients").innerHTML=names.length?userHtml(names.join("、")):escapeHtml(systemMessage(type==="purchase"?"选择食材（不选则看经营指标）":"选择消耗食材（未选择）"));renderStats();});}
 
-function fitDashboardMonthChart(){if(!$("trendChart")||!$("selectedYear")?.value)return;const year=Number($("selectedYear").value),month=Number($("selectedMonth").value),key=$("trendMetric").value,lookup=new Map(state.days.filter(r=>String(r.日期).startsWith(`${year}-${String(month).padStart(2,"0")}`)).map(r=>[Number(String(r.日期).slice(8)),dayMetrics(r)])),points=[];for(let day=1;day<=daysInMonth(year,month);day++){const m=lookup.get(day),value=m?(key==="revenue"?m.revenue:key==="food"?m.food+m.spice:key==="gross"?m.gross:m.net):0;points.push({date:`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`,value,revenue:m?.revenue||0});}$("trendChart").classList.add("fit-month-chart");$("trendChart").innerHTML=proLineSvg(points,true,key);bindInteractiveChart($("trendChart"));const hint=$("trendChart").parentElement.querySelector(".chart-hint");if(hint)hint.textContent="整月 1–"+points.length+" 日已生成；悬停或点按查看，左右拖动浏览";}
-
-const proOriginalRenderDashboard=renderDashboard;
-renderDashboard=function(){proOriginalRenderDashboard();fitDashboardMonthChart();};
 const proOriginalApplyLanguage=applyLanguage;
-applyLanguage=function(){proOriginalApplyLanguage();document.querySelectorAll("[data-pro-metric]").forEach(node=>{const item=proStatsMetrics[node.dataset.proMetric];if(item)node.textContent=item[state.language==="en"?1:0];});setTimeout(fitDashboardMonthChart,0);};
+applyLanguage=function(){proOriginalApplyLanguage();document.querySelectorAll("[data-pro-metric]").forEach(node=>{const item=proStatsMetrics[node.dataset.proMetric];if(item)node.textContent=item[state.language==="en"?1:0];});};
 const proOpenItemPickerV24=openItemPicker;
 openItemPicker=function(category,current,callback,title=""){proOpenItemPickerV24(category,current,callback,title);const body=document.querySelector(".selector-dialog .modal-body");if(!body||body.querySelector("[data-picker-search]"))return;const search=document.createElement("input");search.type="search";search.placeholder=`搜索${category}名称`;search.dataset.pickerSearch="true";search.className="picker-search-input";body.insertBefore(search,body.firstChild);search.addEventListener("input",()=>{const q=search.value.trim().toLocaleLowerCase("zh-CN");body.querySelectorAll("tbody tr").forEach(row=>{const name=row.querySelector("[data-pick-name]")?.textContent||"";row.hidden=Boolean(q&&!name.toLocaleLowerCase("zh-CN").includes(q));});});};
 function renderForecastBannerV24(){
@@ -787,4 +782,4 @@ saveInventory=async function(){await proSaveInventoryWithBaseline();if(!readEdit
 
 installProUI();
 applyLanguage();
-if(state.token){const role=state.user?.role||"viewer";$("ledgerPermission").textContent=["admin","editor"].includes(role)?"可修改":"只读账号";refreshOpenEditors();setTimeout(fitDashboardMonthChart,0);}
+if(state.token){const role=state.user?.role||"viewer";$("ledgerPermission").textContent=["admin","editor"].includes(role)?"可修改":"只读账号";refreshOpenEditors();}

@@ -26,18 +26,18 @@ async function chartGeometry(page,tag){
   for(const item of result){assert(item.ticks.length>0,tag+' no x ticks');assert.deepEqual(item.overlaps,[],tag+' overlap '+JSON.stringify(item));assert.deepEqual(item.outside,[],tag+' clipped labels');}
   report.charts.push({tag,charts:result});
 }
-async function seedLedger(){
+async function seedLedger(keepPolling=false){
    const rows=[];
    for(const [month,count,revenue,food]of [['09',30,1500,900],['10',31,2000,700],['11',10,2600,800]]){
     for(let i=1;i<=count;i++){
      const day=`2026-${month}-${String(i).padStart(2,'0')}`;
-     rows.push({record_type:'day',record_key:day,version:1,payload:{daily:[{'日期':day,'收益':String(revenue),'食材成本':String(food),'佐料成本':'50','总客人数':'45'}],fixed_expenses:i%3===1?[{'日期':day,'类别':i===1?'人工':i===4?'房租':i===7?'水费':i===10?'电费':i===13?'煤气费':'其它固定成本','明细':'Synthetic acceptance expense','金额':String(100+i*10)}]:[]}});
+     rows.push({record_type:'day',record_key:day,version:1,payload:{daily:[{'日期':day,'收益':String(revenue),'食材成本':String(food),'食材明细':JSON.stringify([{name:'Synthetic staple',quantity:1,unit:'公斤',price:String(food),total:String(food)}]),'佐料成本':'50','总客人数':'45'}],fixed_expenses:i%3===1?[{'日期':day,'类别':i===1?'人工':i===4?'房租':i===7?'水费':i===10?'电费':i===13?'煤气费':'其它固定成本','明细':'Synthetic acceptance expense','金额':String(100+i*10)}]:[]}});
     }
     rows.push({record_type:'month',record_key:`2026-${month}`,version:1,payload:{monthly_fixed:[{'月份':`2026-${month}`,'人工总额':'6000','房租总额':'8000','水费支出':'400','电费支出':'600','煤气费':'300'}]}});
    }
    rows.push({record_type:'global',record_key:'cash_position',version:1,payload:{opening_balance:'1000.00',opening_date:'2026-09-01',transactions:[{id:'historical-lock',date:'2026-10-01',type:'余额强制修改',amount:'5000',mode:'force',system_locked:true,created_at:'2026-10-01T12:00:00Z'}]}});
    const originalApi=api;api=async function(url,options){if(url==='/devices/register')return {id:'synthetic-browser-device',device_id:'synthetic-browser-device'};if(url.endsWith('/cash-position'))return {opening_balance:'1000.00',summary_month:'2026-11'};return originalApi(url,options);};
-   previewRecordStores.set('preview',rows);setSession('preview',previewUser);await enterApp();clearInterval(state.autoRefresh);state.autoRefresh=null;
+   previewRecordStores.set('preview',rows);setSession('preview',previewUser);await enterApp();if(!keepPolling){clearInterval(state.autoRefresh);state.autoRefresh=null;}
 }
 (async()=>{
  const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
@@ -61,7 +61,7 @@ async function seedLedger(){
   await page.locator('#o30DashboardDetails').evaluate(e=>e.open=true);
   const monthly=await page.locator('#monthCard').textContent();
   assert(monthly.includes('(根据 本月预计成本 和 本月预计收入 计算)'));
-  assert(monthly.includes('37,200.00'));assert(cards[2].includes('37,200.00'));assert(monthly.includes('平本 需要 日均收入 增加'));
+  assert(monthly.includes('34,366.67'));assert(cards[2].includes('34,366.67'));assert(monthly.includes('平本 需要 日均收入 增加'));
   const netRows=await page.locator('#monthCard .metric-row').evaluateAll(es=>es.filter(e=>['净利润 (净利率)','日均净利润 (净利率)'].includes(e.querySelector('span')?.textContent)).map(e=>e.textContent));
   assert.equal(netRows.length,2);assert(netRows.every(row=>row.includes('(8.5%)')),JSON.stringify(netRows));report.monthlyNetRows=netRows;
   await page.locator('#monthCard').screenshot({path:path.join(out,'monthly-report-current.png')});
@@ -75,6 +75,8 @@ async function seedLedger(){
     assert(formulas.includes(lang==='zh'?'预计其他成本':'Other costs = total costs'));
     assert(formulas.includes(lang==='zh'?'含佐料':'including seasonings'));
     assert(formulas.includes(lang==='zh'?'零时':'midnight'));
+    assert(formulas.includes(lang==='zh'?'今日':'today')||formulas.includes('今天已保存'));
+    for(const entry of lang==='zh'?['预计月底盈亏 = 本月预计收入 − 本月预计成本。\n\n本月预计收入','。\n\n预计固定成本','固定成本)\n\n上月日均','两月持平','944.4444 元/天','8,500.00 元 ÷ 9','采用 2026-11']:['Cost inputs for this forecast','Tie','944.4444/day','CNY 8,500.00 ÷ 9','Selected 2026-11'])assert(formulas.includes(entry),entry+' missing in '+formulas);
     await popup.hover();assert.equal(await trigger.getAttribute('aria-expanded'),'true');
     await page.keyboard.press('Escape');await popup.waitFor({state:'hidden'});
     await trigger.focus();await popup.waitFor({state:'visible'});
@@ -112,7 +114,63 @@ async function seedLedger(){
   await page.setViewportSize({width:1600,height:1100});await selectMonth(page,'10');
   const closed=await page.locator('[data-overview-metric="forecast"] strong').textContent();assert(closed.includes('23,450.00'),closed);
   report.closedMonthActual=closed;
+  const closedHelp=await page.locator('#forecast-help-overview').textContent();
+  assert(closedHelp.includes('实际收入 62,000.00 元 − 实际总成本 38,550.00 元 = 23,450.00 元'));
+  assert(closedHelp.includes('两月成本对照（仅供参考）'));assert(!closedHelp.includes('采用 '));
   await page.locator('#o30Overview').screenshot({path:path.join(out,'homepage-closed-october.png')});
+  // Use the normal ingredient editor and its save callback. Mutate only the
+  // synthetic remote store for the second update and let the live poll apply it.
+  const liveContext=await browser.newContext({viewport:{width:1600,height:1000},timezoneId:'Asia/Shanghai'});
+  await liveContext.route(/^https?:\/\//,r=>r.abort());
+  const live=await liveContext.newPage();live.on('pageerror',e=>report.errors.push(e.message));
+  await live.clock.setFixedTime(new Date('2026-11-10T12:00:00+08:00'));
+  await live.goto(pathToFileURL(path.join(source,'web/index.html')).href);await live.evaluate(seedLedger,true);
+  await live.locator('#selectedDate').fill('2026-10-20');
+  await live.locator('#selectedMonth').selectOption('11');
+  const liveProfit=live.locator('[data-overview-metric="forecast"] strong');
+  const reportProfit=live.locator('#monthCard .forecast-row').nth(1).locator('strong');
+  const startProfit=await liveProfit.textContent();assert(startProfit.includes('34,366.67'),startProfit);
+  await live.locator('button[data-page="food"]').click();
+  await live.locator('#foodDate').fill('2026-11-10');
+  await live.locator('#addFoodRowButton').click();
+  const purchase=live.locator('#foodRows tr').last();
+  await purchase.locator('[data-detail="name"]').fill('Synthetic greens');
+  await purchase.locator('[data-detail="quantity"]').fill('3');
+  await purchase.locator('[data-detail="unit"]').selectOption({label:'公斤'});
+  await purchase.locator('[data-detail="price"]').fill('30.00');
+  await live.locator('#saveFoodButton').click();
+  await live.waitForFunction(()=>document.querySelector('#foodResult').textContent.includes('已保存到云端'));
+  const afterSave=await liveProfit.textContent();assert(afterSave.includes('34,066.67'),afterSave);
+  assert.equal(await reportProfit.textContent(),afterSave);
+  const saved=await live.evaluate(()=>previewRecords('preview').find(r=>r.record_key==='2026-11-10').payload.daily[0]);
+  assert.equal(saved.食材成本,'890.00');assert(saved.食材明细.includes('Synthetic greens'));
+  await live.locator('button[data-page="overview"]').click();
+  await live.locator('.forecast-info-button[aria-describedby="forecast-help-overview"]').focus();
+  const livePanel=live.getByRole('tooltip');await livePanel.waitFor({state:'visible'});
+  assert((await livePanel.innerText()).includes('8,590.00 元 ÷ 9'));
+  await live.evaluate(()=>{
+    const records=structuredClone(previewRecords('preview')),today=records.find(r=>r.record_key==='2026-11-10');
+    today.version+=1;today.payload.daily[0].其他='60.00';today.payload.daily[0].收益='52600.00';
+    previewRecordStores.set('preview',records);
+  });
+  await live.waitForFunction(()=>document.querySelector('[data-overview-metric="forecast"] strong').textContent.includes('33,866.67'),null,{timeout:15000});
+  const afterSync=await liveProfit.textContent();assert.equal(await reportProfit.textContent(),afterSync);
+  assert((await livePanel.innerText()).includes('60.00 元 ÷ 9'));
+  const revenueAfterSync=await live.locator('#monthCard .forecast-row').first().locator('strong').textContent();
+  assert(revenueAfterSync.includes('78,000.00'),revenueAfterSync);
+  report.liveCosts={startProfit,todayPurchase:{cost:'90.00',savedTotal:saved.食材成本,afterSave},remoteChange:{other:'60.00',todayRevenueIncrease:'50000.00',revenueAfterSync,afterSync},updatedBothLocations:true,selectedReportMonthPreserved:true,activePopupUpdatedByPoll:true};
+  await live.locator('button[data-page="stats"]').click();await live.locator('#oaAdvanced>summary').click();
+  const advancedButton=live.locator('#statsForecastBanner .forecast-info-button');
+  await advancedButton.scrollIntoViewIfNeeded();await advancedButton.focus();await livePanel.waitFor({state:'visible'});
+  assert((await livePanel.innerText()).includes('60.00 元 ÷ 9'));
+  await live.evaluate(()=>{
+    const remote=structuredClone(previewRecords('preview')),r=remote.find(r=>r.record_key==='2026-11-10');
+    r.version++;r.payload.daily[0].其他='120.00';previewRecordStores.set('preview',remote);
+  });
+  await live.waitForFunction(()=>document.querySelector('#forecast-help-popup').textContent.includes('120.00 元 ÷ 9'),null,{timeout:15000});
+  assert(await advancedButton.evaluate(b=>b===document.activeElement&&b.getAttribute('aria-expanded')==='true'));
+  assert(await livePanel.isVisible());report.liveCosts.advancedAnalyticsPopupAndFocusUpdatedByPoll=true;
+  await liveContext.close();
   // Pause a fresh browser clock before page load so the application's actual
   // midnight timeout is installed. Its five-second polling fallback is not due.
   const timedContext=await browser.newContext({timezoneId:'Asia/Shanghai'});
@@ -155,6 +213,7 @@ async function seedLedger(){
      const button=touch.locator(`.forecast-info-button[aria-describedby="forecast-help-${scope}"]`),panel=touch.getByRole('tooltip');
      await button.tap();await panel.waitFor({state:'visible'});
      assert((await panel.innerText()).includes(lang==='zh'?'日历天数':'calendar days'));
+     assert.equal(await panel.evaluate(e=>e.scrollTop),0,'opening another explanation starts with its formula');
      const box=await panel.boundingBox(),target=await button.boundingBox();
      assert(target.width>=44&&target.height>=44,`small tap target at ${width}`);
      assert(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=height+1,`clipped ${scope} at ${width}`);
