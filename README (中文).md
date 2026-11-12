@@ -4,7 +4,7 @@
 
 包含自适应网页、FastAPI/PostgreSQL 后端和 Python 桌面客户端的餐饮记账系统，将收入、费用、采购、库存、菜品消耗和经营报表关联起来。
 
-当前版本为 **v1.0.2**，网页构建修订为 **`20261111-live-forecast-r2`**。历史源码保留在 `old/v1.0.0` 和 `old/V1.0.1`；其中 V1.0.0 原程序内部名称为 `Oct30LingChen`。
+当前版本为 **v1.0.2**，网页构建修订为 **`20261112-cost-ring`**。历史源码保留在 `old/v1.0.0` 和 `old/V1.0.1`；其中 V1.0.0 原程序内部名称为 `Oct30LingChen`。
 
 ## 主要功能
 
@@ -27,12 +27,14 @@
 
 ![十月各星期平均营业收入，选中周六后显示平均金额](docs/images/weekday-revenue-zh.png)
 
+<img src="docs/images/cost-ring-zh.png" alt="手机上的开销构成：圆心为总成本金额，图例列出各类别金额和占比" width="390">
+
 <details>
-<summary>查看十一月预计月底盈亏所用的成本</summary>
+<summary>查看十一月预计月底盈亏所用的成本和收入</summary>
 
-预测说明会逐项比较十月与十一月的成本。图中固定成本取自十月，日均食材成本和日均其他成本取自十一月。
+预测说明会逐项比较十月与十一月的成本。图中固定成本取自十月，日均食材成本和日均其他成本取自十一月。底部三行分别给出十一月的预计日均总成本、预计总成本和预计收入。
 
-<img src="docs/images/forecast-inputs-zh.png" alt="十月和十一月的成本金额、日均值以及每项采用的来源月份" width="400">
+<img src="docs/images/forecast-inputs-zh.png" alt="十月与十一月成本的比较、每项取值及本月预计日均总成本、预计总成本和预计收入" width="400">
 
 </details>
 

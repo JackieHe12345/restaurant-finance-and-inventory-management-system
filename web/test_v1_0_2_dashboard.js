@@ -143,6 +143,34 @@ check('projecting before rounding preserves exact half cents for daily costs and
   assert.equal(format(f.revenue),'0.03');assert.equal(format(f.cost),'0.03');assert.equal(format(f.net),'0.00');
   state.months.set('2026-10',{});state.months.set('2026-11',{});clock=[2026,10,10,12];activeMetrics=metrics;
 });
+check('the three-line forecast footer uses the full calendar month and divides before rounding',()=>{
+  state.months.set('2026-10',{fixed:0});state.months.set('2026-11',{fixed:'0.07'});
+  clock=[2026,10,5,12];activeMetrics=[metric('2026-11-01','0.21','0.01','0.20','0.01')];
+  const f=c.monthForecastV102(2026,11);
+  assert.equal(f.cost.toString(),'0.145');
+  for(const scope of ['overview','report','stats']){
+    const label=c.forecastLabelV102(scope,f);
+    assert.ok(label.endsWith('\n\n本月预计日均总成本：0.00/天\n本月预计总成本：0.15\n本月预计收入：1.58</span>'),label);
+  }
+  // Saturday: Friday closes the sixth calendar day, though only Sunday has a ledger row.
+  clock=[2026,10,7,12];state.months.set('2026-11',{fixed:0});
+  activeMetrics=[metric('2026-11-01','0.21','0.03','0.18','0.03')];
+  const weekend=c.monthForecastV102(2026,11);
+  assert.equal(weekend.dailyCost.toString(),'0.005');
+  state.language='en';
+  assert.ok(c.forecastLabelV102('overview',weekend).endsWith('\n\nProjected average daily total cost: 0.01/day\nProjected monthly total cost: 0.15\nProjected monthly revenue: 1.05</span>'));
+  state.language='zh';state.months.set('2026-10',{});state.months.set('2026-11',{});clock=[2026,10,10,12];activeMetrics=metrics;
+});
+check('the footer keeps independent unknowns and labels closed-month actuals, including a known zero',()=>{
+  state.months.delete('2026-10');activeMetrics=[metric('2026-11-01',90,10,80,10)];
+  const footer=(year,month)=>c.forecastLabelV102('report',c.monthForecastV102(year,month)).split('\n\n').pop();
+  assert.equal(footer(2026,11),'本月预计日均总成本：—\n本月预计总成本：—\n本月预计收入：300.00</span>');
+  assert.equal(footer(2026,12),'本月预计日均总成本：—\n本月预计总成本：—\n本月预计收入：—</span>');
+  assert.equal(footer(2026,10),'本月实际日均总成本：—\n本月实际总成本：—\n本月实际收入：—</span>');
+  state.months.set('2026-10',{fixed:'1.00'});
+  assert.equal(footer(2026,10),'本月实际日均总成本：0.03/天\n本月实际总成本：1.00\n本月实际收入：0.00</span>');
+  state.months.set('2026-10',{});activeMetrics=metrics;
+});
 check('28 elapsed days preserve positive and negative half cents after combining recurring rates',()=>{
   clock=[2026,10,29,12];state.months.set('2026-10',{fixed:0});state.months.set('2026-11',{fixed:0});
   for(const [income,ingredient,other,exact,display] of [

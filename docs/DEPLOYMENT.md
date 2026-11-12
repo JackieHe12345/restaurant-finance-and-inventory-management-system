@@ -1,6 +1,6 @@
 # restaurant-finance-and-inventory-management-system deployment guide
 
-> This guide applies to v1.0.2 and build `20261111-live-forecast-r2`. See the [engineering reference](ENGINEERING_REFERENCE.md) for module, data and build contracts.
+> This guide applies to v1.0.2 and build `20261112-cost-ring`. See the [engineering reference](ENGINEERING_REFERENCE.md) for module, data and build contracts.
 
 [Back to README](../README.md) · English | [简体中文](DEPLOYMENT.zh-CN.md)
 
@@ -253,11 +253,11 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 
 ### Same-version build revisions
 
-A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261111-live-forecast-r2"` and uses `v1.0.2-20261111-live-forecast-r2` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
+A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261112-cost-ring"` and uses `v1.0.2-20261112-cost-ring` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
 
 Before deploying, recheck the target instance and create database, program and runtime-configuration backups. Operators should retain actual server identities, configuration values, backup paths and per-deployment evidence privately. This repository provides reusable procedures and verification tools.
 
-After file verification, reload an existing browser tab. Open the dashboard in a fresh tab and check that both the daily trend and weekday chart show revenue. Change only the weekday selector to ingredients and check that the daily trend still shows revenue. For the same book and month, open **i** on both the dashboard card and the full monthly report. Compare the two months’ fixed costs, daily ingredient costs and daily other costs, then check a completed month against its actual net profit.
+After file verification, reload an existing browser tab. Open the dashboard in a fresh tab and check that both the daily trend and weekday chart show revenue. Change only the weekday selector to ingredients and check that the daily trend still shows revenue. For the same book and month, open **i** on both the dashboard card and the full monthly report. Compare the two months’ fixed costs, daily ingredient costs and daily other costs, then read the three totals at the end. Both views must show the same projected daily total cost, total cost and revenue. Check that a completed month labels the three values as actuals and that its net equals actual revenue less actual total cost. At phone width, open the cost breakdown for a day with several expenses. Check the ring and legend colors match and the amount and unit sit together in the center.
 
 To test saving, use a disposable book with previous-month costs and current revenue dated before today. Save a grocery purchase dated today large enough to make this month’s daily ingredient cost exceed last month’s. The two views should switch the ingredient source and show the revised projection. Save revenue dated today and confirm projected revenue still reflects entries through yesterday. See the numerical example in the engineering reference for expected results.
 

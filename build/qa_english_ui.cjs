@@ -4,7 +4,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const fs=require('fs'),path=require('path'),assert=require('node:assert/strict'),{pathToFileURL}=require('url');
 const source=path.resolve(process.env.RELEASE_SOURCE_ROOT||path.join(__dirname,'..')),out=process.env.QA_OUTPUT_DIR;
 if(!out)throw new Error('QA_OUTPUT_DIR is required');fs.mkdirSync(out,{recursive:true});
-const report={revision:'20261111-live-forecast-r2',data:'synthetic only',network:'blocked',pages:[],dialogs:[],errors:[]};
+const report={revision:'20261112-cost-ring',data:'synthetic only',network:'blocked',pages:[],dialogs:[],errors:[]};
 async function settle(page){await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));}
 async function scan(page,tag){await settle(page);const result=await page.evaluate(()=>{
  const texts=[],walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);

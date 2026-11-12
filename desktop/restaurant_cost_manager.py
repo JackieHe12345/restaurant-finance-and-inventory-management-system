@@ -274,6 +274,7 @@ matplotlib.rcParams['axes.unicode_minus'] = False
 import pandas as pd
 from openpyxl import load_workbook
 from matplotlib.figure import Figure
+from matplotlib.text import Text
 from matplotlib.ticker import FuncFormatter
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtWidgets import QScrollArea
@@ -5501,7 +5502,8 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
         summary = summary_for(y, m)
         values = dict(avg_revenue=None, avg_gross=None, gross_margin=None,
                       avg_net=None, net_margin=None, projected_net=None, net=None,
-                      projected_revenue=None, break_even_increase=None, is_closed=False, forecast_status='暂无经营数据')
+                      projected_revenue=None, projected_cost=None, projected_daily_cost=None,
+                      break_even_increase=None, is_closed=False, forecast_status='暂无经营数据')
         prior = datetime(y, m, 1) - timedelta(days=1)
         prior_summary = summary_for(prior.year, prior.month)
         closed = (y, m) < (reference.year, reference.month)
@@ -5524,6 +5526,8 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
         net_numerator, denominator = None, 1
         if values['is_closed']:
             values['projected_revenue'] = month_revenue
+            values['projected_cost'] = values['actual_cost']
+            values['projected_daily_cost'] = decimal_divide(values['actual_cost'], days)
             values['projected_net'] = values['net']
             net_numerator = values['net']
             if net_numerator >= 0:
@@ -5557,8 +5561,10 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
                 denominator = elapsed * prior.day
                 ingredient_numerator = inputs['ingredients']['numerator']
                 other_numerator = inputs['other']['numerator']
-                variable_margin = revenue * prior.day - ingredient_numerator - other_numerator
-                net_numerator = variable_margin * days - fixed * denominator
+                cost_numerator = fixed * denominator + (ingredient_numerator + other_numerator) * days
+                net_numerator = revenue * prior.day * days - cost_numerator
+                values['projected_cost'] = decimal_divide(cost_numerator, denominator)
+                values['projected_daily_cost'] = decimal_divide(cost_numerator, denominator * days)
                 values['projected_net'] = decimal_divide(net_numerator, denominator)
                 values['forecast_status'] = ''
             else:
@@ -8971,6 +8977,14 @@ class ForecastInfoButton(QToolButton):
                     month = {'tie': '两月持平', 'previous': prior, 'current': current}[chosen]
                     prefix = '较高值' if closed or not available else '采用'
                     lines.append(f"{prefix} {month}　{format_amount(source)}")
+        basis = "实际" if values.get('is_closed') else "预计"
+        lines.append("")
+        for label, key, unit in (("日均总成本", "projected_daily_cost", "元/天"),
+                                 ("总成本", "projected_cost", "元"),
+                                 ("收入", "projected_revenue", "元")):
+            amount = values.get(key)
+            display = f"{amount:,.2f} {unit}" if amount is not None else "—"
+            lines.append(f"本月{basis}{label}：{display}")
         text = "\n".join(lines)
         self.setToolTip(text)
         self.setAccessibleDescription(text)
@@ -11327,7 +11341,42 @@ def fmt_margin(val, rev):
 
 
 # ===================== 仪表盘页面 =====================
+class CostRingText(Text):
+    """Keep the center text inside the hole as the dashboard canvas resizes."""
+
+    def __init__(self, y, text, size, **style):
+        super().__init__(0, y, text, ha='center', va='center', fontsize=size, **style)
+        self.preferred_size = size
+
+    def draw(self, renderer):
+        self.set_fontsize(self.preferred_size)
+        bounds = self.get_window_extent(renderer)
+        # These dimensions are in ring coordinates, where the outer radius is 1.
+        width = 1.18 if self.get_position()[1] == 0 else 1.0
+        origin, limit = self.axes.transData.transform([(0, 0), (width, 0.25)])
+        scale = min(1, (limit[0] - origin[0]) / bounds.width,
+                    (limit[1] - origin[1]) / bounds.height)
+        self.set_fontsize(self.preferred_size * scale)
+        super().draw(renderer)
+
+
 class DashboardTab(QWidget):
+    _expense_colors = {
+        label: color for color, labels in (
+            ('#2563EB', ('食材成本',)),
+            ('#EA580C', ('佐料成本',)),
+            ('#0891B2', ('日结水电',)),
+            ('#C02681', ('其他',)),
+            ('#9333EA', ('手续费／抽成',)),
+            ('#15803D', ('人工分摊', '人工总额(分摊)')),
+            ('#CA8A04', ('房租分摊', '房租总额(分摊)')),
+            ('#0F766E', ('水费分摊（实际使用）', '水费分摊（支出）', '水费(实际使用分摊)', '水费(支出分摊)')),
+            ('#4338CA', ('电费分摊（实际使用）', '电费分摊（支出）', '电费(实际使用分摊)', '电费(支出分摊)')),
+            ('#DC2626', ('月煤气分摊', '月煤气费(分摊)')),
+            ('#77850C', ('其它固定分摊', '其它固定成本(分摊)')),
+        ) for label in labels
+    }
+
     def __init__(self, read_excel_callback=None, create_user_excel_callback=None,
                  ensure_year_callback=None, move_internal_callback=None,
                  switch_internal_callback=None, merge_other_year_callback=None):
@@ -12041,38 +12090,38 @@ class DashboardTab(QWidget):
 
         self.update_charts(day_str, year, month, df_daily, df_fixed)
 
-    def update_charts(self, day_str, year, month, df_daily, df_fixed):
-        self.pie_canvas_day.figure.clear()
-        ax1 = self.pie_canvas_day.figure.add_subplot(111)
-        m_day = calc_day_metrics(day_str, df_daily, df_fixed)
-        if m_day and m_day['开销明细']:
-            values, keys = list(m_day['开销明细'].values()), list(m_day['开销明细'].keys())
-            total = sum(values)
-            labels = [f"{k}: {v:.1f}元 ({v / total * 100:.1f}%)" for k, v in zip(keys, values)]
-            wedges, _ = ax1.pie(list(map(float, values)), startangle=90, radius=0.9)
-            ax1.axis('equal')
-            ax1.set_title(f"{day_str} 开销占比")
-            ax1.legend(wedges, labels, loc="center left", bbox_to_anchor=(0.85, 0.5), fontsize=9)
+    def _draw_cost_ring(self, canvas, metrics, title, center_label, empty_label):
+        figure = canvas.figure
+        figure.clear()
+        figure.set_layout_engine('constrained')
+        axis = figure.add_subplot(111)
+        axis.set_axis_off()
+        figure.suptitle(title)
+        expenses = metrics.get('开销明细') if metrics else None
+        if expenses:
+            total = sum(expenses.values())
+            colors = [self._expense_colors.get(key, '#64748B') for key in expenses]
+            wedges, _ = axis.pie([float(value) for value in expenses.values()],
+                                 colors=colors, startangle=90, counterclock=False,
+                                 wedgeprops=dict(width=0.32, edgecolor='white', linewidth=1))
+            for y, text, size, weight, color in (
+                    (0.29, center_label, 9, 'normal', '#475569'),
+                    (0, f"{total:,.2f}", 14, 'semibold', '#17283C'),
+                    (-0.29, '元', 8, 'normal', '#475569')):
+                axis.add_artist(CostRingText(y, text, size, weight=weight, color=color))
+            labels = [f"{name}: {value:.1f}元 ({value / total * 100:.1f}%)"
+                      for name, value in expenses.items()]
+            axis.legend(wedges, labels, loc='center left', bbox_to_anchor=(1, 0.5),
+                        fontsize=8, frameon=False, handlelength=1, labelspacing=0.3)
         else:
-            ax1.text(0.5, 0.5, "当日无开销数据", ha='center', va='center')
-        self.pie_canvas_day.figure.tight_layout(pad=1.5);
-        self.pie_canvas_day.draw()
+            axis.text(0.5, 0.5, empty_label, transform=axis.transAxes, ha='center', va='center')
+        canvas.draw()
 
-        self.pie_canvas_month.figure.clear()
-        ax2 = self.pie_canvas_month.figure.add_subplot(111)
-        m_month = calc_month_summary(year, month, df_daily, df_fixed)
-        if m_month and m_month.get('开销明细'):
-            values, keys = list(m_month['开销明细'].values()), list(m_month['开销明细'].keys())
-            total = sum(values)
-            labels = [f"{k}: {v:.1f}元 ({v / total * 100:.1f}%)" for k, v in zip(keys, values)]
-            wedges, _ = ax2.pie(list(map(float, values)), startangle=90, radius=0.9)
-            ax2.axis('equal')
-            ax2.set_title(f"{year}年{month}月 累计开销占比")
-            ax2.legend(wedges, labels, loc="center left", bbox_to_anchor=(0.85, 0.5), fontsize=9)
-        else:
-            ax2.text(0.5, 0.5, "本月无开销数据", ha='center', va='center')
-        self.pie_canvas_month.figure.tight_layout(pad=1.5);
-        self.pie_canvas_month.draw()
+    def update_charts(self, day_str, year, month, df_daily, df_fixed):
+        self._draw_cost_ring(self.pie_canvas_day, calc_day_metrics(day_str, df_daily, df_fixed),
+                             f"{day_str} 开销占比", "总成本", "当日无开销数据")
+        self._draw_cost_ring(self.pie_canvas_month, calc_month_summary(year, month, df_daily, df_fixed),
+                             f"{year}年{month}月 累计开销占比", "图示开销合计", "本月无开销数据")
 
         month_rows = df_daily[df_daily['日期'].astype(str).str.startswith(f"{year}-{month:02d}-")]
         self.chart_month_data = {}

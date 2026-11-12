@@ -86,14 +86,21 @@ async function snapshotCharts(page, lang) {
   }
 }
 async function snapshotForecast(page, lang) {
+  const originalViewport=page.viewportSize();
+  await page.setViewportSize({width:originalViewport.width,height:1350});
   await chooseDate(page, '2026-11-11');
   const trigger = page.locator('[aria-describedby="forecast-help-overview"]');
   await trigger.scrollIntoViewIfNeeded();
   await trigger.click();
   const panel = page.locator('#forecast-help-popup');
   await panel.waitFor({state:'visible'});
-  const footer = lang === 'en' ? 'Selected' : '采用';
-  assert((await panel.innerText()).includes(footer));
+  const text=await panel.innerText();
+  const selected=lang==='en'?'Selected':'采用';
+  assert.equal(text.split('\n').filter(line=>line.startsWith(selected+' ')).length,3);
+  const totals=lang==='en'?
+    ['Projected average daily total cost: CNY 1,218.25/day','Projected monthly total cost: CNY 36,547.62','Projected monthly revenue: CNY 99,022.95']:
+    ['本月预计日均总成本：1,218.25 元/天','本月预计总成本：36,547.62 元','本月预计收入：99,022.95 元'];
+  assert(text.endsWith('\n\n'+totals.join('\n')),text);
   await panel.evaluate(e => e.scrollTop = e.scrollHeight);
   const heading=lang === 'en' ? 'Cost inputs for this forecast' : '本次估算的成本取值';
   const clip=await panel.evaluate((e,heading)=>{
@@ -101,12 +108,13 @@ async function snapshotForecast(page, lang) {
     if(start<0)throw new Error('Forecast cost heading missing');
     const range=document.createRange();range.setStart(node,start);range.setEnd(node,node.length);
     const box=e.getBoundingClientRect(), content=range.getBoundingClientRect();
-    if(content.y<box.y||content.bottom>box.bottom)throw new Error('Cost input block is clipped');
+    if(content.y<box.y||content.bottom>box.bottom)throw new Error('Selected cost inputs or forecast totals are clipped');
     const y=Math.floor(content.y-5);
     return {x:Math.ceil(box.x+2), y, width:Math.floor(box.width-4), height:Math.ceil(content.bottom-y+6)};
   },heading);
   await page.screenshot({clip,path:path.join(output,'forecast-inputs-' + lang + '.png')});
   await page.keyboard.press('Escape');
+  await page.setViewportSize(originalViewport);
 }
 async function run() {
   const browser = await chromium.launch({headless:true, executablePath:process.env.CHROME_EXECUTABLE});

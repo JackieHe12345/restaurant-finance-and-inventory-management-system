@@ -164,6 +164,10 @@ class MonthlyWidgets(unittest.TestCase):
             self.assertIn('实际净利润', stats.month_forecast_panel.status_label.text())
             text = stats.month_forecast_panel.net_info_button.toolTip()
             self.assertEqual(text, tab.headline_forecast_info.toolTip())
+            self.assertEqual(text, tab.month_forecast_panel.net_info_button.toolTip())
+            self.assertEqual(text.split('\n\n')[-1].splitlines(), [
+                '本月实际日均总成本：35.48 元/天', '本月实际总成本：1,100.00 元', '本月实际收入：1,000.00 元',
+            ])
             self.assertIn('实际净利润 -100.00 元', text)
             self.assertIn('实际总成本 1,100.00 元', text)
             self.assertIn('两月成本对照（仅供参考）', text)
@@ -239,6 +243,10 @@ class MonthlyWidgets(unittest.TestCase):
             SCOPE['_update_month_forecast'](stats)
             self.assertEqual(stats.month_forecast_panel.revenue_value.text(), '—')
             self.assertEqual(stats.month_forecast_panel.net_value.text(), '—')
+            for button in (tab.headline_forecast_info, tab.month_forecast_panel.net_info_button,
+                           stats.month_forecast_panel.net_info_button):
+                self.assertEqual(button.toolTip().split('\n\n')[-1].splitlines(),
+                                 ['本月预计日均总成本：—', '本月预计总成本：—', '本月预计收入：—'])
             stats.month_forecast_panel.close(); stats.month_forecast_panel.deleteLater()
         tab.close(); tab.deleteLater(); APP.processEvents()
 
@@ -437,6 +445,9 @@ class SavedForecastAndCharts(unittest.TestCase):
             refresh()
             purchase.refresh_data()
             self.assertEqual(dashboard.headline_values['projected_net'].text(), '3,300.00 元')
+            self.assertEqual(dashboard.headline_forecast_info.toolTip().split('\n\n')[-1].splitlines(), [
+                '本月预计日均总成本：1.11 元/天', '本月预计总成本：33.33 元', '本月预计收入：3,333.33 元',
+            ])
             purchase.table.item(0, 5).setText('100.00')
             self.assertEqual(dashboard.headline_values['projected_net'].text(), '3,300.00 元')
             purchase.btn_save.click()
@@ -453,7 +464,52 @@ class SavedForecastAndCharts(unittest.TestCase):
                 self.assertIn('两月持平', text)
                 self.assertIn('未保存', text)
                 self.assertEqual(text.split('\n\n')[0], '预计月底盈亏 = 本月预计收入 − 本月预计成本。')
+                self.assertEqual(text.split('\n\n')[-1].splitlines(), [
+                    '本月预计日均总成本：11.11 元/天', '本月预计总成本：333.33 元', '本月预计收入：3,333.33 元',
+                ])
                 self.assertEqual(text, panel.net_info_button.accessibleDescription())
+
+    def test_day_and_month_cost_rings_keep_exact_center_and_matched_legend(self):
+        from matplotlib.colors import to_hex
+        m = self.module
+        with patch.object(m.DashboardTab, 'refresh_all'):
+            tab = m.DashboardTab()
+        self.addCleanup(tab.deleteLater)
+        tab.date_edit.blockSignals(True)
+        tab.date_edit.setDate(QDate(2025, 10, 2))
+        tab.date_edit.blockSignals(False)
+        frame = m.pd.DataFrame([{'日期': '2025-10-02', '食材成本': '100.11', '佐料成本': '.10',
+                                 '其他': '2.22', '手续费': '5.55'}])
+        fixed = m.pd.DataFrame([{'月份': '2025-10', '房租总额': '310.00', '实际使用水费': '31'}])
+        tab.update_charts('2025-10-02', 2025, 10, frame, fixed)
+        for canvas, expected_text, expected_colors in (
+                (tab.pie_canvas_day, ['总成本', '118.98', '元'],
+                 ['#2563eb', '#ea580c', '#c02681', '#9333ea', '#ca8a04', '#0f766e']),
+                (tab.pie_canvas_month, ['图示开销合计', '443.43', '元'],
+                 ['#2563eb', '#ea580c', '#c02681', '#ca8a04', '#0f766e'])):
+            axis = canvas.figure.axes[0]
+            center = [label for label in axis.texts if label.get_text()]
+            self.assertEqual([label.get_text() for label in center], expected_text)
+            self.assertEqual([to_hex(w.get_facecolor()) for w in axis.patches], expected_colors)
+            self.assertEqual([to_hex(w.get_facecolor()) for w in axis.get_legend().legend_handles],
+                             expected_colors)
+            self.assertTrue(all(0 < w.width < w.r for w in axis.patches))
+            for width in (350, 640):
+                canvas.figure.set_size_inches(width / 100, 2.5)
+                canvas.draw()
+                x, y = axis.transData.transform((0, 0))
+                radius = axis.transData.transform((1 - axis.patches[0].width, 0))[0] - x
+                for label in center:
+                    box = label.get_window_extent(canvas.get_renderer())
+                    self.assertAlmostEqual(box.x0 + box.width / 2, x)
+                    for bx, by in box.corners():
+                        self.assertLess((bx - x)**2 + (by - y)**2, radius**2)
+        tab.update_charts('2025-11-01', 2025, 11, frame, fixed)
+        for canvas, empty_label in ((tab.pie_canvas_day, '当日无开销数据'), (tab.pie_canvas_month, '本月无开销数据')):
+            axis = canvas.figure.axes[0]
+            self.assertEqual([label.get_text() for label in axis.texts], [empty_label])
+            self.assertFalse(list(axis.patches))
+            self.assertIsNone(axis.get_legend())
 
     def test_independent_charts_use_revenue_by_default_and_exact_selected_series_on_hover(self):
         from types import SimpleNamespace

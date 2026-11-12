@@ -4,7 +4,7 @@
 
 A restaurant bookkeeping system with a responsive browser interface, a FastAPI/PostgreSQL backend and a Python desktop client. It connects income, expenses, purchasing, inventory, dish consumption and operating reports.
 
-Current version: **v1.0.2**. Browser build revision: **`20261111-live-forecast-r2`**. Historical source is retained on `old/v1.0.0` and `old/V1.0.1`; the original V1.0.0 program uses the internal name `Oct30LingChen`.
+Current version: **v1.0.2**. Browser build revision: **`20261112-cost-ring`**. Historical source is retained on `old/v1.0.0` and `old/V1.0.1`; the original V1.0.0 program uses the internal name `Oct30LingChen`.
 
 ## Features
 
@@ -27,12 +27,14 @@ These screenshots use a synthetic ledger. The daily trend and weekday averages b
 
 ![Average revenue by weekday with Saturday selected and its mean in CNY](docs/images/weekday-revenue-en.png)
 
+<img src="docs/images/cost-ring-en.png" alt="Mobile cost breakdown with the total centered in the ring and amounts and percentages in the legend" width="390">
+
 <details>
-<summary>View the cost inputs behind the November forecast</summary>
+<summary>View the costs and revenue behind the November forecast</summary>
 
-The forecast help compares October and November for each cost. In this example, October supplies the fixed cost and November supplies both daily variable-cost rates.
+The forecast help compares October and November for each cost. In this example, October supplies the fixed cost and November supplies both daily variable-cost rates. The three lines below the comparison give November’s projected average daily total cost, total cost and revenue.
 
-<img src="docs/images/forecast-inputs-en.png" alt="October and November cost inputs and the selected source month for each cost" width="400">
+<img src="docs/images/forecast-inputs-en.png" alt="October and November cost inputs, selected amounts, and projected daily total cost, total cost and revenue for November" width="400">
 
 </details>
 

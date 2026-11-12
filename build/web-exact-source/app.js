@@ -4,9 +4,13 @@ const API = "/api/v1";
 const SESSION_TTL = 2 * 60 * 60 * 1000;
 const state = { contextGeneration: 0, recordWriteRevision: 0, cashPositionDatasetId: "", cashPositionRevision: 0, token: "", user: null, datasets: [], dataset: null, records: [], days: [], dayRowsByDate: new Map(), dayRecordMap: new Map(), months: new Map(), recordMap: new Map(), entryWindows: [], cashPosition: null, language: localStorage.getItem("restaurant_language") || "zh", activePage: "overview", autoRefresh: null, refreshBusy: false, pendingDatasetId: "", editorDirty: false, editorDrafts: Object.create(null), editorBaselines: Object.create(null) };
 const $ = (id) => document.getElementById(id);
-const colors = ["#365f96", "#7994b8", "#586d84", "#a5b5ca", "#84909d", "#bcc7d5", "#526b8b", "#ced5df"];
+const costDonutColors = {
+  food:"#2563EB", spice:"#EA580C", waterDaily:"#0891B2", other:"#C02681", fees:"#9333EA",
+  labour:"#15803D", rent:"#CA8A04", water:"#0F766E", electric:"#4338CA", gas:"#DC2626", otherFixed:"#77850C"
+};
 
 const metricText = {
+  waterDaily:["日结水电","Daily Utilities"], fees:["手续费／抽成","Fees / commissions"], otherFixed:["其它固定","Other Fixed Cost"],
   revenue:["收入 (Revenue)","Revenue"], fixed:["固定成本","Fixed Cost"], fixedTotal:["总固定成本","Total Fixed Cost"], variable:["(总成本 - 固定成本)","(Total Cost - Fixed Cost)"], total:["总成本","Total Cost"], totalExpense:["总支出","Total Expenditure"], dish:["“当日做出的菜品”所用成本","Dish Ingredient Cost"], gross:["毛利润 (毛利率)","Gross Profit (Margin)"], net:["净利润 (净利率)","Net Profit (Margin)"], customers:["总客人数","Total Customers"], ticket:["平均客单价","Average Spend per Customer"], food:["食材成本","Ingredient Cost"], spice:["佐料成本","Seasoning Cost"], labour:["人工分摊","Labour Allocation"], rent:["房租分摊","Rent Allocation"], water:["水费分摊","Water Allocation"], electric:["电费分摊","Electricity Allocation"], gas:["煤气分摊","Gas Allocation"], other:["其它","Other"], avgRevenue:["日均收入","Average Daily Revenue"], avgVariable:["日均 (总成本 - 固定成本)","Average Daily Variable Cost"], avgGross:["日均毛利润 (毛利率)","Average Daily Gross Profit (Margin)"], avgNet:["日均净利润 (净利率)","Average Daily Net Profit (Margin)"], monthGross:["月均毛利润 (毛利率)","Average Monthly Gross Profit (Margin)"], monthNet:["月均净利润 (净利率)","Average Monthly Net Profit (Margin)"]
 };
 function trPair(pair){ return pair[state.language === "en" ? 1 : 0]; }
@@ -568,7 +572,7 @@ function dayMetrics(row) {
   const fixedDaily = dim ? fixed.spentTotal / dim : 0; const variable = food + spice + waterDaily + other + fees; const total = variable + fixedDaily;
   const customers = num(row.总客人数), newCustomers = num(row.新客人数量);
   const storeA=storeRevenueValue(row,"A"),storeB=storeRevenueValue(row,"B");
-  return {date:dateKey,revenue,storeA,storeB,food,spice,waterDaily,other,fees,fixedDaily,variable,total,gross:revenue-food-spice-fees,net:revenue-total,customers,newCustomers,oldCustomers:Math.max(customers-newCustomers,0),expense:{[mt("food")]:food,[mt("spice")]:spice,[state.language==="en"?"Daily Utilities":"日结水电"]:waterDaily,[mt("other")]:other,["手续费／抽成"]:fees,[mt("labour")]:fixed.labour/dim,[mt("rent")]:fixed.rent/dim,[mt("water")]:fixed.water/dim,[mt("electric")]:fixed.electric/dim,[mt("gas")]:fixed.expectedGas/dim,[state.language==="en"?"Other Fixed Cost":"其它固定"]:fixed.other/dim}};
+  return {date:dateKey,revenue,storeA,storeB,food,spice,waterDaily,other,fees,fixedDaily,variable,total,gross:revenue-food-spice-fees,net:revenue-total,customers,newCustomers,oldCustomers:Math.max(customers-newCustomers,0),expense:{food,spice,waterDaily,other,fees,labour:fixed.labour/dim,rent:fixed.rent/dim,water:fixed.water/dim,electric:fixed.electric/dim,gas:fixed.expectedGas/dim,otherFixed:fixed.other/dim}};
 }
 
 function dishCostForDate(key) {
@@ -692,18 +696,19 @@ function monthForecastV102(year,month) {
     other:forecastCostChoiceV102(previous,current,"other")
   };
   const revenue=closed?(current.known?current.revenue:null):current.hasAverage?Exact.div(Exact.mul(current.completedRevenue,days),current.elapsed):null;
-  let denominator=1,netNumerator=closed?current.net:null,cost=closed&&current.known?current.total:null;
+  let denominator=1,netNumerator=closed?current.net:null,costNumerator=closed&&current.known?current.total:null;
   if(!closed&&current.hasAverage&&previous.known){
     // Sum exact rational costs and income before dividing. Individually
     // dividing recurring rates can move an exact half cent across its rounding boundary.
     denominator=current.elapsed*previous.elapsed;
     const scale=choice=>Exact.mul(choice.chosen.amount,denominator/choice.chosen.days);
     const variableNumerator=Exact.mul(Exact.add(scale(choices.ingredient),scale(choices.other)),days);
-    const costNumerator=Exact.add(scale(choices.fixed),variableNumerator);
+    costNumerator=Exact.add(scale(choices.fixed),variableNumerator);
     const revenueNumerator=Exact.mul(current.completedRevenue,previous.elapsed*days);
     netNumerator=Exact.sub(revenueNumerator,costNumerator);
-    cost=Exact.div(costNumerator,denominator);
   }
+  const cost=costNumerator===null?null:Exact.div(costNumerator,denominator);
+  const dailyCost=costNumerator===null?null:Exact.div(costNumerator,denominator*days);
   const net=netNumerator===null?null:Exact.div(netNumerator,denominator);
   let breakEven=null;
   if(netNumerator!==null){
@@ -713,7 +718,7 @@ function monthForecastV102(year,month) {
       breakEven=Exact.div(lossTimesRevenue,Exact.mul(current.completedGross,days*denominator));
     }
   }
-  return {current,previous,closed,choices,revenue,cost,net,breakEven};
+  return {current,previous,closed,choices,revenue,cost,dailyCost,net,breakEven};
 }
 function forecastLabelV102(scope,forecast){
   const english=state.language==="en",t=(zh,en)=>english?en:zh;
@@ -762,6 +767,12 @@ function forecastLabelV102(scope,forecast){
     rows.push(labels[category]+"\n"+previous.key+" "+display(choice.before,true)+"\n"+current.key+" "+currentValue+"\n"+selected+" "+result);
   }
   paragraphs.push(rows.join("\n\n"));
+  const dailyLabel=closed?t("本月实际日均总成本","Actual average daily total cost"):t("本月预计日均总成本","Projected average daily total cost");
+  const costLabel=closed?t("本月实际总成本","Actual monthly total cost"):t("本月预计总成本","Projected monthly total cost");
+  const revenueLabel=closed?t("本月实际收入","Actual monthly revenue"):t("本月预计收入","Projected monthly revenue");
+  const separator=t("：",": ");
+  const dailyAmount=forecast.dailyCost===null?"—":amount(forecast.dailyCost)+t("/天","/day");
+  paragraphs.push(`${dailyLabel}${separator}${dailyAmount}\n${costLabel}${separator}${amount(forecast.cost)}\n${revenueLabel}${separator}${amount(forecast.revenue)}`);
   const id=`forecast-help-${scope}`,help=t("查看预计月底盈亏计算说明","How month-end profit/loss is calculated");
   return `<span class="forecast-title">${title}<button type="button" class="forecast-info-button" aria-label="${help}" aria-expanded="false" aria-describedby="${id}" aria-controls="forecast-help-popup"></button></span><small class="forecast-formula o30-kpi-formula">${caption}</small><span id="${id}" hidden>${escapeHtml(paragraphs.join("\n\n"))}</span>`;
 }
@@ -810,10 +821,34 @@ function renderDashboard() {
 }
 
 function renderCostDonut(day) {
-  const entries = day ? Object.entries(day.expense).filter(([,v])=>v>0) : []; const total=entries.reduce((s,[,v])=>s+v,0); let cursor=0;
-  const segments=entries.map(([name,value],i)=>{const start=cursor/total*100;cursor+=value;return `${colors[i%colors.length]} ${start}% ${cursor/total*100}%`;});
-  $("costDonut").style.background=segments.length?`conic-gradient(${segments.join(",")})`:"#e8eef4"; $("costDonut").querySelector("span").innerHTML=total?`${state.language==="en"?"Total Cost":"总成本"}<br><b>${money(total)}</b>`:(state.language==="en"?"No data":"暂无数据"); $("costTotal").textContent=day?`${day.date} ${state.language==="en"?"cost share":"开销占比"}`:"—";
-  $("costLegend").innerHTML=entries.map(([name,value],i)=>`<div class="legend-row"><i style="background:${colors[i%colors.length]}"></i><span>${escapeHtml(name)}</span><strong>${percent(value,total)}</strong></div>`).join("")||`<div class="empty-chart">${state.language==="en"?"No cost data for this date":"当天没有成本数据"}</div>`;
+  const english = state.language === "en";
+  const entries = day ? Object.entries(day.expense).filter(([, value]) => Exact.cmp(value, 0) > 0) : [];
+  const total = Exact.sum(entries.map(([, value]) => value));
+  let cumulative = 0;
+  const segments = entries.map(([category, value]) => {
+    const start = cumulative / total * 100;
+    cumulative += value;
+    return `${costDonutColors[category]} ${start}% ${cumulative / total * 100}%`;
+  });
+  const ring = $("costDonut");
+  const center = ring.firstElementChild;
+  const label = mt("total");
+  const empty = english ? "No data" : "暂无数据";
+  ring.style.background = entries.length ? `conic-gradient(${segments.join(",")})` : "#e8eef4";
+  ring.setAttribute("role", "img");
+  ring.setAttribute("aria-label", entries.length ? `${label} ${money(total)}` : empty);
+  if (entries.length) {
+    const amount = total.toLocaleString(english ? "en-US" : "zh-CN", {minimumFractionDigits:2, maximumFractionDigits:2});
+    ring.toggleAttribute("data-wide-total", amount.length > 14);
+    center.innerHTML = `<small>${label}</small><b style="--amount-characters:${amount.length}">${amount}</b><em>${english ? "CNY" : "元"}</em>`;
+  } else {
+    ring.removeAttribute("data-wide-total");
+    center.textContent = empty;
+  }
+  $("costTotal").textContent = day ? `${day.date} ${english ? "cost share" : "开销占比"}` : "—";
+  $("costLegend").innerHTML = entries.map(([category, value]) =>
+    `<div class="legend-row"><i style="background:${costDonutColors[category]}"></i><span>${escapeHtml(mt(category))}</span><strong>${money(value)}<small>${percent(value,total)}</small></strong></div>`
+  ).join("") || `<div class="o30-empty">${english ? "No cost records for this date" : "当天没有成本记录"}</div>`;
 }
 
 function compactNumber(value){return Number(value||0).toLocaleString(state.language==="en"?"en-US":"zh-CN",{maximumFractionDigits:0});}

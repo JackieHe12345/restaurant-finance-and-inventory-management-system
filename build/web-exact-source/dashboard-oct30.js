@@ -116,7 +116,6 @@
     const subtitle=pageSubtitle();if(subtitle)subtitle.textContent=t('先看本月表现，再查看趋势、成本与具体来源。','Start with monthly performance, then inspect trends and costs.');
   }
   function pageSubtitle(){let p=$('pageOverview').querySelector('.page-title-row p');if(!p){p=document.createElement('p');$('pageOverview').querySelector('.page-title-row h1').after(p);}return p;}
-  const donutBase=renderCostDonut;renderCostDonut=function(day){donutBase(day);const entries=day?Object.entries(day.expense).filter(([,v])=>Exact.cmp(v,0)>0):[],total=Exact.sum(entries.map(([,v])=>v));$('costLegend').innerHTML=entries.map(([name,value],i)=>`<div class="legend-row"><i style="background:${colors[i%colors.length]}"></i><span>${escapeHtml(name)}</span><strong>${money(value)}<small>${percent(value,total)}</small></strong></div>`).join('')||`<div class="o30-empty">${t('当天没有成本记录','No cost records for this date')}</div>`;};
   const base=renderDashboard;renderDashboard=function(...args){setup();const result=base.apply(this,args);summary();return result;};
   // Earlier handlers retain references to older wrappers. Schedule the final
   // responsive rendering after any of their date/filter handlers complete.

@@ -9,6 +9,13 @@ const source=path.resolve(process.env.RELEASE_SOURCE_ROOT||path.join(__dirname,'
 if(!process.env.QA_OUTPUT_DIR)throw new Error('Set QA_OUTPUT_DIR to a writable evidence directory');
 const out=path.resolve(process.env.QA_OUTPUT_DIR);fs.mkdirSync(out,{recursive:true});
 const report={revision:null,data:'synthetic only',network:'blocked',layouts:[],charts:[],errors:[]};
+function assertForecastTotals(text,lang,daily,cost,revenue,closed=false){
+ const type=closed?'实际':'预计',label=closed?'Actual':'Projected';
+ const lines=lang==='zh'?
+  [`本月${type}日均总成本：${daily} 元/天`,`本月${type}总成本：${cost} 元`,`本月${type}收入：${revenue} 元`]:
+  [`${label} average daily total cost: CNY ${daily}/day`,`${label} monthly total cost: CNY ${cost}`,`${label} monthly revenue: CNY ${revenue}`];
+ assert(text.endsWith('\n\n'+lines.join('\n')),text);
+}
 async function stable(page){await page.evaluate(()=>document.fonts.ready);await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));}
 async function selectMonth(page,month){await page.evaluate(month=>{showPage('overview');$('selectedDate').value=`2026-${month}-09`;$('selectedMonth').value=String(Number(month));$('selectedYear').value='2026';renderDashboard();},month);await stable(page);}
 async function chartGeometry(page,tag){
@@ -72,6 +79,7 @@ async function seedLedger(keepPolling=false){
     const trigger=page.locator(selector),popup=page.getByRole('tooltip');
     await trigger.hover();await popup.waitFor({state:'visible'});
     const formulas=await popup.innerText();
+    assertForecastTotals(formulas,lang,'1,454.44','43,633.33','78,000.00');
     assert(formulas.includes(lang==='zh'?'预计其他成本':'Other costs = total costs'));
     assert(formulas.includes(lang==='zh'?'含佐料':'including seasonings'));
     assert(formulas.includes(lang==='zh'?'零时':'midnight'));
@@ -115,6 +123,7 @@ async function seedLedger(keepPolling=false){
   const closed=await page.locator('[data-overview-metric="forecast"] strong').textContent();assert(closed.includes('23,450.00'),closed);
   report.closedMonthActual=closed;
   const closedHelp=await page.locator('#forecast-help-overview').textContent();
+  assertForecastTotals(closedHelp,'zh','1,243.55','38,550.00','62,000.00',true);
   assert(closedHelp.includes('实际收入 62,000.00 元 − 实际总成本 38,550.00 元 = 23,450.00 元'));
   assert(closedHelp.includes('两月成本对照（仅供参考）'));assert(!closedHelp.includes('采用 '));
   await page.locator('#o30Overview').screenshot({path:path.join(out,'homepage-closed-october.png')});
@@ -147,6 +156,7 @@ async function seedLedger(keepPolling=false){
   await live.locator('button[data-page="overview"]').click();
   await live.locator('.forecast-info-button[aria-describedby="forecast-help-overview"]').focus();
   const livePanel=live.getByRole('tooltip');await livePanel.waitFor({state:'visible'});
+  assertForecastTotals(await livePanel.innerText(),'zh','1,464.44','43,933.33','78,000.00');
   assert((await livePanel.innerText()).includes('8,590.00 元 ÷ 9'));
   await live.evaluate(()=>{
     const records=structuredClone(previewRecords('preview')),today=records.find(r=>r.record_key==='2026-11-10');
@@ -155,6 +165,9 @@ async function seedLedger(keepPolling=false){
   });
   await live.waitForFunction(()=>document.querySelector('[data-overview-metric="forecast"] strong').textContent.includes('33,866.67'),null,{timeout:15000});
   const afterSync=await liveProfit.textContent();assert.equal(await reportProfit.textContent(),afterSync);
+  for(const location of [livePanel,live.locator('#forecast-help-report')]){
+    assertForecastTotals(await location.textContent(),'zh','1,471.11','44,133.33','78,000.00');
+  }
   assert((await livePanel.innerText()).includes('60.00 元 ÷ 9'));
   const revenueAfterSync=await live.locator('#monthCard .forecast-row').first().locator('strong').textContent();
   assert(revenueAfterSync.includes('78,000.00'),revenueAfterSync);
@@ -168,6 +181,7 @@ async function seedLedger(keepPolling=false){
     r.version++;r.payload.daily[0].其他='120.00';previewRecordStores.set('preview',remote);
   });
   await live.waitForFunction(()=>document.querySelector('#forecast-help-popup').textContent.includes('120.00 元 ÷ 9'),null,{timeout:15000});
+  assertForecastTotals(await livePanel.innerText(),'zh','1,477.78','44,333.33','78,000.00');
   assert(await advancedButton.evaluate(b=>b===document.activeElement&&b.getAttribute('aria-expanded')==='true'));
   assert(await livePanel.isVisible());report.liveCosts.advancedAnalyticsPopupAndFocusUpdatedByPoll=true;
   await liveContext.close();
@@ -185,6 +199,7 @@ async function seedLedger(keepPolling=false){
   const before=await headline.textContent();assert(before.includes('17,250.00'),before);
   await timed.clock.runFor(1);
   const after=await headline.textContent();assert(after.includes('23,450.00'),after);
+  assertForecastTotals(await timed.locator('#forecast-help-report').textContent(),'zh','1,243.55','38,550.00','62,000.00',true);
   assert((await timed.locator('#monthCard .forecast-row').nth(1).textContent()).includes('23,450.00'));
   report.rollover={before,after,timezone:'Asia/Shanghai',atLocalMidnight:true,automaticWithoutDataChange:true,passed:true};
   await timed.clock.setSystemTime(new Date('2026-11-29T12:00:00+08:00'));
