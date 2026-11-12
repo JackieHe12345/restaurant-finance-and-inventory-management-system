@@ -1,64 +1,64 @@
 # Restaurant Finance and Inventory Management System
 
-**The README, changelog, deployment guide and engineering reference are written in English and translated into Chinese. If the wording differs, the English edition takes precedence.**
+### **The README, CHANGELOG, Deployment Guide, and Engineering Reference are written in English and translated into Chinese. If the wording differs, the English edition takes precedence.**
 
-**[简体中文](README.md)** · [Changelog](CHANGELOG.md) · [Deployment guide](docs/DEPLOYMENT.md) · [Engineering reference](docs/ENGINEERING_REFERENCE.md)
+### [简体中文](README.md) · [CHANGELOG](CHANGELOG.md) · [Deployment Guide](docs/DEPLOYMENT.md) · [Engineering Reference](docs/ENGINEERING_REFERENCE.md)
 
-At closing time, enter what the restaurant took in, what the kitchen bought and how many customers came in. During the month, add bills such as rent and wages. The dashboard brings those entries together so you can see how much the restaurant has earned so far, where the money went and what profit or loss to expect by month-end. Staff can use the web app on a phone or computer. The macOS app also works with local Excel books and can sync with the server.
+This system records restaurant sales, expenses, and inventory. Each ledger brings together daily sales by store and payment channel, ingredient purchases and usage, and monthly costs such as rent and wages. Managers can see actual net profit for the month to date, review the entries behind an expense, and estimate profit or loss at month-end.
 
-## How a restaurant uses it
+Staff can enter and review records in a desktop or mobile browser. The web interface supports English and Chinese and preserves store names, dish names, and notes as entered. The Chinese-language macOS app can also work with a local Excel workbook and sync it with the server.
 
-**Keep two counters in one ledger, or keep two businesses separate.** Suppose two counters share a kitchen, staff and rent. Give each a name in Store Settings. In the same ledger, record sales for each counter by payment channel, such as cash, WeChat Pay, Alipay or delivery. You can see what each counter brought in while counting their shared costs once. If the businesses keep separate stock, expenses and reports, create a ledger for each. An administrator chooses which ledgers each staff account can open.
+## Bookkeeping and inventory
 
-**Record a day's trading.** Pick the business date and enter sales, payment fees, purchases of ingredients and seasonings, and any other expenses. Record customer counts if you want to compare busy and quiet days. Save wages, rent and other fixed costs for the month. The cash balance sheet also lets you record a shareholder loan or enter the balance you actually counted. Neither entry is counted as sales.
+**Stores and ledgers.** Two counters that share a kitchen can use one ledger. Enter each counter’s name in Store Settings to record its cash, WeChat Pay, Alipay, and delivery revenue separately. Shared purchases, rent, and wages are recorded once for the ledger. If the counters need separate inventories, expenses, and financial reports, create a ledger for each.
 
-**Follow ingredients from delivery to the kitchen.** For example, if you start with no rice and buy 10 kg for CNY 80, the ledger records a purchase of CNY 80. Issue 2 kg to the kitchen and the stock record shows 8 kg left and CNY 16 used. With several deliveries at different prices, the system uses the oldest stock first (FIFO). It also records losses and stocktakes, and flags stock whose purchase price is unknown. The monthly profit report counts the purchase expense once. You can look at ingredient use and dish costs separately.
+**Daily entries and monthly costs.** Select a business date to record sales, payment fees, purchases of ingredients and seasonings, other expenses, and customer counts. Enter monthly fixed costs such as wages and rent for the month they belong to. The cash balance sheet records shareholder loans and adjustments to the balance counted on a given date. These entries affect the cash balance and are excluded from sales.
 
-**Give staff the access they need.** A viewer can read the books assigned to them. An entry user can record daily figures and correct entries within the allowed time. An editor can amend records, and an administrator manages accounts and ledgers. If the usual correction window for yesterday’s purchase has closed, the administrator can give the staff member until a set time today to amend yesterday’s records in that ledger. The extra access expires automatically.
+**Stock and kitchen usage.** With no opening stock, a delivery of 10 kg of rice for CNY 80 records a purchase expense of CNY 80. Issuing 2 kg to the kitchen leaves 8 kg in stock and assigns CNY 16 to that issue. If deliveries have different prices, issues draw from the oldest remaining lot first (FIFO). Stock records also show losses, stocktake adjustments, and quantities with an unknown price. Monthly profit includes the purchase expense. Kitchen issues and dish costs can be reviewed separately without counting the purchase twice.
 
-**Review the figures or take them into Excel.** Open Analytics to compare operating results, expenses or customer numbers with the previous month. Follow an expense category to the dated entries behind it, or filter and sort the details and export the current selection as CSV. For a spreadsheet copy of the books, download a business workbook for the year. Administrators can also merge or replace workbook data for the selected ledger.
+**User roles and temporary permissions.** Administrators assign ledgers to staff accounts. Viewers can read their assigned ledgers. Entry users can record daily figures and correct them within the permitted time. Editors can amend existing records. If an error is found after the correction window closes, an administrator can grant temporary access for a particular ledger and range of business dates. For example, an administrator can allow a staff member to correct yesterday’s records in one ledger until 3 p.m. today. The permission expires at that time.
 
-The browser interface is available in Chinese and English. Store names, dishes and notes stay as entered when you switch languages. The macOS app uses Chinese.
+**Reports and Excel workbooks.** Analytics compares operating results, expenses, and customer counts with the previous month. Select an expense category to see its dated entries, then filter or sort the details and export the result as CSV. Staff can also download an annual Excel workbook for an assigned ledger. Administrators can import a workbook to merge its entries with the selected ledger or replace the ledger’s data.
 
-## Reading the dashboard
+## Dashboard
 
-The following figures come from a sample ledger. The first two cards show average daily revenue and gross profit through yesterday. The third projects **CNY 62,475.33** profit for November. The fourth divides that forecast by November’s 30 calendar days and shows **CNY 2,082.51/day**, 9.1% below October’s actual profit per day. The fifth shows actual net profit and its margin, including entries saved today and the fixed costs already recorded for the whole month.
+The five cards show average daily revenue, average daily gross profit with its margin, estimated month-end profit or loss, estimated daily profit or loss for the month, and actual net profit with its margin. For the current month, the first two averages use figures through yesterday. Actual net profit includes today’s recorded transactions and the fixed costs saved for the full month.
 
-![Five November dashboard cards, from average daily revenue to actual net profit](docs/images/dashboard-kpis-en.png)
+![Five dashboard cards for the November sample ledger](docs/images/dashboard-kpis-en.png)
 
-Gross profit is revenue after ingredient purchases, seasonings and payment fees. Net profit also deducts day-to-day expenses such as utilities, along with the fixed costs recorded for the month.
+In this sample ledger, the November forecast is **CNY 62,475.33**. Spread over the month’s 30 calendar days, that is **CNY 2,082.51 per day**, 9.1% below October’s actual daily average. Gross profit deducts ingredients, seasonings, and payment fees from revenue. Net profit also deducts other daily expenses, such as utilities, and the month’s fixed costs.
 
 <details>
-<summary>How the month-end estimate is calculated</summary>
+<summary>Month-end forecast calculation</summary>
 
-Multiply average daily revenue through yesterday by the number of calendar days in this month. Subtract the three projected costs below to get estimated month-end profit or loss. For each cost, the system compares this month with last month and uses the higher figure. Fixed expenses are compared as monthly amounts. Ingredients (including seasonings) and other costs are compared as daily rates, then multiplied by the days in this month. A purchase saved today can change the estimate immediately. Once the month ends, the card shows actual net profit for that month.
+Projected revenue is average daily revenue through yesterday multiplied by the number of calendar days in the month. The forecast deducts three projected costs from that revenue. For fixed costs, it takes the higher monthly amount recorded for this month or last month. For ingredients (including seasonings) and other costs, it compares the two months’ daily rates separately and multiplies each higher rate by the number of days in the current month. A purchase recorded today can change the forecast. From the first day of the following month, the dashboard shows the completed month’s actual net profit.
 
-Open **ⓘ** beside the estimate to see both months’ figures and which one was used. In this example, October supplies the fixed cost and November supplies both daily rates. The last three lines show projected average daily total cost, total cost and revenue.
+Select **ⓘ** beside the forecast to see both months’ amounts and the value used for each cost. In the example below, the calculation uses October’s fixed costs and November’s two daily rates. The final three lines show projected average daily cost, total cost, and revenue for November.
 
-<img src="docs/images/forecast-inputs-en.png" alt="October and November cost inputs, the selected amounts and three projected totals" width="400">
+<img src="docs/images/forecast-inputs-en.png" alt="October and November cost inputs with the rates used in the November forecast" width="400">
 
 </details>
 
-**Which days bring in the most revenue?** The daily trend shows individual dates. The weekday chart averages the recorded Mondays, Tuesdays and so on in the selected month. Both open on revenue. Each can also show gross profit, net profit or ingredient costs including seasonings.
+**Daily and weekday trends.** The daily chart shows each date separately. The weekday chart averages the recorded dates for each weekday in the selected month. Both initially show revenue. Each chart can also display gross profit, net profit, or ingredient costs including seasonings.
 
-![Daily revenue in October with one day's amount selected](docs/images/daily-revenue-en.png)
+![October daily revenue with one date selected](docs/images/daily-revenue-en.png)
 
 ![Average revenue by weekday with Saturday selected](docs/images/weekday-revenue-en.png)
 
-**What did a particular day cost?** Select a date. On a phone, the ring shows the total in the center. The legend lists the amount and percentage for each category.
+**Daily cost breakdown.** Select a date to see its total cost in the center of the ring. The legend lists the amount and share for each category.
 
-<img src="docs/images/cost-ring-en.png" alt="Mobile cost breakdown with the total inside the ring and an itemized legend" width="390">
+<img src="docs/images/cost-ring-en.png" alt="Daily cost breakdown on a phone, with the total in the center" width="390">
 
-## Run the web app locally
+## Local installation
 
-From a fresh checkout, use Docker Compose v2 to start PostgreSQL, the API and the web server. Copy the settings template and open the copy in a text editor.
+From a fresh checkout, use Docker Compose v2 to run PostgreSQL, the API, and the web server together. Copy the configuration template from the repository root.
 
 ```bash
 cp .env.example .env
 chmod 600 .env
 ```
 
-Set a separate value for `POSTGRES_PASSWORD`, `SECRET_KEY` and `ADMIN_PASSWORD`. Run `openssl rand -hex 32` once for each value, or use the configuration generator in the [deployment guide](docs/DEPLOYMENT.md). Then start the services.
+Open `.env` and set distinct values for `POSTGRES_PASSWORD`, `SECRET_KEY`, and `ADMIN_PASSWORD`. To generate them, run `openssl rand -hex 32` separately for each value or use the configuration script in the [Deployment Guide](docs/DEPLOYMENT.md). Start the services and check the API.
 
 ```bash
 docker compose config --quiet
@@ -66,24 +66,24 @@ docker compose up --build -d
 curl --fail --retry 12 --retry-connrefused --retry-delay 2 http://127.0.0.1:8080/api/v1/health
 ```
 
-Open <http://127.0.0.1:8080>. Sign in with the administrator username and password from `.env` (the default username is `admin`). Open **Excel Books** to create a ledger, then **Users** to assign it to staff. By default the site listens only on your computer. Once the administrator account exists, changing the startup password in `.env` leaves the account’s saved password in place.
+Open <http://127.0.0.1:8080> and sign in with the administrator credentials from `.env`. The default username is `admin`. Create a ledger in **Excel Books**, then assign it to staff under **Users**. The default configuration accepts connections from your computer only. The startup password applies when the administrator account is first created.
 
-For a server installation, database backup or upgrade of an existing Ubuntu service, follow the [deployment guide](docs/DEPLOYMENT.md).
+Server installation, database backups, and upgrades to an existing Ubuntu service are covered in the [Deployment Guide](docs/DEPLOYMENT.md).
 
-## Where to make a change
+## Source code and development
 
-| If you are working on… | Start here |
+| Component | Source and build instructions |
 | --- | --- |
-| The web interface | `web/index.html`, stylesheets and language files in `web/`. Edit the business calculations in `build/web-exact-source/`, then run `node build/compile_exact_web.cjs` to update the scripts the browser loads. |
-| The API or stored data | `backend/app/` contains the FastAPI routes, SQLAlchemy models, permissions, money and Excel code. The regression tests are in `backend/tests/`. PostgreSQL stores the live data. Changes to existing database columns need an explicit migration. |
-| The macOS app | `desktop/restaurant_cost_manager.py` and `desktop/requirements.txt`. The app uses PySide6. Run `python desktop/restaurant_cost_manager.py` from a graphical session after installing the dependencies. |
-| Installation or upgrades | `compose.yaml` starts a new instance. The scripts in `deploy/` can upgrade and verify an existing native Ubuntu service. `build/make_release.py` builds the server archive. |
+| Web interface | The page, stylesheets, and language files are in `web/`. Edit business calculations in `build/web-exact-source/`, then run `node build/compile_exact_web.cjs` to regenerate the scripts the browser loads. |
+| API and database | `backend/app/` contains the FastAPI routes, SQLAlchemy models, permission checks, financial calculations, and Excel import and export code. Tests are in `backend/tests/`. Production data is stored in PostgreSQL. Changes to existing columns require a migration. |
+| macOS app | The PySide6 entry point is `desktop/restaurant_cost_manager.py`. Install `desktop/requirements.txt`, then run `python desktop/restaurant_cost_manager.py` in a graphical session. |
+| Installation and upgrades | `compose.yaml` starts a new instance. The scripts in `deploy/` upgrade and verify an existing native Ubuntu service. `build/make_release.py` builds the server archive. |
 
-Browser calculations use decimal arithmetic backed by `BigInt`. Python uses `Decimal`. The [engineering reference](docs/ENGINEERING_REFERENCE.md) gives the financial formulas, inventory rules, database tables, API routes and browser and desktop test procedures.
+The browser uses decimal arithmetic backed by `BigInt`. Python uses `Decimal`. The financial formulas, stock valuation rules, database tables, API routes, and test procedures are documented in the [Engineering Reference](docs/ENGINEERING_REFERENCE.md).
 
-### Run the tests
+### Running the tests
 
-Use Python 3.12, Node.js and npm. From the repository root, create a test environment and install the locked JavaScript compiler dependency. The API tests create their own database fixtures. Leave production settings out of the test environment.
+Use Python 3.12, Node.js, and npm. Run the following commands from the repository root to create a test environment, install the compiler dependency from the lockfile, and run the web and API tests. The API suite creates its own test database and uses its own configuration.
 
 ```bash
 python3.12 -m venv .venv
@@ -100,23 +100,23 @@ python build/test_distribution_privacy.py
 (cd backend && PYTHONPATH=.:tests python -m pytest -q tests)
 ```
 
-On a supported macOS/Unix machine, run the FIFO tests against the desktop and browser calculations as well. These tests run Qt offscreen and use `node` from `PATH` or `NODE_BINARY`. The desktop source imports the Unix module `fcntl`.
+On a supported macOS or Unix machine, the FIFO tests compare the desktop and browser calculations. They run Qt offscreen and use the `node` executable on `PATH` or the path supplied in `NODE_BINARY`. The desktop source uses the Unix module `fcntl`.
 
 ```bash
 python -m pip install -r desktop/requirements.txt
 python build/test_fifo_contract.py
 ```
 
-### Build a server archive
+### Server archive
 
 ```bash
 python build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
 ```
 
-The archive contains the API, web files, Nginx configuration and deployment tools under `restaurant-cloud-v1.0.2/`. Use a new output filename when rebuilding. Keep production credentials and database backups separately. After an upgrade, `deploy/verify_release_files.py` checks the installed files and HTTP endpoints. `deploy/verify_deployment.py` compares database records from before and after the upgrade. Both procedures are in the [deployment guide](docs/DEPLOYMENT.md).
+The archive contains the API, web files, Nginx configuration, and deployment utilities under `restaurant-cloud-v1.0.2/`. Use a new output filename for each build. Store production credentials and database backups separately. After an upgrade, `deploy/verify_release_files.py` checks installed files and HTTP endpoints. `deploy/verify_deployment.py` compares database records before and after the upgrade. Both procedures are documented in the [Deployment Guide](docs/DEPLOYMENT.md).
 
 ## Version and license
 
-**v1.0.2** · Browser build `20261112-daily-pl`. Earlier source is available in [V1.0.1](https://github.com/JackieHe12345/restaurant-finance-and-inventory-management-system/tree/old/V1.0.1) and [V1.0.0](https://github.com/JackieHe12345/restaurant-finance-and-inventory-management-system/tree/old/v1.0.0). The original V1.0.0 code calls that build `Oct30LingChen`. See the [changelog](CHANGELOG.md) for the changes in each release.
+**v1.0.2** · Web build `20261112-daily-pl`. Earlier source is available for [V1.0.1](https://github.com/JackieHe12345/restaurant-finance-and-inventory-management-system/tree/old/V1.0.1) and [V1.0.0](https://github.com/JackieHe12345/restaurant-finance-and-inventory-management-system/tree/old/v1.0.0). The V1.0.0 source identifies the original build as `Oct30LingChen`. Release history is in the [CHANGELOG](CHANGELOG.md).
 
 Released under the [MIT License](LICENSE).
