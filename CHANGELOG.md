@@ -12,7 +12,7 @@
 
 ### Dashboard and monthly report
 
-**Changed the monthly overview from four cards to five.** V1.0.1 showed revenue, total cost, net profit, and customer count. Total cost and customer count no longer have separate cards in the overview. The five cards below now each show the percentage change from the previous month.
+**Changed the monthly overview from four cards to five.** V1.0.1 showed revenue, total cost, net profit, and customer count. The new overview drops the separate cards for total cost and customer count. Each card now compares its value with the same metric for the previous month.
 
 | Dashboard card, from left to right | Change from V1.0.1 | Current-month calculation |
 | --- | --- | --- |
@@ -24,7 +24,7 @@
 
 ![The five monthly dashboard cards in the English web interface](docs/images/dashboard-kpis-en.png)
 
-The daily forecast comparison uses the length of each month. The full monthly report still lists actual average daily net profit separately. For the current month, it divides actual net profit through today by the calendar days elapsed through yesterday.
+Each monthly comparison shows a percentage when both values are available. Equal values show 0.0%. If the previous value was zero and the current value differs, the card explains why the percentage is unavailable. Missing figures are marked as unavailable. The daily forecast comparison uses the length of each month. The full monthly report still lists actual average daily net profit separately. For the current month, it divides actual net profit through today by the calendar days elapsed through yesterday.
 
 **Changed the break-even row.** The full report uses the revised forecast and a shorter label. When it projects a loss and the gross margin is positive, the row shows how much more daily revenue is needed to break even.
 
@@ -57,7 +57,7 @@ The current-month forecast requires at least one daily operating record dated be
 ### Cash reconciliation, language support, and deployment
 
 - **Removed the duplicate balance adjustment form** from the cash sheet. The existing **Add cash entry → Balance override** sets a selected date’s cash balance to the amount counted. Earlier transactions and their editing restrictions are preserved.
-- **Extended English coverage in the web interface** to previously untranslated text in forms, reports, charts, dialogs, errors, and audit summaries. User-entered names and notes keep their original wording. Amounts are in CNY. The native macOS app uses Chinese.
+- **Extended English coverage in the web interface** to previously untranslated text in forms, reports, charts, dialogs, errors, and audit summaries. User-entered names and notes keep their original wording. Some automatic cash descriptions, including the one for daily revenue, still appear in Chinese in English mode. Amounts are in CNY. The native macOS app uses Chinese.
 - **Changed deployment verification** to match JavaScript and CSS asset URLs to the browser build identifier. It continues to check file hashes. The application and API report `v1.0.2`, and the browser build is `20261112-daily-pl`. [Deployment Guide](docs/DEPLOYMENT.md) · [Engineering Reference](docs/ENGINEERING_REFERENCE.md)
 
 ## 2026 Nov 07 V1.0.1

@@ -79,7 +79,7 @@ Production uses PostgreSQL. Record contents with variable fields live in JSONB c
 | `audit_logs` | Values before and after a change, actor, source, event, device, version change, sequence, and timestamps. | Audit rows can expire or be deleted by an administrator. Keep independent backups. |
 | `temporary_permissions` | User, book, granted role, business dates covered, and times the grant is active. | Check the date of the record as well as the time the user makes the change. |
 | `sync_conflicts` | Local and server versions, both payloads, conflict status, resolution, and note. | Apply the same financial validation and permissions as for any other write. |
-| `inventory_name_corrections` | Unique book and request ID pair, request hash, request and response payloads, and reason for the correction. | Receipts survive audit pruning. A retry with the original ID must carry the original request. |
+| `inventory_name_corrections` | Unique book and request ID pair, request hash, request and response payloads, and reason for the correction. | Receipts survive audit pruning. A retry with the original ID must carry the original request. See [name correction and recovery](../backend/NAME_CORRECTION_RECOVERY.en.txt). |
 
 A day record can hold `daily`, `dishes`, and `fixed_expenses` arrays. Month records hold `monthly_fixed`. Global records hold settings, dictionaries, cash entries, and inventory data. Older payloads can contain rows from several business dates. An edit to one day must merge just that day’s rows in each array and preserve other dates and undated rows. If the day has no dish entries, show an empty list.
 
@@ -110,11 +110,11 @@ The browser sends requests to `/api/v1` on the same origin that serves the page.
 
 ## How the ledger calculates profit and inventory
 
-For the exact formats and test cases, see [money in the clients](../build/MONEY_CONTRACT.txt), [FIFO](../build/FIFO_CONTRACT.md), and [money in the API](../backend/MONEY_BACKEND.txt). New or changed monetary fields cross the API as decimal strings. Python uses `Decimal` and the browser uses `Exact`. Amounts have two decimal places and unit prices have six, with `ROUND_HALF_UP`. The absolute limit is 999999999999.99 for a single amount and 999999999999.999999 for a unit price. Totals calculated from valid inputs have separate rules. Reject invalid text, booleans, NaN, and infinity. A known price of zero counts as a price.
+For field formats and rounding rules, see the [shared monetary rules](../build/MONEY_CONTRACT.en.txt), [browser arithmetic and tests](../build/WEB_EXACT_MONEY.en.txt), and [API monetary rules](../backend/MONEY_BACKEND.en.txt). The [FIFO test](../build/FIFO_CONTRACT.md) follows a stock issue across two purchase lots. New or changed monetary fields cross the API as decimal strings. Python uses `Decimal` and the browser uses `Exact`. Amounts have two decimal places and unit prices have six, with `ROUND_HALF_UP`. The absolute limit is 999999999999.99 for a single amount and 999999999999.999999 for a unit price. Totals calculated from valid inputs have separate rules. Reject invalid text, booleans, NaN, and infinity. A unit price explicitly entered as zero is a known price.
 
 When reading legacy JSON, retain the decimal text before any conversion to floating point. Read the underlying OOXML numeric cell when Excel conversion would lose precision. Normalize only the documented monetary fields, including fields inside detail rows. Preserve other metadata. Keep values in `Exact` during calculations and formatting. Convert a chart coordinate to a float only when drawing it.
 
-The homepage cards show, in order, average daily revenue, average daily gross profit with gross margin, estimated month-end profit/loss, estimated daily profit/loss this month, and actual net profit with net margin. The first two use records through yesterday divided by elapsed calendar days. Card 4 shows money per calendar day. The percentage below it compares that daily amount with the previous month. Card 5 includes today’s entries and the full saved monthly fixed expense. Its net margin divides that actual net by actual revenue through today and is unavailable for a missing or zero revenue denominator. The full monthly report’s actual average daily net profit divides actual net by elapsed calendar days.
+The homepage cards show, in order, average daily revenue, average daily gross profit with gross margin, estimated month-end profit/loss, estimated daily profit/loss this month, and actual net profit with net margin. For the current month, the first two use records through yesterday divided by the number of calendar days through yesterday. For a completed month, they use the full month’s figures and calendar days. Card 4 shows money per calendar day. The percentage below it compares that daily amount with the previous month. Card 5 includes today’s entries and the full saved monthly fixed expense. Its net margin divides that actual net by actual revenue through today and is unavailable for a missing or zero revenue denominator. The full monthly report’s actual average daily net profit divides actual net by elapsed calendar days.
 
 The daily trend and weekday averages both open on revenue. Each has its own selector for revenue, gross profit, net profit, or ingredient cost. The first three use daily ledger figures. Ingredient cost includes seasoning purchases. The daily trend leaves unrecorded dates empty. For a weekday average, divide the sum for that weekday by the number of its recorded dates in the selected month. A recorded day with a zero amount counts. An empty row does not. With no recorded days, that weekday has no average. The forecast uses elapsed calendar days instead.
 
@@ -135,11 +135,11 @@ For the current month, **D** is the total number of calendar days. Use the same 
 | Projected ingredients | Combine ingredient and seasoning purchases for each period. Multiply the higher of the two daily averages by D. |
 | Projected other costs | For each period, take total cost minus ingredients (including seasonings) minus its whole-month fixed expenses. This leaves daily utilities, fees, and other expenses. Multiply the higher of the two daily averages by D. |
 | Projected profit/loss | Projected revenue − projected fixed costs − projected ingredients − projected other costs. |
-| Estimated daily profit/loss this month | Unrounded month-end profit/loss ÷ D. A closed month uses actual net profit ÷ that month’s calendar days. A missing monthly result gives a dash. |
+| Estimated daily profit/loss this month | The caption reads **(Estimated month-end profit/loss ÷ days in the month)**. Divide the unrounded month-end profit/loss by D. A closed month uses actual net profit ÷ that month’s calendar days. A missing monthly result gives a dash. |
 
 **A grocery purchase on November 11.** Ten days have elapsed in the current month. October has 31 days, and November has 30. The amounts below are in CNY.
 
-| | October | November so far | November projection |
+| Item | October | November so far | November projection |
 | --- | ---: | ---: | ---: |
 | Fixed costs | 6,000 | 6,500 | 6,500 |
 | Ingredients and seasonings | 9,300 (300/day) | 2,600 (260/day) | 9,000 |
@@ -152,7 +152,7 @@ The help shows average daily total cost of **591.67**, total cost of **17,750.00
 
 **Missing entries.** If this month has no saved fixed-cost record, use last month’s fixed cost. An explicitly saved zero takes part in the comparison. Last month may contain a recorded zero or just a fixed-cost record. This month needs at least one operating record through yesterday. The forecast is unavailable on the first day of the month, for a future month, or when either period lacks the required data. In both months, “other costs” includes fees, daily utilities, and entries in the Other category.
 
-The help displays the monthly cost and the daily total cost separately. Use the same unrounded cost numerator as the profit calculation. Divide by its denominator for the monthly amount, or by the denominator times **D** for the daily amount, then format to cents. This daily cost includes the fixed component. When the month closes, the same three rows show actual total cost divided by its full calendar length, actual total cost, and actual revenue. If an input is unavailable, the corresponding row shows a dash.
+The help shows projected costs, including the fixed component. Let **N** be the unrounded projected cost numerator used to calculate profit. Monthly total cost is `N ÷ (e × p)` and average daily total cost is `N ÷ (e × p × D)`. Round each result to cents for display. When the month closes, the same three rows show actual total cost divided by its full calendar length, actual total cost, and actual revenue. If an input is unavailable, the corresponding row shows a dash.
 
 Card 4 uses the same profit numerator as card 3, divided once by `e × p × D`, then rounded to cents for display. In the November example above it moves from 6,250 ÷ 30 = **CNY 208.33/day** to 5,650 ÷ 30 = **CNY 188.33/day** after the purchase. At a rounding boundary, an exact November estimate of CNY 0.145 displays as CNY 0.15 on card 3. Its daily value is 0.145 ÷ 30 and displays as **CNY 0.00/day**.
 
@@ -191,7 +191,7 @@ Inventory identifies an item by category, name, and unit. A different unit ident
 
 Monthly operating profit uses purchases and expenses recorded in the ledger. FIFO measures the cost of stock used. Packaging, consumables, and phone charges keep their recorded expense category. When reconciling gross profit against net profit, also deduct daily utilities and Other expenses alongside fixed costs. The detailed daily card can use dish costs when available. Monthly and average gross profit use gross profit from the daily ledger. Expense details may show expected utility bills. Monthly fixed costs and net profit use the amounts paid.
 
-To set an actual cash balance, open **Add an item → Force balance adjustment** and enter the date and balance. This posts a balance adjustment and preserves the earlier cash entries. It creates no revenue or expense. Ordinary entries follow their existing deletion rules. Historical entries marked `system_locked` stay protected.
+To set an actual cash balance, open **Add cash entry → Balance override** and enter the date and balance. This posts a balance adjustment and preserves the earlier cash entries. It creates no revenue or expense. Ordinary entries follow their existing deletion rules. Historical entries marked `system_locked` stay protected.
 
 <a id="languages"></a>
 
@@ -398,7 +398,7 @@ The deployment script keeps upgrade backups and leaves the database in place whe
 | Symptom | What to check |
 | --- | --- |
 | The footer says v1.0.2 but the page still looks old | Read the build revision in the served HTML. Follow its asset URLs, compare the returned hashes with the manifest, and confirm the active service and web root. |
-| Chinese text appears in English mode | Check whether the text is a built-in label or a value the user entered. For a fixed label, inspect the active language, translation catalog, and any dialog opened after the initial render. |
+| Chinese text appears in English mode | Check whether the text is a built-in label or a value the user entered. For fixed text, check the active language, catalog, and render path. In the cash table, some automatic descriptions, including `当日收入` (daily revenue), go through the same rendering path as user notes and still appear in Chinese. |
 | Gross profit minus fixed costs differs from net profit | Reconcile daily utilities and Other expenses. Compare saved monthly fixed costs and itemized payments on their own terms. |
 | The daily average is blank on the first of the month | Zero calendar days have elapsed. An actual net profit can already exist even though the daily average is unavailable. |
 | A past forecast shows actual net profit | Check the client’s date. From the first day of the following month, the card uses actual net profit. |

@@ -1,0 +1,23 @@
+v1.0.1 — Item name corrections and recovery
+中文版：NAME_CORRECTION_RECOVERY.txt
+
+Restoring item name correction history requires a full backup of the deployed database and the matching runtime configuration. The source tree contains no backup of a running installation.
+
+Request records
+At startup, Base.metadata.create_all creates inventory_name_corrections if the table is missing. Each row stores the dataset_id and request_id, the request digest, the original request, the complete response, the user who made the correction, the reason, and the time of the correction. The dataset_id foreign key uses ON DELETE CASCADE. When an administrator confirms deletion of a ledger, its request records are deleted with it.
+
+The rows provide a durable record of completed requests. They survive the 366-day retention period for audit_logs as well as separate deletion of audit entries. Repeating an identical request with the same request_id in the same ledger returns the original result. Reusing that ID for a different request returns HTTP 409. Clearing this table to resolve a conflict would discard the records the server uses to recognize retries.
+
+Backup and restore
+A full database backup must include inventory_name_corrections, sync_records, entry_timings, audit_logs, user accounts, ledger permissions, and the other existing tables. A complete PostgreSQL dump made with pg_dump and restored with pg_restore can preserve both schema and data. Keep the deployment's environment variables, service configuration, and external files separately. Source files, business workbooks, and internal Excel workbooks alone cannot restore the complete service and database.
+
+An internal workbook preserves business records and the audit entries included for display. It omits the server's durable request records, some permission timestamps, and server configuration. Importing that workbook cannot restore receipts for past HTTP requests. If a backup predates the new table, starting the updated server creates an empty table. Historical request receipts cannot be reconstructed that way.
+
+Transactions and timestamps
+For an existing record, a name correction preserves SyncRecord.updated_at. Older permission checks use it as the fallback timestamp for the original entry. The sync version and sequence still increase. The audit row's occurred_at and created_at, and the correction row's created_at, record when the correction was made. The Chinese description in the change log locates the saved reason by matching the event_id to the request_id. Existing audit entries are preserved.
+
+Stock quantities
+The old and target names are merged separately for each category and unit. Historical absolute stock counts are recalculated so that the two items' combined quantity at each count is preserved. If the user confirms final_quantities, a separate stocktake is recorded for the current business date. Its closing quantity may differ from the original combined quantity. Original purchase and issue quantities, units, prices, amounts, and notes are preserved. The historical count values used in the adjustment remain in the new audit entries and in name_correction_history. The new stocktake refers to the correction through correction_request_id.
+
+Preview and apply
+The preview digest covers the full ledger record snapshot, the business date, and the array of actual quantities. A new purchase, an edit or deletion of a source record, or a change of business date requires a new preview. When the correction is applied, the server locks the ledger row. It commits all changes to the business records, the edit timestamps associated with the renamed items, the audit entries, and the idempotency receipt in a single database transaction. After success, the client must reload the complete ledger from the server. Writing each preview row back individually would bypass that transaction.

@@ -1,0 +1,35 @@
+v1.0.1 browser monetary arithmetic
+Chinese edition: WEB_EXACT_MONEY.txt
+
+Runtime
+
+web/money.js represents each decimal as a BigInt coefficient and a decimal scale. Implicit conversion via Decimal.valueOf throws an error. Amounts are rounded to two decimal places using ROUND_HALF_UP and unit prices to six. The absolute input limits are 999999999999.99 for amounts and 999999999999.999999 for unit prices. Running balances and report totals can exceed the single-entry limit.
+
+Business scripts
+
+The app, pro, v8, v28, sep04/05/07, oct29, inventory-workspace, and inventory-fifo scripts use Exact helpers for decimal arithmetic, comparisons, truth tests, sorting, and formatting. Strings, dates, and DOM counts follow ordinary JavaScript semantics. The chart code uses explicit toNumber conversions for square roots, coordinates, and APIs that require a Number.
+
+A new monetary amount is normalized to a two-decimal string before it enters the ledger. Totals derived from underlying sales channels or nonempty purchase lines can exceed the input limit. A manual total without source details is still capped. Customer counts and quantities retain their existing numeric interfaces.
+
+Build and test
+
+Edit the business JavaScript in build/web-exact-source/. Maintain the shared web/money.js runtime and the stylesheets directly in web/. The build reads the runtime and regenerates the business scripts. Run these commands from the repository root:
+
+    npm ci --prefix build/js-transform && node build/compile_exact_web.cjs
+    node build/test_exact_web.cjs
+
+build/js-transform/package-lock.json pins acorn to 8.15.0. The deployed web app needs neither acorn nor Node.js and makes no new CDN requests for decimal arithmetic.
+
+FIFO costs and displayed unit prices
+
+Display the original receipt unit price when available. Derive a six-decimal unit price from total cost and quantity only if the original price is missing. Store each lot’s original quantity and cost. Allocate each issue the difference between its rounded cumulative cost and the amount allocated so far. Issuing the whole lot allocates its full original cost.
+
+A lot of three items costing 10.00 in total allocates 3.33, 3.34, and 3.33 when issued one at a time. Three items received at 0.335000 cost 1.01 in total. Their individual issues cost 0.34, 0.33, and 0.34, while the displayed receipt price stays at 0.335000. When an issue contains multiple lines for the same item, the preview carries forward the quantities consumed by earlier lines.
+
+Saving records
+
+normalizePayload visits only known financial fields. Unknown objects such as extension and supplier_metadata retain their types and values, even for keys named price or amount. Saving an unrelated field preserves existing purchase-detail strings in JSON or plain text. The browser validates newly entered monetary values, and the API validates them again. Inventory name corrections run in one backend transaction. After success, the browser returns to the inventory overview and searches for the corrected name.
+
+Phone and tablet editing
+
+Switching from the default read-only mode to edit mode recalculates permissions for the new-customer and total-customer fields. The fields become editable when the account and the server’s correction window allow it.

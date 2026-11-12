@@ -1,0 +1,29 @@
+v1.0.1 — Monetary precision in the backend
+中文版：MONEY_BACKEND.txt
+
+Financial calculations use Python Decimal values constructed from the original decimal text. Amounts are rounded to cents using ROUND_HALF_UP. Unit prices retain six decimal places. A receipt keeps the original unit price entered for the batch, even if dividing its total by its quantity gives a different figure. New or changed monetary values are written as strings in API payloads and JSON. Quantities may remain numeric in quantity calculations. Convert them to decimal before using them to multiply or divide money.
+
+Implementation by module
+- money.py handles amounts, unit prices, quantity times unit price, and normalization of known fields. Unknown metadata keeps its original types.
+- money_routes.py preserves decimal precision when parsing JSON numbers used as money in HTTP requests. It accepts application/json, application/*+json, case variations of these media types, and requests without a Content-Type header.
+- database.py configures SQLAlchemy to read all stored decimal digits from legacy numeric JSON amounts. The recursive JSON serializer recognizes LegacyMoneyNumber and writes the value back as a JSON number. A new monetary string remains a JSON string. This change requires no data migration.
+- main.py uses Decimal for cash receipts, expenses, loans, balance overrides, carried balances, and daily and monthly totals. Monetary normalization covers write paths, conflict resolution, and Excel imports. Equivalent numeric and string representations of an old amount do not register as an edit. Legacy revenue and detail lines without their own edit timestamps retain the existing time anchor. Saving a customer count does not restart an expired edit window.
+- inventory_validation.py checks that a stock receipt's total equals ROUND_HALF_UP(quantity * unit_price, 2), with no floating-point tolerance.
+- name_corrections.py writes the optional unit price of a manually entered stock count as a string with six decimal places. It preserves transaction boundaries, preview hashes, request idempotency, historical stocktakes, and the edit timestamps for customer data.
+- excel_io.py writes amounts in business workbooks as exact decimal text. For a legacy numeric cell, it reads the original number from the workbook's OOXML. The internal workbook reader retains JSON precision, and its writer preserves legacy database number types and decimal text. Importing an equivalent amount keeps the original database value. Merging purchases stored as JSON text or arrays retains individual batches and additional fields.
+- wechat_pay.py and wechat_sync.py use Decimal for each line as well as the receipt, refund, and fee totals. They produce monetary values as strings.
+
+Fields and limits
+Monetary fields include each store's cash, WeChat Pay, Alipay, delivery, and total revenue. They also include daily revenue and costs (utilities, other expenses, and fees), monthly fixed costs, individual fixed expense amounts, known monetary fields in purchases and dish records (total, 金额, cost, price, unit_price, 单价), manual inventory fields total and unit_price, cash balances and loans, and the amount of a cash transaction. Purchase and dish data may be stored as JSON text or arrays. Dates, customer counts, quantities, IDs, and unknown metadata retain their existing types.
+
+The maximum absolute input amount is 999999999999.99. The maximum absolute unit price is 999999999999.999999. NaN, Infinity, booleans, and invalid numeric text are rejected. Cumulative report totals may exceed the limit on a single entry, but they must have finite values and fit the calculation precision.
+
+FIFO
+The web and desktop clients calculate FIFO costs. The API checks inventory balances and document amounts. It does not run a separate FIFO costing engine. A batch's cost is allocated by the difference between successive cumulative cost amounts, with the final issue taking every remaining cent. See build/FIFO_CONTRACT.md for the calculation contract and build/test_fifo_contract.py for the cross-client checks.
+
+Tests
+From the repository's backend directory, run PYTHONPATH=.:tests python -m pytest -q --tb=short.
+The money tests are tests/test_money_api.py and tests/test_money_io.py. The workbook and WeChat billing tests are tests/test_excel_io.py, tests/test_wechat_pay.py, and tests/test_v26_store_settings.py.
+
+Legacy data and deployment verification
+A value already rounded by an old client or importer no longer contains the digits needed to recover the original input. This release preserves the precision that remains. If the original decimal number is still present in PostgreSQL JSONB, the backend can read it exactly. Upgrading does not require rewriting monetary values in existing ledgers. To verify that the stored records survived deployment unchanged, compare digests of the raw SQL payload::text before and after the upgrade.

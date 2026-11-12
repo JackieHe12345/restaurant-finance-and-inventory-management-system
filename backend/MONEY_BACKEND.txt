@@ -1,24 +1,29 @@
-v1.0.1 后端精确金额说明
+v1.0.1 后端金额精度说明
+English edition: MONEY_BACKEND.en.txt
 
-金额在业务计算中使用 Decimal，从原十进制文本创建，ROUND_HALF_UP 到分；单价六位，保留原入库单价，不以总额除数量覆盖。新/修改金额API与JSON写为字符串。数字数量只在数量计算中使用；参与金额乘除先转换十进制。
+业务计算使用 Python Decimal，从原始十进制文本构造金额，按 ROUND_HALF_UP 舍入到分。单价保留六位小数。即使批次总额除以数量得到不同的结果，入库记录仍保留原先录入的单价。新增或修改的金额在 API 和 JSON 中存为字符串。单独计算数量时可以沿用数值类型，数量参与金额乘除时须先转为十进制数。
 
-实际修改范围：
-- money.py：统一金额、单价、数量乘单价、已知字段规范化，未知metadata不通转。
-- money_routes.py：HTTP JSON数字金额保留原词法，兼容application/json、大小写、application/*+json及无Content-Type。
-- database.py：SQLAlchemy JSON读取保留旧金额数字的全部十进制位；LegacyMoneyNumber标记通过结构化递归serializer写回原JSON number。普通新金额字符串保持JSON string。没有数据库数据迁移。
-- main.py：现金收入/支出/借款/强制余额/结转/日月汇总改Decimal；全部写入、冲突解决、Excel应用路径规范化。旧numeric/string等金额不产生伪修改；历史无独立时钟的既有收入与明细保存原锚点，客户保存不会重开旧锁。
-- inventory_validation.py：入库total严格等于ROUND_HALF_UP(quantity*unit_price,2)，无浮点公差。
-- name_corrections.py：手填实际库存的可选单价六位字符串；事务、预览哈希、幂等、历史盘点、客户时钟逻辑保留。
-- excel_io.py：用户Excel金额为精确文本；旧数值格直接读取OOXML的原始数值；内部JSON精确读取，内部导出保留旧数据库数字类型与词法；导入同原金额时保留DB旧值。JSON/数组采购合并保留批次与扩展字段。
-- wechat_pay.py/wechat_sync.py：每笔及收入退款手续费汇总均Decimal；金额输出字符串。
+各模块的处理方式
+- money.py 负责金额、单价、数量乘单价及已知字段的规范化。未识别的元数据保留原类型。
+- money_routes.py 解析 HTTP 请求中的 JSON 数字金额时保留原始十进制精度。支持 application/json、application/*+json 及这些媒体类型的大小写变体，也支持未设置 Content-Type 的请求。
+- database.py 配置 SQLAlchemy，使其精确读取旧 JSON 数字金额的全部十进制位。递归 JSON 序列化程序识别 LegacyMoneyNumber，将这类旧值写回为 JSON 数字。新金额字符串仍写为 JSON 字符串。这项改动无需数据迁移。
+- main.py 使用 Decimal 计算现金收入、支出、借款、强制修改后的余额、结转余额及日度和月度汇总。金额规范化覆盖各写入路径、冲突解决和 Excel 导入。数值相等的旧 JSON 数字和字符串视作相同金额。旧收入或明细没有独立的修改计时时，沿用原有时间依据。保存客人数不会重新开启已经结束的修改时限。
+- inventory_validation.py 校验入库单的 total 必须等于 ROUND_HALF_UP(quantity * unit_price, 2)，不设浮点误差容限。
+- name_corrections.py 将手工录入盘点量时可选的单价保存为六位小数字符串。事务边界、预览哈希、请求幂等、历史盘点和客数字段的修改计时规则保持一致。
+- excel_io.py 在业务工作簿中以精确十进制文本写入金额，遇到旧数值单元格时直接读取工作簿 OOXML 中的原始值。读取内部工作簿时保留 JSON 精度，导出时保留旧数据库金额的数字类型和十进制文本。导入金额与数据库已有金额相等时保留原值。合并以 JSON 文本或数组保存的采购记录时保留各批次及其扩展字段。
+- wechat_pay.py 和 wechat_sync.py 对每笔交易以及收入、退款、手续费合计使用 Decimal，输出金额为字符串。
 
-金额字段：各店现金/微信/支付宝/外卖/收入、日账收益成本水电其他手续费、月固定金额、固定支出金额、采购与菜品JSON/数组的total/金额/cost及price/unit_price/单价、手工库存total/unit_price、现金余额/借款/交易amount。日期/人数/数量/id/任意未知metadata保持既有类型。
+金额字段与输入限制
+金额字段包括各店的现金、微信、支付宝、外卖和营业收入合计；日账收入和各项成本（水电、其他支出、手续费）；月度固定成本及逐笔固定支出金额；采购和菜品记录中的 total、金额、cost、price、unit_price、单价；手工库存的 total、unit_price；现金余额、借款及现金流水的 amount。采购和菜品记录兼容 JSON 文本和数组。日期、客人数、数量、ID 和未知元数据沿用原有类型。
 
-输入：金额绝对上限999999999999.99；单价上限999999999999.999999；拒绝NaN/Infinity/bool/非法文本。累计报表不套用单笔上限，仍要求有限、合理精度。
+单笔金额输入的绝对值上限为 999999999999.99，单价的绝对值上限为 999999999999.999999。NaN、Infinity、布尔值和无效数字文本均会被拒绝。累计报表可以超过单笔上限，但合计值必须为有限数，并符合运算精度要求。
 
-FIFO成本由网页/App计算，API只承担余额守卫及单据金额验证，没有另一套后端FIFO成本引擎。跨端约定按批次累计耗用金额差额分摊、最后一笔吃余分。计算约定见 build/FIFO_CONTRACT.md，两端对照检查见 build/test_fifo_contract.py。
+先进先出（FIFO）
+网页端和桌面端计算 FIFO 成本。API 校验库存余额和单据金额，没有独立的 FIFO 成本引擎。批次成本按本次与上次累计耗用成本的差额分摊，最后一笔出库分配所有剩余金额，精确到分。计算规则见 build/FIFO_CONTRACT.zh-CN.md，跨端检查见 build/test_fifo_contract.py。
 
-测试：在仓库 backend 目录运行 PYTHONPATH=. python -m pytest -q --tb=short。
-金额专项测试为 tests/test_money_api.py、tests/test_money_io.py；Excel和微信账单测试为 tests/test_excel_io.py、tests/test_wechat_pay.py、tests/test_v26_store_settings.py。
+测试
+在仓库的 backend 目录运行 PYTHONPATH=.:tests python -m pytest -q --tb=short。
+金额专项测试位于 tests/test_money_api.py、tests/test_money_io.py。工作簿与微信账单测试位于 tests/test_excel_io.py、tests/test_wechat_pay.py 和 tests/test_v26_store_settings.py。
 
-边界说明：已经在旧客户端或旧导入程序里被浮点舍入后保存的错误数字无法从现存值推回原始输入；本版防止后续再损失精度。PostgreSQL JSONB内仍保存的原始十进制数字可精确读取。升级不需要重写已有账本金额；部署验收应以SQL payload::text原始摘要核对数据库记录是否保持不变。
+旧数据与部署核验
+旧客户端或导入程序已经舍入后保存的数字无法还原为当时的原始输入。本版保留现存精度。如果 PostgreSQL JSONB 中仍有原始十进制数字，后端可精确读取。升级无需重写现有账本金额。核验部署前后的数据库记录时，可将 SQL 表达式 payload::text 取得的原文分别计算摘要并进行比较。

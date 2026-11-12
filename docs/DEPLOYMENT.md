@@ -54,7 +54,7 @@ curl --fail http://127.0.0.1:8080/api/v1/health
 
 A healthy API returns `status: ok` and `version: v1.0.2`. If the first request fails, inspect the startup log with `docker compose logs --tail=100 backend` and retry after the service starts.
 
-**First sign-in.** On the host, open <http://127.0.0.1:8080> and sign in with the administrator account from `.env`. Create a ledger for the store, then assign each staff account the ledgers it may access. Startup creates an administrator only if the configured username does not exist. Change existing passwords in the user management screen.
+**First sign-in.** On the host, open <http://127.0.0.1:8080> and sign in with the administrator account from `.env`. Open **Excel Books → Create an Independent Ledger** to create the store’s ledger. In **Users**, assign it to the staff accounts that need it and choose a role for each. The startup password is used only when the configured administrator account is first created. Reset an existing account’s password in **Users**.
 
 ### Services and persistent data
 
@@ -165,7 +165,7 @@ For a native installation, back up PostgreSQL, the runtime environment file, and
 
 ## 4. Build a release archive for a native service
 
-On the build machine, follow the [README instructions for building the browser scripts, running the API regression tests, and checking FIFO inventory costing](../README.en.md#running-the-tests). Use the same checkout for the dashboard tests and the server archive below.
+On the build machine, follow the [README instructions for building the browser scripts, running the API regression tests, and checking FIFO inventory costing](../README.en.md#running-the-tests). Run the dashboard test and build the archive from that same Git checkout. The packager reads the current files and uses Git to check that each one is tracked. A source ZIP alone cannot supply that information.
 
 ```bash
 grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html &&
@@ -175,7 +175,7 @@ grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html &&
 
 The path above is the default output location. The packager creates a new archive on each run and stops if the filename already exists. Choose another output filename to keep the previous archive.
 
-The archive has the following layout under `restaurant-cloud-v1.0.2/`.
+The archive contains the files needed to update the service. Keep this Deployment Guide from the same source checkout for the upgrade on the target host. The archive layout under `restaurant-cloud-v1.0.2/` is shown below.
 
 ```text
 api/app/                           Python API source

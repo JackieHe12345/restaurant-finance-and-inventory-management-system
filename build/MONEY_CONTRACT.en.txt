@@ -1,0 +1,31 @@
+v1.0.1 exact monetary rules
+Chinese edition: MONEY_CONTRACT.txt
+
+Input and storage
+
+These rules apply to the API, the browser, and the macOS client. Read the original decimal text into Python Decimal or the browser’s BigInt-based decimal type. Use decimal arithmetic for all monetary operations and rounding, including multiplication or division by a fractional quantity. New and changed monetary fields are stored and sent as decimal strings. Use ROUND_HALF_UP to two decimal places for amounts and six for unit prices.
+
+The absolute input limits are 999999999999.99 for an amount and 999999999999.999999 for a unit price. Reject invalid input, including NaN, infinity, booleans, and values outside the limits. Preserve empty fields. An unknown cost retains null and price_known=false. A price entered as zero is known.
+
+FIFO allocation
+
+For each issue, calculate the cumulative cost of the quantity issued from the lot so far, then subtract the cost allocated to earlier issues. Round the cumulative amount to cents before subtracting:
+
+    ROUND_HALF_UP(original lot cost × cumulative quantity issued ÷ original lot quantity, 2) − cost already allocated
+
+The last issue receives the remaining cents so that the total allocated equals the original lot cost. A chart may convert coordinates and ratios to floating point when drawing them. These display values must never be written to the ledger.
+
+Historical records
+
+Read legacy numeric fields as well as decimal strings. A change in representation alone does not constitute an edit: equivalent values keep their original representation and edit timestamp. Deployments must preserve historical records. Normalize only known financial fields, including nested amounts in purchases, dishes, and inventory. Dates, customer counts, quantities, identifiers, and unknown extension fields retain their existing types.
+
+Daily totals and reports
+
+An aggregate can exceed the single-entry limit when the underlying entries are present. Each channel input and each purchase line remains subject to the limit. Report totals must remain finite and meet the precision checks. For a daily record the following source fields qualify a total for this treatment:
+
+- Store A or Store B revenue (A店收入 / B店收入): at least one sales channel for that store.
+- Total cash (总现金): a cash channel. Total online (总线上): an online or delivery channel.
+- Revenue totals (收益 / 总金额 / 收入 / 总收入): at least one underlying sales channel.
+- Ingredient or seasoning cost (食材成本 / 佐料成本): nonempty purchase details for the corresponding category.
+
+A manually entered total without its source fields is subject to the single-entry limit.

@@ -1,9 +1,24 @@
-# FIFO verification contract
+# Verifying first-in, first-out (FIFO) stock costs
 
-The cross-client FIFO contract is in `build/test_fifo_contract.py`. It compares FIFO costs and batch allocations between the web and desktop implementations, then checks quantity balances against the API. All three use the same receipt and issue fixtures, including this example:
+**[← Back to the English README](../README.en.md)** · [简体中文](FIFO_CONTRACT.zh-CN.md) · [Engineering Reference](../docs/ENGINEERING_REFERENCE.md#calculations)
 
-- 9 October: 9 jin at 20 yuan, issue 8 jin, leave 1 jin.
-- 10 October: 10 jin at 15 yuan, issue 3 jin.
-- The second issue consumes 1 jin × 20 yuan and 2 jin × 15 yuan: 50 yuan total, 16.67 yuan average.
+The [FIFO regression test](test_fifo_contract.py) runs the same stock movements through the web and macOS implementations. It compares the cost of each issue, the quantity drawn from each lot, and the remaining stock. It also checks the closing quantities against the API’s stock calculation.
 
-After installing the test and desktop dependencies and rebuilding the web scripts as described in the README, run `python build/test_fifo_contract.py` from the repository root. The fixtures are created in memory; the contract does not connect to a production API or write ledger records.
+## Example with two purchase prices
+
+The example uses pork measured in *jin* (斤), the unit recorded in the test ledger. All prices are in CNY.
+
+| Date | Stock received | Stock issued | Closing stock |
+| --- | --- | --- | --- |
+| October 9 | 9 jin at CNY 20 per jin | 8 jin from the October 9 lot | 1 jin |
+| October 10 | 10 jin at CNY 15 per jin | 1 jin from October 9 and 2 jin from October 10 | 8 jin |
+
+The October 10 issue costs **CNY 50.00** (1 × 20 + 2 × 15). Its displayed average unit cost is **CNY 16.67 per jin** (50 ÷ 3). The 8 jin left in stock all belong to the October 10 lot and have a book value of **CNY 120.00**.
+
+## Running the check
+
+Follow the [README test instructions](../README.en.md#running-the-tests) to install the test and desktop dependencies and rebuild the web scripts. From the repository root, run the command below. It creates the test records in memory and calls the API’s quantity calculation locally.
+
+```bash
+python build/test_fifo_contract.py
+```
