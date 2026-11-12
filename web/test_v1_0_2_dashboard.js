@@ -40,6 +40,9 @@ check('projection picks current ingredient rate and prior other rate independent
   const live=c.monthForecastV102(2026,11);
   assert.equal(format(live.revenue),'6000.00');assert.equal(format(live.cost),'9962.37');assert.equal(format(live.net),'-3962.37');
   assert.equal(format(live.breakEven),'182.88');
+  const prior=c.monthForecastV102(2026,10);
+  assert.equal(format(live.dailyNet),'-132.08');assert.equal(format(prior.dailyNet),'35.48');
+  assert.equal(c.monthChangeV102(live.dailyNet,prior.dailyNet),'比上个月少了 472.2%');
   assert.equal(format(c.monthForecastV102(2026,10).net),'1100.00');
   assert.equal(c.monthForecastV102(2026,10).closed,true);
   assert.equal(c.monthChangeV102(c.monthForecastV102(2026,11).net,c.monthForecastV102(2026,10).net),'比上个月少了 460.2%');
@@ -47,13 +50,13 @@ check('projection picks current ingredient rate and prior other rate independent
 check('today’s saved variable spending enters each category immediately; future spending and today’s revenue stay out',()=>{
   activeMetrics=metrics.filter(m=>m.date<'2026-11-10');
   const before=c.monthForecastV102(2026,11);
-  assert.equal(format(before.net),'2704.30');
+  assert.equal(format(before.net),'2704.30');assert.equal(format(before.dailyNet),'90.14');
   activeMetrics=[...activeMetrics,metric('2026-11-10',90000,305,89995,2,3),metric('2026-11-11',0,100000,0,50000,50000)];
   const after=c.monthForecastV102(2026,11);
   assert.equal(format(after.revenue),format(before.revenue));
   assert.equal(format(after.current.ingredient),'505.00');assert.equal(format(after.current.other),'300.00');
   assert.equal(after.current.elapsed,9);
-  assert.equal(format(after.net),'2316.67');assert.equal(after.choices.other.winner,'current');
+  assert.equal(format(after.net),'2316.67');assert.equal(format(after.dailyNet),'77.22');assert.equal(after.choices.other.winner,'current');
   activeMetrics=metrics;
 });
 check('live comparisons keep exact winners even for daily values displaying the same cents and handle genuine ties',()=>{
@@ -81,7 +84,7 @@ check('local first-of-month boundary replaces previous estimate with actual net'
   assert.equal(format(c.monthForecastV102(2026,10).revenue),'3100.00');
   assert.equal(format(c.monthOverviewMetricsV102(2026,10).avgNet),'35.48');
   assert.equal(c.monthOverviewMetricsV102(2026,11).avgNet,null);
-  const first=c.monthForecastV102(2026,11);assert.equal(first.net,null);
+  const first=c.monthForecastV102(2026,11);assert.equal(first.net,null);assert.equal(first.dailyNet,null);
   assert.equal(first.choices.ingredient.now.days,0);assert.equal(first.choices.ingredient.chosen,null);
   const firstHelp=c.forecastLabelV102('report',first);assert.ok(firstHelp.includes('暂无日均 (400.00 ÷ 0)'));assert.ok(firstHelp.includes('两月成本对照（仅供参考）'));
   clock=[2026,10,10,12];
@@ -114,6 +117,7 @@ check('fixed-only prior cost is valid; missing prior cost is unavailable',()=>{
   state.months.delete('2026-10');assert.equal(c.monthForecastV102(2026,11).net,null);
   assert.equal(c.monthOverviewMetricsV102(2026,10).net,null);
   assert.equal(c.monthForecastV102(2026,12).net,null);
+  for(const month of [10,11,12])assert.equal(c.monthForecastV102(2026,month).dailyNet,null);
   state.months.set('2026-10',{});activeMetrics=metrics;
 });
 check('larger fixed budget wins in either direction; stored zero and absent monthly fixed do not erase history',()=>{
@@ -133,7 +137,7 @@ check('prior ingredient and current other rate can win independently, including 
   clock=[2024,1,11,12];state.months.set('2024-01',{fixed:0});
   activeMetrics=[metric('2024-01-01',600,310,290,248,62),metric('2024-02-01',1000,50,1000)];
   const f=c.monthForecastV102(2024,2);
-  assert.equal(format(f.revenue),'2900.00');assert.equal(format(f.cost),'435.00');assert.equal(format(f.net),'2465.00');
+  assert.equal(format(f.revenue),'2900.00');assert.equal(format(f.cost),'435.00');assert.equal(format(f.net),'2465.00');assert.equal(format(f.dailyNet),'85.00');
   state.months.delete('2024-01');clock=[2026,10,10,12];activeMetrics=metrics;
 });
 check('projecting before rounding preserves exact half cents for daily costs and revenue',()=>{
@@ -142,6 +146,41 @@ check('projecting before rounding preserves exact half cents for daily costs and
   const f=c.monthForecastV102(2026,11);
   assert.equal(format(f.revenue),'0.03');assert.equal(format(f.cost),'0.03');assert.equal(format(f.net),'0.00');
   state.months.set('2026-10',{});state.months.set('2026-11',{});clock=[2026,10,10,12];activeMetrics=metrics;
+});
+check('daily forecast divides the unrounded monthly numerator and rounds cash once',()=>{
+  state.months.set('2026-10',{fixed:0});
+  for(const [day,income,fixed,monthly,daily] of [
+    [5,'0.03','0.08','0.15','0.00'],[5,'0.01','0.22','-0.15','0.00'],
+    [7,'0.03','0.00','0.15','0.01'],[7,'0.00','0.15','-0.15','-0.01'],
+    [5,'0.04','0.30','0.00','0.00']
+  ]){
+    clock=[2026,10,day,12];state.months.set('2026-11',{fixed});
+    activeMetrics=[metric('2026-11-01',income,0,income)];
+    const f=c.monthForecastV102(2026,11);
+    assert.equal(format(f.net),monthly);assert.equal(format(f.dailyNet),daily);
+  }
+  clock=[2026,10,10,12];state.months.set('2026-10',{});state.months.set('2026-11',{});activeMetrics=metrics;
+});
+check('closed February uses all calendar days and the preceding January uses its own 31 days',()=>{
+  for(const [year,days] of [[2023,28],[2024,29]]){
+    activeMetrics=[metric(`${year}-01-01`,310,0,310),metric(`${year}-02-01`,days*20,0,days*20)];
+    for(const month of ['01','02'])state.months.set(`${year}-${month}`,{fixed:0});
+    const february=c.monthForecastV102(year,2),january=c.monthForecastV102(year,1);
+    assert.equal(format(february.dailyNet),'20.00');
+    assert.equal(february.closed,true);assert.equal(format(january.dailyNet),'10.00');
+    assert.equal(c.monthChangeV102(february.dailyNet,january.dailyNet),'比上个月多了 100.0%');
+    for(const month of ['01','02'])state.months.delete(`${year}-${month}`);
+  }
+  activeMetrics=metrics;
+});
+check('daily month change rounds an exact half tenth once even with a repeating previous daily rate',()=>{
+  clock=[2026,11,1,12];
+  for(const month of ['2026-10','2026-11'])state.months.set(month,{fixed:0});
+  activeMetrics=[metric('2026-10-01','2.00',0,'2.00'),metric('2026-11-01','0.03',0,'0.03')];
+  const current=c.monthForecastV102(2026,11),previous=c.monthForecastV102(2026,10);
+  assert.equal(c.monthChangeV102(current.netNumerator,previous.netNumerator,current.dailyNetDenominator,previous.dailyNetDenominator),'比上个月少了 98.5%');
+  for(const month of ['2026-10','2026-11'])state.months.set(month,{});
+  clock=[2026,10,10,12];activeMetrics=metrics;
 });
 check('the three-line forecast footer uses the full calendar month and divides before rounding',()=>{
   state.months.set('2026-10',{fixed:0});state.months.set('2026-11',{fixed:'0.07'});
@@ -216,17 +255,28 @@ Object.assign(c,{setup(){},$:field,selectedContext:()=>({year:2026,month:11,date
 vm.runInContext(func(dashboard,'summary'),c);
 check('five rendered cards preserve requested order, margins, parentheses, and monthly comparisons',()=>{
   c.summary();const html=field('o30Overview').innerHTML;
-  assert.deepEqual([...html.matchAll(/data-overview-metric="([^"]+)"/g)].map(m=>m[1]),['avgRevenue','avgGross','forecast','avgNet','net']);
+  assert.deepEqual([...html.matchAll(/data-overview-metric="([^"]+)"/g)].map(m=>m[1]),['avgRevenue','avgGross','forecast','dailyForecast','net']);
   assert.ok(html.includes('日均毛利润 (毛利率)'));
   assert.ok(html.includes('144.44 <span class="o30-kpi-margin">(72.2%)</span>'));
   assert.ok(html.includes('(根据 本月预计成本 和 本月预计收入 计算)'));assert.ok(html.includes('forecast-help-overview'));
   assert.ok(html.includes('预计食材成本 (含佐料)'));assert.ok(html.includes('其他成本 = 总成本 − 食材与佐料成本 − 固定成本'));
-  assert.ok(html.includes('日均净利润 (净利率)'));assert.ok(html.includes('净利润 (净利率)'));
-  assert.ok(html.includes('811.11 <span class="o30-kpi-margin">(67.6%)</span>'));
+  const dailyCard=html.match(/<article data-overview-metric="dailyForecast">(.*?)<\/article>/s)[1];
+  assert.ok(dailyCard.includes('>预计 本月每日盈亏</span><small class="o30-kpi-formula">(预计月底盈亏 ➗ 本月天数)</small>'));
+  assert.ok(dailyCard.includes('<strong class="negative">-132.08/天</strong><small>比上个月少了 472.2%</small>'));
+  assert.ok(html.includes('净利润 (净利率)'));
   assert.ok(html.includes('7300.00 <span class="o30-kpi-margin">(67.6%)</span>'));
   assert.equal([...html.matchAll(/<small>比上个月/g)].length,5);
   assert.ok(html.includes('<strong class="negative">-3962.37</strong>'));
-  state.language='en';c.summary();assert.ok(field('o30Overview').innerHTML.includes('More than last month by 100.0%'));state.language='zh';
+  state.language='en';c.summary();const english=field('o30Overview').innerHTML;
+  assert.ok(english.includes('More than last month by 100.0%'));
+  assert.ok(english.includes('>Estimated daily profit/loss this month</span><small class="o30-kpi-formula">(Estimated month-end profit/loss ÷ days in the month)</small>'));
+  assert.ok(english.includes('<strong class="negative">-132.08/day</strong>'));
+  state.language='zh';
+  const originalMetrics=activeMetrics;
+  activeMetrics=[];c.summary();
+  const missing=field('o30Overview').innerHTML.match(/<article data-overview-metric="dailyForecast">(.*?)<\/article>/s)[1];
+  assert.ok(missing.includes('<strong class="">—</strong><small>暂无上月可比数据</small>'));
+  activeMetrics=originalMetrics;
 });
 check('full report wording and cash-only-entry removal are shipped',()=>{
   assert.ok(app.includes('(根据 本月预计成本 和 本月预计收入 计算)'));

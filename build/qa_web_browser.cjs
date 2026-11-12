@@ -16,6 +16,7 @@ function assertForecastTotals(text,lang,daily,cost,revenue,closed=false){
   [`${label} average daily total cost: CNY ${daily}/day`,`${label} monthly total cost: CNY ${cost}`,`${label} monthly revenue: CNY ${revenue}`];
  assert(text.endsWith('\n\n'+lines.join('\n')),text);
 }
+function dailyCard(page){return page.locator('[data-overview-metric="dailyForecast"]');}
 async function stable(page){await page.evaluate(()=>document.fonts.ready);await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));}
 async function selectMonth(page,month){await page.evaluate(month=>{showPage('overview');$('selectedDate').value=`2026-${month}-09`;$('selectedMonth').value=String(Number(month));$('selectedYear').value='2026';renderDashboard();},month);await stable(page);}
 async function chartGeometry(page,tag){
@@ -60,9 +61,11 @@ async function seedLedger(keepPolling=false){
   await selectMonth(page,'11');
   let cards=await page.locator('.o30-kpis article').allTextContents();
   const keys=await page.locator('.o30-kpis article').evaluateAll(es=>es.map(e=>e.dataset.overviewMetric));
-  assert.deepEqual(keys,['avgRevenue','avgGross','forecast','avgNet','net']);
-  assert(cards[1].includes('日均毛利润 (毛利率)'));assert(cards[3].includes('日均净利润 (净利率)'));assert(cards[4].includes('净利润 (净利率)'));
-  assert(cards[3].includes('244.44'));assert(cards[3].includes('(8.5%)'));assert(cards[4].includes('2,200.00'));assert(cards[4].includes('(8.5%)'));
+  assert.deepEqual(keys,['avgRevenue','avgGross','forecast','dailyForecast','net']);
+  assert(cards[1].includes('日均毛利润 (毛利率)'));assert(cards[4].includes('净利润 (净利率)'));
+  assert.equal(await dailyCard(page).locator('strong').textContent(),'1,145.56 元/天');
+  assert.equal(await dailyCard(page).locator(':scope > small').textContent(),'比上个月多了 51.4%');
+  assert(cards[4].includes('2,200.00'));assert(cards[4].includes('(8.5%)'));
   assert(cards.every(t=>t.includes('比上个月')));
   report.currentCards=cards;
   await page.locator('#o30DashboardDetails').evaluate(e=>e.open=true);
@@ -74,6 +77,9 @@ async function seedLedger(keepPolling=false){
   await page.locator('#monthCard').screenshot({path:path.join(out,'monthly-report-current.png')});
   for(const lang of ['zh','en']){
    await page.evaluate(lang=>{state.language=lang;applyLanguage();renderDashboard();},lang);
+   const label=dailyCard(page).locator(':scope > span');
+   assert.equal(await label.innerText(),lang==='zh'?'预计 本月每日盈亏\n(预计月底盈亏 ➗ 本月天数)':'Estimated daily profit/loss this month\n(Estimated month-end profit/loss ÷ days in the month)');
+   assert.equal(await dailyCard(page).locator('strong').textContent(),lang==='zh'?'1,145.56 元/天':'CNY 1,145.56/day');
    for(const scope of ['overview','report']){
     const selector=`.forecast-info-button[aria-describedby="forecast-help-${scope}"]`;
     const trigger=page.locator(selector),popup=page.getByRole('tooltip');
@@ -100,8 +106,11 @@ async function seedLedger(keepPolling=false){
      const overflow=cards.filter(c=>c.scrollWidth>c.clientWidth+1).map(c=>c.dataset.overviewMetric);
      const clipped=[];
      for(const c of cards){const b=c.getBoundingClientRect();for(const text of c.querySelectorAll('strong,article>span,small')){const r=document.createRange();r.selectNodeContents(text);for(const rect of r.getClientRects())if(rect.width&&rect.height&&(rect.left<b.left-1||rect.right>b.right+1))clipped.push(text.textContent);}}
-     const formula=e.querySelector('.o30-kpi-formula'),range=document.createRange();range.selectNodeContents(formula.parentElement.firstChild);const title=range.getBoundingClientRect();
-     return {overflow,clipped,formulaNewLine:formula.getBoundingClientRect().top>=title.bottom-1,tops:cards.map(c=>Math.round(c.getBoundingClientRect().top)),documentOverflow:document.documentElement.scrollWidth>innerWidth+1};
+     const formulaNewLine=[...e.querySelectorAll('.o30-kpi-formula')].every(formula=>{
+       const range=document.createRange();range.selectNodeContents(formula.previousElementSibling);
+       return formula.getBoundingClientRect().top>=range.getBoundingClientRect().bottom-1;
+     });
+     return {overflow,clipped,formulaNewLine,tops:cards.map(c=>Math.round(c.getBoundingClientRect().top)),documentOverflow:document.documentElement.scrollWidth>innerWidth+1};
     });
     assert.deepEqual(result.overflow,[],JSON.stringify({lang,width,result}));assert.deepEqual(result.clipped,[],JSON.stringify({lang,width,result}));assert(result.formulaNewLine,'formula must be on next line');assert.equal(result.documentOverflow,false);
     if(width>=1600)assert.equal(new Set(result.tops).size,1,'wide desktop five cards on one row');
@@ -122,6 +131,8 @@ async function seedLedger(keepPolling=false){
   await page.setViewportSize({width:1600,height:1100});await selectMonth(page,'10');
   const closed=await page.locator('[data-overview-metric="forecast"] strong').textContent();assert(closed.includes('23,450.00'),closed);
   report.closedMonthActual=closed;
+  report.closedDailyActual=await dailyCard(page).locator('strong').textContent();
+  assert.equal(report.closedDailyActual,'756.45 元/天');
   const closedHelp=await page.locator('#forecast-help-overview').textContent();
   assertForecastTotals(closedHelp,'zh','1,243.55','38,550.00','62,000.00',true);
   assert(closedHelp.includes('实际收入 62,000.00 元 − 实际总成本 38,550.00 元 = 23,450.00 元'));
@@ -138,6 +149,8 @@ async function seedLedger(keepPolling=false){
   await live.locator('#selectedMonth').selectOption('11');
   const liveProfit=live.locator('[data-overview-metric="forecast"] strong');
   const reportProfit=live.locator('#monthCard .forecast-row').nth(1).locator('strong');
+  const liveDailyProfit=dailyCard(live).locator('strong');
+  const startDailyProfit=await liveDailyProfit.textContent();assert.equal(startDailyProfit,'1,145.56 元/天');
   const startProfit=await liveProfit.textContent();assert(startProfit.includes('34,366.67'),startProfit);
   await live.locator('button[data-page="food"]').click();
   await live.locator('#foodDate').fill('2026-11-10');
@@ -151,6 +164,8 @@ async function seedLedger(keepPolling=false){
   await live.waitForFunction(()=>document.querySelector('#foodResult').textContent.includes('已保存到云端'));
   const afterSave=await liveProfit.textContent();assert(afterSave.includes('34,066.67'),afterSave);
   assert.equal(await reportProfit.textContent(),afterSave);
+  const dailyAfterSave=await liveDailyProfit.textContent();assert.equal(dailyAfterSave,'1,135.56 元/天');
+  assert.equal(await dailyCard(live).locator(':scope > small').textContent(),'比上个月多了 50.1%');
   const saved=await live.evaluate(()=>previewRecords('preview').find(r=>r.record_key==='2026-11-10').payload.daily[0]);
   assert.equal(saved.食材成本,'890.00');assert(saved.食材明细.includes('Synthetic greens'));
   await live.locator('button[data-page="overview"]').click();
@@ -164,6 +179,8 @@ async function seedLedger(keepPolling=false){
     previewRecordStores.set('preview',records);
   });
   await live.waitForFunction(()=>document.querySelector('[data-overview-metric="forecast"] strong').textContent.includes('33,866.67'),null,{timeout:15000});
+  const dailyAfterSync=await liveDailyProfit.textContent();assert.equal(dailyAfterSync,'1,128.89 元/天');
+  assert.equal(await dailyCard(live).locator(':scope > small').textContent(),'比上个月多了 49.2%');
   const afterSync=await liveProfit.textContent();assert.equal(await reportProfit.textContent(),afterSync);
   for(const location of [livePanel,live.locator('#forecast-help-report')]){
     assertForecastTotals(await location.textContent(),'zh','1,471.11','44,133.33','78,000.00');
@@ -171,7 +188,7 @@ async function seedLedger(keepPolling=false){
   assert((await livePanel.innerText()).includes('60.00 元 ÷ 9'));
   const revenueAfterSync=await live.locator('#monthCard .forecast-row').first().locator('strong').textContent();
   assert(revenueAfterSync.includes('78,000.00'),revenueAfterSync);
-  report.liveCosts={startProfit,todayPurchase:{cost:'90.00',savedTotal:saved.食材成本,afterSave},remoteChange:{other:'60.00',todayRevenueIncrease:'50000.00',revenueAfterSync,afterSync},updatedBothLocations:true,selectedReportMonthPreserved:true,activePopupUpdatedByPoll:true};
+  report.liveCosts={startProfit,startDailyProfit,todayPurchase:{cost:'90.00',savedTotal:saved.食材成本,afterSave,dailyAfterSave},remoteChange:{other:'60.00',todayRevenueIncrease:'50000.00',revenueAfterSync,afterSync,dailyAfterSync},updatedBothLocations:true,selectedReportMonthPreserved:true,activePopupUpdatedByPoll:true};
   await live.locator('button[data-page="stats"]').click();await live.locator('#oaAdvanced>summary').click();
   const advancedButton=live.locator('#statsForecastBanner .forecast-info-button');
   await advancedButton.scrollIntoViewIfNeeded();await advancedButton.focus();await livePanel.waitFor({state:'visible'});
@@ -197,11 +214,13 @@ async function seedLedger(keepPolling=false){
   const headline=timed.locator('[data-overview-metric="forecast"] strong');
   await timed.clock.runFor(499);
   const before=await headline.textContent();assert(before.includes('17,250.00'),before);
+  const dailyHeadline=dailyCard(timed).locator('strong'),dailyBefore=await dailyHeadline.textContent();assert.equal(dailyBefore,'556.45 元/天');
   await timed.clock.runFor(1);
   const after=await headline.textContent();assert(after.includes('23,450.00'),after);
   assertForecastTotals(await timed.locator('#forecast-help-report').textContent(),'zh','1,243.55','38,550.00','62,000.00',true);
   assert((await timed.locator('#monthCard .forecast-row').nth(1).textContent()).includes('23,450.00'));
-  report.rollover={before,after,timezone:'Asia/Shanghai',atLocalMidnight:true,automaticWithoutDataChange:true,passed:true};
+  const dailyAfter=await dailyHeadline.textContent();assert.equal(dailyAfter,'756.45 元/天');
+  report.rollover={before,after,dailyBefore,dailyAfter,timezone:'Asia/Shanghai',atLocalMidnight:true,automaticWithoutDataChange:true,passed:true};
   await timed.clock.setSystemTime(new Date('2026-11-29T12:00:00+08:00'));
   await timed.evaluate(()=>{
     normalizeRecords([
@@ -213,6 +232,40 @@ async function seedLedger(keepPolling=false){
   const headlineRounded=await headline.textContent(),reportRounded=await timed.locator('#monthCard .forecast-row').nth(1).locator('strong').textContent();
   assert(headlineRounded.includes('2,399.93'),headlineRounded);assert.equal(headlineRounded,reportRounded);
   report.rounding={date:'2026-11-29',expectedExact:'2399.925',headlineRounded,reportRounded,passed:true};
+  report.dailyRounding=[];
+  for(const [day,revenue,fixed,monthly,daily] of [
+    ['05','0.03','0.08','0.15','0.00'],['05','0.01','0.22','-0.15','0.00'],
+    ['07','0.03','0.00','0.15','0.01'],['07','0.00','0.15','-0.15','-0.01'],
+    ['05','0.04','0.30','0.00','0.00']
+  ]){
+    const date='2026-11-'+day;
+    await timed.clock.setSystemTime(new Date(date+'T12:00:00+08:00'));
+    await timed.evaluate(({date,revenue,fixed})=>{
+      normalizeRecords([
+        {record_type:'month',record_key:'2026-10',payload:{monthly_fixed:[{月份:'2026-10',人工总额:'0.00'}]}},
+        {record_type:'month',record_key:'2026-11',payload:{monthly_fixed:[{月份:'2026-11',人工总额:fixed}]}},
+        {record_type:'day',record_key:'2026-11-01',payload:{daily:[{日期:'2026-11-01',收益:revenue,当日备注:'Synthetic rounding case'}]}}
+      ]);
+      $('selectedDate').value=date;renderDashboard();
+    },{date,revenue,fixed});
+    const shownMonthly=await headline.textContent(),shownDaily=await dailyHeadline.textContent();
+    assert.equal(shownMonthly,monthly+' 元');assert.equal(shownDaily,daily+' 元/天');
+    report.dailyRounding.push({date,revenue,fixed,shownMonthly,shownDaily});
+  }
+  await timed.locator('#selectedMonth').selectOption('12');
+  await timed.clock.runFor(1);
+  assert.equal(await dailyHeadline.textContent(),'—');
+  assert.equal(await dailyCard(timed).locator(':scope > small').textContent(),'暂无上月可比数据');
+  await timed.clock.setSystemTime(new Date('2026-12-01T12:00:00+08:00'));
+  await timed.evaluate(()=>{
+    normalizeRecords([
+      {record_type:'day',record_key:'2026-10-01',payload:{daily:[{日期:'2026-10-01',收益:'2.00'}]}},
+      {record_type:'day',record_key:'2026-11-01',payload:{daily:[{日期:'2026-11-01',收益:'0.03'}]}}
+    ]);
+    $('selectedMonth').value='11';renderDashboard();
+  });
+  report.exactDailyComparison=await dailyCard(timed).locator(':scope > small').textContent();
+  assert.equal(report.exactDailyComparison,'比上个月少了 98.5%');
   await timedContext.close();
   report.touch=[];
   for(const [width,height] of [[390,844],[820,1040]]){

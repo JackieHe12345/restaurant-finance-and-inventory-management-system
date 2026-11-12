@@ -58,11 +58,13 @@ class MonthlyHeadlines(unittest.TestCase):
         self.assertEqual(current['projected_cost'], Decimal('15410.03'))
         self.assertEqual(current['projected_daily_cost'], Decimal('15410.03') / 30)
         self.assertEqual(current['projected_net'], Decimal('-9410.03'))
+        self.assertEqual(current['projected_daily_net'], Decimal('-9410.03') / 30)
         self.assertEqual(current['net'], Decimal('-2444'))
         self.assertEqual(current['avg_net'], Decimal('-2444') / 9)
         self.assertEqual(current['net_margin'], Decimal('-2444') / 2800 * 100)
         self.assertEqual(previous['avg_revenue'], Decimal('100'))
         self.assertEqual(previous['projected_net'], Decimal('1704.97'))
+        self.assertEqual(previous['projected_daily_net'], Decimal('1704.97') / 31)
         self.assertEqual(previous['avg_net'], Decimal('1704.97') / 31)
         self.assertTrue(previous['is_closed'])
         self.assertEqual(SCOPE['month_comparison_text'](current['avg_revenue'], previous['avg_revenue']), '比上个月多了 100.0%')
@@ -113,6 +115,36 @@ class MonthlyHeadlines(unittest.TestCase):
         self.assertEqual(f"{current['projected_daily_cost']:.2f}", '0.00')
         self.assertEqual(f"{Decimal('.15') / 30:.2f}", '0.01')
 
+    def test_daily_forecast_rounds_after_dividing_the_unrounded_month(self):
+        for revenue, fixed, date, monthly, daily_display in (
+                ('.03', '.08', '2026-11-05', '.145', '0.00'),
+                ('.01', '.22', '2026-11-05', '-.145', '0.00'),
+                ('.03', '0', '2026-11-07', '.15', '0.01'),
+                ('.03', '.30', '2026-11-07', '-.15', '-0.01')):
+            with self.subTest(monthly=monthly):
+                self.daily = [{'日期': '2026-11-01', '收益': revenue}]
+                self.fixed = [{'月份': '2026-10', '人工总额': '0'}, {'月份': '2026-11', '人工总额': fixed}]
+                current = self.calculate(as_of=date)['current']
+                self.assertEqual(current['projected_net'], Decimal(monthly))
+                self.assertEqual(current['projected_daily_net'], Decimal(monthly) / 30)
+                self.assertEqual(str(SCOPE['money_amount'](current['projected_daily_net'])), daily_display)
+
+    def test_daily_forecast_comparison_rounds_half_up_using_exact_rates(self):
+        self.fixed = []
+        for day, current_revenue, previous_revenue, expected in (
+                ('2026-12-01', '.03', '2.00', '比上个月少了 98.5%'),
+                ('2026-12-01', '.09', '.08', '比上个月多了 16.3%'),
+                ('2026-11-11', '.01', '2.00', '比上个月少了 98.5%'),
+                ('2026-11-11', '.03', '.08', '比上个月多了 16.3%')):
+            with self.subTest(day=day, current_revenue=current_revenue):
+                self.daily = [{'日期': '2026-10-02', '收益': previous_revenue},
+                              {'日期': '2026-11-02', '收益': current_revenue}]
+                result = self.calculate(as_of=day)
+                current_num, current_den = result['current']['projected_daily_net_ratio']
+                previous_num, previous_den = result['previous']['projected_daily_net_ratio']
+                self.assertEqual(SCOPE['month_comparison_text'](
+                    current_num, previous_num, current_den, previous_den), expected)
+
     def test_exact_half_cents_survive_repeating_daily_rates(self):
         self.fixed = [{'月份': '2026-10', '人工总额': '0'}]
         for revenue, expected in (('.02', '-0.075'), ('.16', '0.075')):
@@ -152,6 +184,7 @@ class MonthlyHeadlines(unittest.TestCase):
                 self.daily = [{'日期': '2026-11-01', **fields}]
                 current = self.calculate(as_of='2026-11-02')['current']
                 self.assertEqual(current['projected_net'], Decimal(expected * 30))
+                self.assertEqual(current['projected_daily_net'], Decimal(expected))
                 self.assertEqual(current['net'], Decimal(expected))
 
     def test_saved_zero_and_missing_history(self):
@@ -162,12 +195,13 @@ class MonthlyHeadlines(unittest.TestCase):
         self.assertIsNone(current['projected_cost'])
         self.assertIsNone(current['projected_daily_cost'])
         self.assertIsNone(current['projected_net'])
+        self.assertIsNone(current['projected_daily_net'])
         self.assertIn('缺少上月', current['forecast_status'])
         self.fixed = [{'月份': '2026-10', '人工总额': '0.00'}]
         result = self.calculate()
         self.assertEqual(result['current']['projected_net'], Decimal('2700'))
         self.assertEqual(result['previous']['net'], Decimal(0))
-        for key in ('projected_daily_cost', 'projected_cost', 'projected_revenue'):
+        for key in ('projected_daily_cost', 'projected_cost', 'projected_revenue', 'projected_daily_net'):
             self.assertEqual(result['previous'][key], Decimal(0))
         self.fixed = []
         self.daily.append({'日期': '2026-10-01', '收益': '30'})
@@ -176,7 +210,7 @@ class MonthlyHeadlines(unittest.TestCase):
     def test_closed_month_does_not_need_older_forecast_baseline(self):
         result = self.calculate(2026, 10, '2026-11-01')
         self.assertIsNone(result['previous']['net'])
-        for key in ('projected_daily_cost', 'projected_cost', 'projected_revenue'):
+        for key in ('projected_daily_cost', 'projected_cost', 'projected_revenue', 'projected_daily_net'):
             self.assertIsNone(result['previous'][key])
         self.assertTrue(result['current']['is_closed'])
         self.assertEqual(result['current']['projected_net'], Decimal('1704.97'))
@@ -197,13 +231,17 @@ class MonthlyHeadlines(unittest.TestCase):
         self.assertEqual(result['current']['avg_revenue'], Decimal('10'))
         self.assertEqual(result['current']['projected_net'], Decimal('290') - 20 - 29 - 2*29)
         self.assertEqual(result['previous']['projected_net'], Decimal('259'))
+        self.assertEqual(result['current']['projected_daily_net'], Decimal('183') / 29)
+        self.assertEqual(result['previous']['projected_daily_net'], Decimal('259') / 31)
         february = self.calculate(2024, 2, '2024-03-01')['current']
         self.assertTrue(february['is_closed'])
         self.assertEqual(february['projected_net'], 224)
+        self.assertEqual(february['projected_daily_net'], Decimal(224) / 29)
         self.assertEqual(february['projected_daily_cost'], Decimal(56) / 29)
         december = self.calculate(2023, 12, '2024-01-01')['current']
         self.assertTrue(december['is_closed'])
         self.assertEqual(december['projected_net'], -100)
+        self.assertEqual(december['projected_daily_net'], Decimal(-100) / 31)
         self.assertEqual(december['projected_daily_cost'], Decimal(100) / 31)
         self.assertEqual(december['projected_revenue'], Decimal(0))
 
@@ -236,6 +274,8 @@ class MonthlyHeadlines(unittest.TestCase):
             fixed = pd.DataFrame(columns=['月份'])
             result = scope['workbook_month_kpis'](2027, 1, daily, fixed)
             self.assertEqual(result['current']['projected_net'], Decimal('2170'))
+            self.assertEqual(result['current']['projected_daily_net'], Decimal('70'))
+            self.assertEqual(result['previous']['projected_daily_net'], Decimal('-30'))
             self.assertEqual(result['previous']['net'], Decimal('-930'))
             self.assertEqual(daily['日期'].tolist(), ['2027-01-05'])
             self.assertTrue(fixed.empty)
@@ -244,16 +284,19 @@ class MonthlyHeadlines(unittest.TestCase):
         first = self.calculate(as_of='2026-11-01')['current']
         self.assertIsNone(first['avg_net'])
         self.assertIsNone(first['projected_net'])
+        self.assertIsNone(first['projected_daily_net'])
         self.assertEqual(first['net'], -144)
         self.daily = [row for row in self.daily if row['日期'] >= '2026-11-10']
         today_only = self.calculate()['current']
         self.assertIsNone(today_only['avg_revenue'])
         self.assertIsNone(today_only['avg_gross'])
         self.assertIsNone(today_only['projected_net'])
+        self.assertIsNone(today_only['projected_daily_net'])
         future = self.calculate(as_of='2026-10-31')['current']
         self.assertIsNone(future['net'])
         self.assertIsNone(future['avg_net'])
         self.assertIsNone(future['projected_net'])
+        self.assertIsNone(future['projected_daily_net'])
 
     def test_known_zero_revenue_and_zero_margin(self):
         self.daily = [{'日期': '2026-11-05', '其他': '18'}]

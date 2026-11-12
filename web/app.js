@@ -700,6 +700,8 @@ function monthForecastV102(year,month) {
   const cost=(Exact.truth(Exact.seq(costNumerator, null)) ? null : Exact.div(costNumerator,denominator));
   const dailyCost=(Exact.truth(Exact.seq(costNumerator, null)) ? null : Exact.div(costNumerator,Exact.mul(denominator, days)));
   const net=(Exact.truth(Exact.seq(netNumerator, null)) ? null : Exact.div(netNumerator,denominator));
+  const dailyNetDenominator=Exact.mul(denominator, days);
+  const dailyNet=(Exact.truth(Exact.seq(netNumerator, null)) ? null : Exact.div(netNumerator,dailyNetDenominator));
   let breakEven=null;
   if(Exact.truth(Exact.sneq(netNumerator, null))){
     if(Exact.truth(Exact.gte(Exact.cmp(netNumerator,0), 0)))breakEven=Exact.decimal(0);
@@ -708,7 +710,7 @@ function monthForecastV102(year,month) {
       breakEven=Exact.div(lossTimesRevenue,Exact.mul(current.completedGross,Exact.mul(days, denominator)));
     }
   }
-  return {current,previous,closed,choices,revenue,cost,dailyCost,net,breakEven};
+  return {current,previous,closed,choices,revenue,cost,dailyCost,net,dailyNet,netNumerator,dailyNetDenominator,breakEven};
 }
 function forecastLabelV102(scope,forecast){
   const english=Exact.seq(state.language, "en"),t=(zh,en)=>(Exact.truth(english) ? en : zh);

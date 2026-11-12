@@ -85,6 +85,34 @@ async function snapshotCharts(page, lang) {
     await card.screenshot({path:path.join(output,file + '-' + lang + '.png')});
   }
 }
+async function snapshotKpis(page, lang) {
+  const originalViewport = page.viewportSize();
+  await page.setViewportSize({width:1800,height:originalViewport.height});
+  await chooseDate(page, '2026-11-11');
+  await page.mouse.move(0, 0);
+  const grid = page.locator('#o30Overview .o30-kpis');
+  const cards = grid.locator('article');
+  const english = lang === 'en';
+  const currency = value => english ? 'CNY ' + value : value + ' 元';
+  const expected = [
+    currency('3,300.77'), currency('2,550.40') + ' (77.3%)', currency('62,475.33'),
+    currency('2,082.51') + (english ? '/day' : '/天'), currency('17,453.04') + ' (49.1%)'
+  ];
+  assert.deepEqual(await cards.locator('strong').allTextContents(), expected);
+  assert.deepEqual(await cards.evaluateAll(nodes => nodes.map(node => node.dataset.overviewMetric)),
+    ['avgRevenue', 'avgGross', 'forecast', 'dailyForecast', 'net']);
+  const daily = cards.nth(3);
+  const label = english ? 'Estimated daily profit/loss this month\n(Estimated month-end profit/loss ÷ days in the month)' :
+    '预计 本月每日盈亏\n(预计月底盈亏 ➗ 本月天数)';
+  assert.equal(await daily.locator(':scope > span').innerText(), label);
+  // November's 62,475.33 / 30 compared with October's 70,999.24 / 31.
+  assert.equal(await daily.locator(':scope > small').innerText(),
+    english ? 'Less than last month by 9.1%' : '比上个月少了 9.1%');
+  const tops = await cards.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().top));
+  assert.equal(new Set(tops).size, 1, 'All five cards must fit in a single row');
+  await grid.screenshot({path:path.join(output, 'dashboard-kpis-' + lang + '.png')});
+  await page.setViewportSize(originalViewport);
+}
 async function snapshotForecast(page, lang) {
   const originalViewport=page.viewportSize();
   await page.setViewportSize({width:originalViewport.width,height:1350});
@@ -166,6 +194,8 @@ async function run() {
       assert((await page.locator('#weekdayChart [data-o30-index="0"]').getAttribute('data-tooltip')).includes(lang === 'en' ? 'No record' : '未记录'));
       await page.locator('#trendMetric').selectOption('revenue');
       await page.locator('#weekdayMetric').selectOption('revenue');
+      await snapshotKpis(page, lang);
+      checks.push(lang + ' five dashboard amounts, daily forecast title, daily unit and 30-day versus 31-day comparison');
       await snapshotForecast(page, lang);
       checks.push(lang + ' interactive zoom, independent selections, date change, missing weekday, and forecast help');
     }

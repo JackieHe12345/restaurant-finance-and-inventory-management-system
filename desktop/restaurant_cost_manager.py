@@ -5413,19 +5413,21 @@ def calc_month_summary(year, month, df_daily=None, df_fixed=None, as_of=None):
     }
 
 
-def month_comparison_text(current, previous):
+def month_comparison_text(current, previous, current_denominator=1, previous_denominator=1):
     """Describe an amount's monthly change, including losses and missing bases."""
     if current is None:
         return "暂无可比数据"
     if previous is None:
         return "暂无上月可比数据"
-    current, previous = decimal_number(current), decimal_number(previous)
+    # Compare rates on a common denominator before rounding either one.
+    current = decimal_number(current) * previous_denominator
+    previous = decimal_number(previous) * current_denominator
     difference = current - previous
     if difference == 0:
         return "与上个月持平 0.0%"
     if previous == 0:
         return "上个月为 0，无法计算百分比"
-    percent = decimal_divide(abs(difference), abs(previous)) * 100
+    percent = decimal_divide(abs(difference) * 100, abs(previous)).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
     return f"比上个月{'多了' if difference > 0 else '少了'} {percent:.1f}%"
 
 
@@ -5485,9 +5487,9 @@ def forecast_cost_inputs(current, previous, elapsed, prior_days):
 def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
     """Share headline and report amounts, including the month-close rollover.
 
-    Revenue/gross averages use completed dates. Average net uses the actual
-    monthly net divided by elapsed calendar days; both net margins use actual
-    monthly revenue. A closed month's forecast becomes that month's actual net.
+    Revenue/gross averages use completed dates. The report's average net uses
+    elapsed days. Projected daily profit/loss uses the full calendar month.
+    A closed month's forecast becomes that month's actual net.
     """
     reference = _elapsed_reference(as_of)
     summaries = {}
@@ -5501,7 +5503,8 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
     def snapshot(y, m):
         summary = summary_for(y, m)
         values = dict(avg_revenue=None, avg_gross=None, gross_margin=None,
-                      avg_net=None, net_margin=None, projected_net=None, net=None,
+                      avg_net=None, net_margin=None, projected_net=None, projected_daily_net=None, net=None,
+                      projected_daily_net_ratio=(None, 1),
                       projected_revenue=None, projected_cost=None, projected_daily_cost=None,
                       break_even_increase=None, is_closed=False, forecast_status='暂无经营数据')
         prior = datetime(y, m, 1) - timedelta(days=1)
@@ -5529,6 +5532,8 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
             values['projected_cost'] = values['actual_cost']
             values['projected_daily_cost'] = decimal_divide(values['actual_cost'], days)
             values['projected_net'] = values['net']
+            values['projected_daily_net'] = decimal_divide(values['net'], days)
+            values['projected_daily_net_ratio'] = (values['net'], days)
             net_numerator = values['net']
             if net_numerator >= 0:
                 values['break_even_increase'] = 0
@@ -5566,6 +5571,8 @@ def calc_dashboard_month_kpis(year, month, df_daily, df_fixed, as_of=None):
                 values['projected_cost'] = decimal_divide(cost_numerator, denominator)
                 values['projected_daily_cost'] = decimal_divide(cost_numerator, denominator * days)
                 values['projected_net'] = decimal_divide(net_numerator, denominator)
+                values['projected_daily_net'] = decimal_divide(net_numerator, denominator * days)
+                values['projected_daily_net_ratio'] = (net_numerator, denominator * days)
                 values['forecast_status'] = ''
             else:
                 values['forecast_status'] = '缺少上月成本数据，暂时无法计算预计月底盈亏'
@@ -11482,7 +11489,7 @@ class DashboardTab(QWidget):
             ('avg_revenue', '日均收入'),
             ('avg_gross', '日均毛利润 (毛利率)'),
             ('projected_net', '预计月底盈亏\n' + ForecastInfoButton.formula),
-            ('avg_net', '日均净利润 (净利率)'),
+            ('projected_daily_net', '预计 本月每日盈亏\n(预计月底盈亏 ➗ 本月天数)'),
             ('net', '净利润 (净利率)'),
         )
         for key, caption in headline_specs:
@@ -11874,14 +11881,26 @@ class DashboardTab(QWidget):
             text = f"{decimal_number(value):,.2f} 元" if value is not None else "—"
             if key == 'avg_gross' and value is not None:
                 text += f" ({decimal_number(current['gross_margin']):.1f}%)"
-            elif key in ('avg_net', 'net') and value is not None:
+            elif key == 'projected_daily_net':
+                color = '#263445'
+                if value is not None:
+                    text = f"{money_amount(value):,.2f} 元/天"
+                    color = '#bd4653' if value < 0 else '#147d68'
+                label.setStyleSheet(f'font-size:17px;font-weight:600;color:{color};')
+            elif key == 'net' and value is not None:
                 margin = current['net_margin']
                 text += f" ({decimal_number(margin):.1f}%)" if margin is not None else " (—)"
             label.setText(text)
-            self.headline_comparisons[key].setText(month_comparison_text(value, previous[key]))
+            if key == 'projected_daily_net':
+                current_num, current_den = current['projected_daily_net_ratio']
+                previous_num, previous_den = previous['projected_daily_net_ratio']
+                comparison = month_comparison_text(current_num, previous_num, current_den, previous_den)
+            else:
+                comparison = month_comparison_text(value, previous[key])
+            self.headline_comparisons[key].setText(comparison)
             label.setToolTip(self.headline_forecast_info.toolTip() if key == 'projected_net'
                              else '净利率按本月实际净利润 ÷ 本月实际收入计算；收入为 0 时显示 —。'
-                             if key in ('avg_net', 'net') else '')
+                             if key == 'net' else '')
         return current
 
     def refresh_all(self):

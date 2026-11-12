@@ -710,6 +710,8 @@ function monthForecastV102(year,month) {
   const cost=costNumerator===null?null:Exact.div(costNumerator,denominator);
   const dailyCost=costNumerator===null?null:Exact.div(costNumerator,denominator*days);
   const net=netNumerator===null?null:Exact.div(netNumerator,denominator);
+  const dailyNetDenominator=denominator*days;
+  const dailyNet=netNumerator===null?null:Exact.div(netNumerator,dailyNetDenominator);
   let breakEven=null;
   if(netNumerator!==null){
     if(Exact.cmp(netNumerator,0)>=0)breakEven=Exact.decimal(0);
@@ -718,7 +720,7 @@ function monthForecastV102(year,month) {
       breakEven=Exact.div(lossTimesRevenue,Exact.mul(current.completedGross,days*denominator));
     }
   }
-  return {current,previous,closed,choices,revenue,cost,dailyCost,net,breakEven};
+  return {current,previous,closed,choices,revenue,cost,dailyCost,net,dailyNet,netNumerator,dailyNetDenominator,breakEven};
 }
 function forecastLabelV102(scope,forecast){
   const english=state.language==="en",t=(zh,en)=>english?en:zh;

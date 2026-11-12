@@ -4,7 +4,7 @@
 
 A restaurant bookkeeping system with a responsive browser interface, a FastAPI/PostgreSQL backend and a Python desktop client. It connects income, expenses, purchasing, inventory, dish consumption and operating reports.
 
-Current version: **v1.0.2**. Browser build revision: **`20261112-cost-ring`**. Historical source is retained on `old/v1.0.0` and `old/V1.0.1`; the original V1.0.0 program uses the internal name `Oct30LingChen`.
+Current version: **v1.0.2**. Browser build revision: **`20261112-daily-pl`**. Historical source is retained on `old/v1.0.0` and `old/V1.0.1`; the original V1.0.0 program uses the internal name `Oct30LingChen`.
 
 ## Features
 
@@ -21,7 +21,11 @@ Money uses Python `Decimal` and a browser decimal runtime backed by `BigInt`. Pu
 
 ## Dashboard preview
 
-These screenshots use a synthetic ledger. The daily trend and weekday averages both open on revenue. Each chart has its own selector for revenue, gross profit, net profit, or ingredient and seasoning costs.
+These screenshots use a synthetic ledger. The third card projects CNY 62,475.33 profit for November. The fourth, **Estimated daily profit/loss this month**, divides the unrounded forecast by November’s 30 calendar days, giving **CNY 2,082.51/day**. That is 9.1% below October’s actual profit per day over 31 days. The fifth shows actual net profit to date and its margin.
+
+![November dashboard with five cards, including estimated month-end profit, estimated daily profit in CNY per day, and actual net profit with margin](docs/images/dashboard-kpis-en.png)
+
+The daily trend and weekday averages both open on revenue. Each chart has its own selector for revenue, gross profit, net profit, or ingredient and seasoning costs.
 
 ![October daily revenue with a selected day and its amount in CNY](docs/images/daily-revenue-en.png)
 

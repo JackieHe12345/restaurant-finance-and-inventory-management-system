@@ -26,8 +26,8 @@ Both views label the figure **Estimated month-end profit/loss** with **(based on
 
 ### Dashboard and reports
 
-- The five cards show average daily revenue, average daily gross profit and gross margin, estimated month-end profit/loss, average daily net profit and net margin, and net profit and net margin. Each compares the same measure with the previous month. The cards share the same layout, with colors indicating gains and losses.
-- Daily revenue and gross-profit averages use records through yesterday. Actual monthly net profit includes today’s entries and the whole month’s saved fixed expenses. Average daily net profit divides that monthly net by elapsed calendar days. Both net margins use actual month-to-date revenue, including today. For a projected loss with a positive gross margin, the full report also shows the extra daily revenue needed to break even.
+- The five dashboard cards show average daily revenue, average daily gross profit with margin, estimated month-end profit/loss, **Estimated daily profit/loss this month**, and actual net profit with margin. The fourth card’s second line reads **(Estimated month-end profit/loss ÷ days in the month)**. Its amount uses the unrounded third-card result divided by all calendar days in the selected month, displayed in CNY per day. For a completed month, it uses actual net profit divided by that month’s length. Its comparison uses each month’s own daily amount.
+- Daily revenue and gross-profit averages use records through yesterday. The fifth card includes today’s entries and the whole month’s saved fixed expenses. Its net margin uses actual revenue through today. The full monthly report also gives actual average daily net profit on an elapsed-day basis and, for a projected loss with a positive gross margin, the extra daily revenue needed to break even.
 - The daily trend and weekday averages open on revenue. Each chart has its own selector for revenue, gross profit, net profit or ingredient costs including seasonings. Weekday averages count only dates with records.
 - The cost breakdown ring uses a distinct color for each category, with matching legend markers. On phones the total and its currency unit are centered inside the ring.
 - Operating, expense and customer statistics show the selected period, how many days have records and the previous-month comparison. Users can trace the largest expense category, profitable recorded days, differences between saved and itemized fixed expenses, and the busiest customer day back to the source records.
@@ -37,7 +37,7 @@ Both views label the figure **Estimated month-end profit/loss** with **(based on
 
 - English browser mode covers forms, reports, charts, dialogs, errors and audit summaries. Book names, dish names, notes and other user-entered text keep their original wording. Currency remains CNY. The native app uses Chinese.
 - On the cash sheet, **Add an item → Force balance adjustment** sets the actual balance on a selected date. The adjustment changes the cash balance without adding operating revenue or expense. Earlier transactions stay in the ledger, and historically locked entries keep their protection.
-- The browser build is `20261112-cost-ring`. The application and API version is v1.0.2. Deployment verification checks the browser revision, asset URLs and file hashes. [Deployment guide](docs/DEPLOYMENT.md) · [Engineering reference and formulas](docs/ENGINEERING_REFERENCE.md)
+- The browser build is `20261112-daily-pl`. The application and API version is v1.0.2. Deployment verification checks the browser revision, asset URLs and file hashes. [Deployment guide](docs/DEPLOYMENT.md) · [Engineering reference and formulas](docs/ENGINEERING_REFERENCE.md)
 
 ## 2026 Nov 07 V1.0.1
 

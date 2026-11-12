@@ -1,6 +1,6 @@
 # restaurant-finance-and-inventory-management-system deployment guide
 
-> This guide applies to v1.0.2 and build `20261112-cost-ring`. See the [engineering reference](ENGINEERING_REFERENCE.md) for module, data and build contracts.
+> This guide applies to v1.0.2 and build `20261112-daily-pl`. See the [engineering reference](ENGINEERING_REFERENCE.md) for module, data and build contracts.
 
 [Back to README](../README.md) · English | [简体中文](DEPLOYMENT.zh-CN.md)
 
@@ -12,10 +12,11 @@ The host paths below are installation conventions, not production credentials. T
 
 Install Git, Docker Engine, Docker Compose v2, Python 3 and curl on the host, and run the commands below in a POSIX shell. The first build downloads container images and Python dependencies. Generated browser files are already included in the repository, so deployment does not require Node.js. After editing browser business logic, rebuild `web/` using the steps in the README.
 
-Business-script sources live in `build/web-exact-source/`. Maintain the shared decimal runtime `web/money.js` and HTML/CSS assets directly in `web/`; the compiler does not generate or duplicate them.
+Business-script sources live in `build/web-exact-source/`. Maintain the shared decimal runtime `web/money.js` and HTML/CSS assets directly in `web/`; the compiler does not generate or duplicate them. Before starting Compose, check that the selected checkout contains the daily profit/loss build. Earlier builds also report v1.0.2.
 
 ```bash
 cd /path/to/restaurant-finance-and-inventory-management-system
+grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html || exit 1
 ```
 
 The root `.env.example` configures Compose; `backend/.env.example` configures a directly launched Python API. They serve different purposes. The following command creates a private configuration from the root template and generates separate values for the database password, JWT secret and initial administrator password:
@@ -155,10 +156,12 @@ For a native installation, use your PostgreSQL backup procedure and also preserv
 
 ## 4. Build a release archive for a native service
 
-First complete the browser build, API regression tests and FIFO contract checks listed in the README. Then run this from the repository root:
+First complete the browser build, API regression tests and FIFO contract checks listed in the README. From the same checkout, check the intended revision and run the dashboard tests against the generated JavaScript before packaging it.
 
 ```bash
-python3 build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
+grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html &&
+  node web/test_v1_0_2_dashboard.js &&
+  python3 build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
 ```
 
 The path shown is also the default output path. The packager creates the archive exclusively and refuses to overwrite an existing file. Use a new output filename when rebuilding.
@@ -185,6 +188,8 @@ Upload the archive and its `.sha256` file to the target host, then verify and ex
 sha256sum -c restaurant-cloud-v1.0.2-deploy.tar.gz.sha256
 mkdir restaurant-finance-release-check
 tar -xzf restaurant-cloud-v1.0.2-deploy.tar.gz -C restaurant-finance-release-check
+grep -Fq 'data-build-revision="20261112-daily-pl"' \
+  restaurant-finance-release-check/restaurant-cloud-v1.0.2/web_frontend/index.html || exit 1
 ```
 
 On macOS, the equivalent checksum command is `shasum -a 256 -c ...`. Extract into a new, empty directory. The upgrade script accepts the extracted release root, not the Git checkout or the `.tar.gz` file.
@@ -253,13 +258,15 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 
 ### Same-version build revisions
 
-A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261112-cost-ring"` and uses `v1.0.2-20261112-cost-ring` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
+A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261112-daily-pl"` and uses `v1.0.2-20261112-daily-pl` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
 
 Before deploying, recheck the target instance and create database, program and runtime-configuration backups. Operators should retain actual server identities, configuration values, backup paths and per-deployment evidence privately. This repository provides reusable procedures and verification tools.
 
 After file verification, reload an existing browser tab. Open the dashboard in a fresh tab and check that both the daily trend and weekday chart show revenue. Change only the weekday selector to ingredients and check that the daily trend still shows revenue. For the same book and month, open **i** on both the dashboard card and the full monthly report. Compare the two months’ fixed costs, daily ingredient costs and daily other costs, then read the three totals at the end. Both views must show the same projected daily total cost, total cost and revenue. Check that a completed month labels the three values as actuals and that its net equals actual revenue less actual total cost. At phone width, open the cost breakdown for a day with several expenses. Check the ring and legend colors match and the amount and unit sit together in the center.
 
-To test saving, use a disposable book with previous-month costs and current revenue dated before today. Save a grocery purchase dated today large enough to make this month’s daily ingredient cost exceed last month’s. The two views should switch the ingredient source and show the revised projection. Save revenue dated today and confirm projected revenue still reflects entries through yesterday. See the numerical example in the engineering reference for expected results.
+Check the five cards in both languages. Card 4 reads **Estimated daily profit/loss this month** above **(Estimated month-end profit/loss ÷ days in the month)**, with an amount in CNY per day and a separate monthly comparison. Card 5 shows actual net profit with its margin. With the January/February 2024 example in the engineering reference, card 4 should show CNY 20.00/day, up 100.0% from January’s CNY 10.00/day. [Worked examples](ENGINEERING_REFERENCE.md#month-end-profitloss)
+
+To test saving, use a disposable book with previous-month costs and current revenue dated before today. Save a grocery purchase dated today large enough to make this month’s daily ingredient cost exceed last month’s. The two views should switch the ingredient source and show the revised projection. Save revenue dated today and confirm projected revenue still reflects entries through yesterday.
 
 ### PostgreSQL evidence before and after an upgrade
 

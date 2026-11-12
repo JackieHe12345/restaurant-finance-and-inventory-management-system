@@ -95,18 +95,24 @@ class MonthlyWidgets(unittest.TestCase):
             tab = cls()
         current = dict(avg_revenue=Decimal('200'), avg_gross=Decimal('100'), gross_margin=Decimal('50'), avg_net=Decimal('55.555555'), net_margin=Decimal('17.857142'), projected_net=Decimal('4400'), net=Decimal('500'), forecast_status='')
         previous = dict(avg_revenue=Decimal('100'), avg_gross=Decimal('50'), gross_margin=Decimal('50'), avg_net=Decimal('48.387097'), net_margin=Decimal('48.387097'), projected_net=Decimal('1500'), net=Decimal('1500'), forecast_status='该月已结束')
+        current['projected_daily_net'] = current['projected_net'] / 30
+        previous['projected_daily_net'] = previous['projected_net'] / 31
+        current['projected_daily_net_ratio'] = (current['projected_net'], 30)
+        previous['projected_daily_net_ratio'] = (previous['projected_net'], 31)
         self.addCleanup(lambda: SCOPE.update(calc_dashboard_month_kpis=REAL_CALC_KPIS))
         SCOPE['calc_dashboard_month_kpis'] = lambda *args: dict(current=current, previous=previous)
         tab._refresh_month_headlines(2026, 11, None, None)
         self.assertEqual(len({card.styleSheet() for card in tab.headline_cards}), 1)
         captions = [card.findChildren(QLabel)[0].text() for card in tab.headline_cards]
-        self.assertEqual(captions, ['日均收入', '日均毛利润 (毛利率)', '预计月底盈亏\n(根据 本月预计成本 和 本月预计收入 计算)', '日均净利润 (净利率)', '净利润 (净利率)'])
+        self.assertEqual(captions, ['日均收入', '日均毛利润 (毛利率)', '预计月底盈亏\n(根据 本月预计成本 和 本月预计收入 计算)', '预计 本月每日盈亏\n(预计月底盈亏 ➗ 本月天数)', '净利润 (净利率)'])
         self.assertEqual(tab.headline_values['avg_gross'].text(), '100.00 元 (50.0%)')
         self.assertEqual(tab.headline_comparisons['avg_revenue'].text(), '比上个月多了 100.0%')
         self.assertEqual(tab.headline_comparisons['net'].text(), '比上个月少了 66.7%')
-        self.assertEqual(tab.headline_values['avg_net'].text(), '55.56 元 (17.9%)')
+        self.assertEqual(tab.headline_values['projected_daily_net'].text(), '146.67 元/天')
+        self.assertEqual(tab.headline_comparisons['projected_daily_net'].text(), '比上个月多了 203.1%')
+        self.assertIn('#147d68', tab.headline_values['projected_daily_net'].styleSheet())
         self.assertEqual(tab.headline_values['net'].text(), '500.00 元 (17.9%)')
-        for width, columns in [(1450, 5), (1280, 5), (1000, 3), (550, 1)]:
+        for width, columns in [(1450, 5), (1280, 5), (1200, 5), (1000, 3), (800, 2), (550, 1)]:
             tab.resize(width, 900); tab.show()
             for _ in range(8): APP.processEvents()
             tab._reflow_dashboard_layout()
@@ -114,6 +120,9 @@ class MonthlyWidgets(unittest.TestCase):
             for index in range(5):
                 self.assertIs(tab.headline_layout.itemAtPosition(index // columns, index % columns).widget(), tab.headline_cards[index])
             self.assertEqual(tab.dashboard_scroll.horizontalScrollBar().maximum(), 0, width)
+            for label in tab.headline_cards[3].findChildren(QLabel):
+                for line in label.text().splitlines():
+                    self.assertLessEqual(label.fontMetrics().horizontalAdvance(line), label.contentsRect().width(), (width, line))
             for card in tab.headline_cards:
                 labels = card.findChildren(QLabel)
                 for label in labels:
@@ -121,6 +130,24 @@ class MonthlyWidgets(unittest.TestCase):
                 for index, label in enumerate(labels):
                     for other in labels[index + 1:]:
                         self.assertFalse(label.geometry().intersects(other.geometry()), (width, label.text(), other.text()))
+        current['projected_daily_net_ratio'] = (Decimal('.09'), 30)
+        previous['projected_daily_net_ratio'] = (Decimal('.08'), 31)
+        current['projected_daily_net'] = Decimal('.09') / 30
+        previous['projected_daily_net'] = Decimal('.08') / 31
+        tab._refresh_month_headlines(2026, 11, None, None)
+        self.assertEqual(tab.headline_comparisons['projected_daily_net'].text(), '比上个月多了 16.3%')
+        previous['projected_daily_net'] = Decimal(0)
+        previous['projected_daily_net_ratio'] = (Decimal(0), 31)
+        for value, amount, comparison in (
+                (Decimal('2.30'), '2.30 元/天', '上个月为 0，无法计算百分比'),
+                (Decimal(0), '0.00 元/天', '与上个月持平 0.0%'),
+                (None, '—', '暂无可比数据')):
+            current['projected_daily_net'] = value
+            current['projected_daily_net_ratio'] = (value, 1)
+            tab._refresh_month_headlines(2026, 11, None, None)
+            self.assertEqual(tab.headline_values['projected_daily_net'].text(), amount)
+            self.assertEqual(tab.headline_comparisons['projected_daily_net'].text(), comparison)
+        self.assertIn('#263445', tab.headline_values['projected_daily_net'].styleSheet())
         tab.close(); tab.deleteLater(); APP.processEvents()
 
     def test_closed_month_actual_net_matches_full_report_and_more_stats(self):
@@ -152,7 +179,9 @@ class MonthlyWidgets(unittest.TestCase):
             self.assertEqual(tab.month_forecast_panel.net_value.text(), '-100.00 元')
             self.assertIn('实际净利润', tab.month_forecast_panel.status_label.text())
             self.assertEqual(tab.headline_values['projected_net'].text(), '-100.00 元')
-            self.assertEqual(tab.headline_values['avg_net'].text(), '-3.23 元 (-10.0%)')
+            self.assertEqual(tab.headline_values['projected_daily_net'].text(), '-3.23 元/天')
+            self.assertIn('#bd4653', tab.headline_values['projected_daily_net'].styleSheet())
+            self.assertEqual(tab.headline_comparisons['projected_daily_net'].text(), '暂无上月可比数据')
             self.assertEqual(tab.lbl_month_avg_net.text(), '-3.23 元 (-10.0%)/天')
             source_class = next(n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name == 'MoreStatsTab')
             method = next(n for n in source_class.body if isinstance(n, ast.FunctionDef) and n.name == '_update_month_forecast')
@@ -228,6 +257,7 @@ class MonthlyWidgets(unittest.TestCase):
             tab.refresh_all()
             self.assertEqual(tab.month_forecast_panel.revenue_value.text(), '—')
             self.assertEqual(tab.month_forecast_panel.net_value.text(), '—')
+            self.assertEqual(tab.headline_values['projected_daily_net'].text(), '—')
             self.assertEqual(tab.month_forecast_panel.break_even_value.text(), '—')
             self.assertIn('已完成日期', tab.month_forecast_panel.status_label.text())
             self.assertIn('暂无已完成日期', tab.month_forecast_panel.net_info_button.toolTip())
@@ -445,15 +475,18 @@ class SavedForecastAndCharts(unittest.TestCase):
             refresh()
             purchase.refresh_data()
             self.assertEqual(dashboard.headline_values['projected_net'].text(), '3,300.00 元')
+            self.assertEqual(dashboard.headline_values['projected_daily_net'].text(), '110.00 元/天')
             self.assertEqual(dashboard.headline_forecast_info.toolTip().split('\n\n')[-1].splitlines(), [
                 '本月预计日均总成本：1.11 元/天', '本月预计总成本：33.33 元', '本月预计收入：3,333.33 元',
             ])
             purchase.table.item(0, 5).setText('100.00')
             self.assertEqual(dashboard.headline_values['projected_net'].text(), '3,300.00 元')
+            self.assertEqual(dashboard.headline_values['projected_daily_net'].text(), '110.00 元/天')
             purchase.btn_save.click()
             APP.processEvents()
             self.assertEqual(m.money_amount(m.load_daily().iloc[-1]['食材成本']), 100)
             self.assertEqual(dashboard.headline_values['projected_net'].text(), '3,000.00 元')
+            self.assertEqual(dashboard.headline_values['projected_daily_net'].text(), '100.00 元/天')
             for panel in (dashboard.month_forecast_panel, stats.month_forecast_panel):
                 self.assertEqual(panel.net_value.text(), '3,000.00 元')
                 self.assertEqual(panel.revenue_value.text(), '3,333.33 元')

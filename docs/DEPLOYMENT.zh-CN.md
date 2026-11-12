@@ -1,6 +1,6 @@
 # restaurant-finance-and-inventory-management-system 部署指南
 
-> 本指南适用于 v1.0.2 源码与 `20261112-cost-ring` 构建。模块、数据和构建约束见[工程技术参考](ENGINEERING_REFERENCE.zh-CN.md)。
+> 本指南适用于 v1.0.2 源码与 `20261112-daily-pl` 构建。模块、数据和构建约束见[工程技术参考](ENGINEERING_REFERENCE.zh-CN.md)。
 
 [返回 README](../README%20%28%E4%B8%AD%E6%96%87%29.md) · [English](DEPLOYMENT.md) | 简体中文
 
@@ -12,10 +12,11 @@
 
 主机需要安装 Git、Docker Engine、Docker Compose v2、Python 3 和 curl，并在 POSIX shell 中执行以下命令。首次启动会从镜像仓库和 Python 包源下载依赖。仓库已包含生成后的网页文件，因此直接部署无需先安装 Node.js；修改网页业务源码后，应按 README 中的构建步骤重新生成 `web/`。
 
-业务脚本源码位于 `build/web-exact-source/`。共用十进制运行时 `web/money.js` 和 HTML/CSS 静态资源直接在 `web/` 中维护，编译器不会生成或复制它们。
+业务脚本源码位于 `build/web-exact-source/`。共用十进制运行时 `web/money.js` 和 HTML/CSS 静态资源直接在 `web/` 中维护，编译器不会生成或复制它们。较早的构建也显示 v1.0.2，启动 Compose 前先核对源码工作区是含“预计 本月每日盈亏”的修订。
 
 ```bash
 cd /path/to/restaurant-finance-and-inventory-management-system
+grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html || exit 1
 ```
 
 根目录的 `.env.example` 用于 Compose，`backend/.env.example` 用于直接运行 Python API。两份文件用途不同。可以用下面的命令从根目录模板创建私有配置，分别生成数据库密码、JWT 密钥和初始管理员密码：
@@ -155,10 +156,12 @@ ZIP源码没有Git历史，`git init`加`git add`也不会产生HEAD。上述命
 
 ## 4. 从仓库制作原生服务发布包
 
-先完成 README 列出的网页构建、API 回归和 FIFO 契约检查，再从仓库根目录执行：
+先完成 README 列出的网页构建、API 回归和 FIFO 契约检查。在同一个工作区核对目标修订，对实际生成的网页脚本运行主页指标测试，通过后再打包。
 
 ```bash
-python3 build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
+grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html &&
+  node web/test_v1_0_2_dashboard.js &&
+  python3 build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
 ```
 
 默认输出路径也是上述路径。打包器以排他方式创建压缩包，拒绝覆盖已有文件；需要重新打包时使用新的输出文件名。
@@ -185,6 +188,8 @@ verify_release_files.py            文件与 HTTP 核验
 sha256sum -c restaurant-cloud-v1.0.2-deploy.tar.gz.sha256
 mkdir restaurant-finance-release-check
 tar -xzf restaurant-cloud-v1.0.2-deploy.tar.gz -C restaurant-finance-release-check
+grep -Fq 'data-build-revision="20261112-daily-pl"' \
+  restaurant-finance-release-check/restaurant-cloud-v1.0.2/web_frontend/index.html || exit 1
 ```
 
 macOS 对应的校验命令是 `shasum -a 256 -c ...`。使用新建空目录解压；升级脚本接收的是解压后的发布根目录，不是 Git 仓库目录，也不是 `.tar.gz` 文件。
@@ -253,13 +258,15 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
 
 ### 同版本构建修订
 
-同为 v1.0.2 的分发包可能包含不同构建。本次最终包在 HTML 声明 `data-build-revision="20261112-cost-ring"`，本地资源缓存查询参数使用 `v1.0.2-20261112-cost-ring`。原生部署预检与 `verify_release_files.py` 在逐文件清单哈希之外，验证声明的修订和精确的“版本＋修订”查询值。没有修订字段的旧发布仍使用原先的版本查询规则。不要为同版本升级关闭这些校验。
+同为 v1.0.2 的分发包可能包含不同构建。本次最终包在 HTML 声明 `data-build-revision="20261112-daily-pl"`，本地资源缓存查询参数使用 `v1.0.2-20261112-daily-pl`。原生部署预检与 `verify_release_files.py` 在逐文件清单哈希之外，验证声明的修订和精确的“版本＋修订”查询值。没有修订字段的旧发布仍使用原先的版本查询规则。不要为同版本升级关闭这些校验。
 
 部署前应重新检查目标实例状态，并创建数据库、程序和运行配置备份。实际服务器身份、配置值、备份路径和每次部署的验证记录应由运维人员私下保存；本仓库提供可复用的步骤和校验工具。
 
 文件核验后，普通刷新已打开的浏览器标签页。在新标签页进入仪表盘，确认“本月趋势”和“各星期平均”都从收入开始。只把星期图改为食材成本，日趋势应继续显示收入。在同一账本、同一月份分别打开主页卡片和完整月报的 **i**，核对上月、本月的固定成本、日均食材与日均其他成本以及各自取值。说明末尾应分三行列出本月预计日均总成本、本月预计总成本、本月预计收入，同一账本和月份的两处金额应一致。选择已结束月份，核对三行已切为实际金额，盈亏等于实际收入减实际总成本。在手机宽度下查看一个有多项支出的日期，确认环图与图例颜色对应，圆心金额和单位水平、垂直居中。
 
-保存流程可在测试账本上验证。准备上月成本和昨天以前的本月收入，保存一笔日期为今天、足以让本月日均食材超过上月的采购。两处说明应改选本月食材，预测金额也应更新。再记一笔今天的收入，预计收入仍应使用截至昨天的数字。工程技术参考里有可逐项对照的金额算例。
+用中英文分别核对主页五张卡片。第四张卡第一行为 **预计 本月每日盈亏**，第二行为 **(预计月底盈亏 ➗ 本月天数)**，下方分别列出元/天的金额和环比。第五张卡显示实际净利润及净利率。按工程技术参考里的 2024 年一月和二月算例验证，第四张卡应显示 20.00 元/天，相比一月的 10.00 元/天增加 100.0%。[计算示例](ENGINEERING_REFERENCE.zh-CN.md#预计月底盈亏)
+
+保存流程可在测试账本上验证。准备上月成本和昨天以前的本月收入，保存一笔日期为今天、足以让本月日均食材超过上月的采购。两处说明应改选本月食材，预测金额也应更新。再记一笔今天的收入，预计收入仍应使用截至昨天的数字。
 
 ### PostgreSQL 升级前后证据
 
