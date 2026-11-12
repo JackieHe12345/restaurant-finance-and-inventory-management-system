@@ -1,25 +1,31 @@
-# restaurant-finance-and-inventory-management-system deployment guide
+# Deployment guide
 
-> This guide applies to v1.0.2 and build `20261112-daily-pl`. See the [engineering reference](ENGINEERING_REFERENCE.md) for module, data and build contracts.
+**[← Back to README](../README.en.md)** · [简体中文](DEPLOYMENT.zh-CN.md)
 
-[Back to README](../README.md) · English | [简体中文](DEPLOYMENT.zh-CN.md)
+Use this guide for v1.0.2, web build `20261112-daily-pl`. If you are setting up the system for the first time, start with Docker Compose. It runs the website, API and database together.
 
-This guide covers `v1.0.2`. Use the Docker Compose configuration at the repository root for a new instance. An existing native Ubuntu installation has a separate upgrade procedure based on a release archive. These two procedures use different directory layouts, environments and commands.
+| What do you need to do? | Where to start |
+| --- | --- |
+| Install the whole system on a new host | [Start with Compose](#1-start-a-new-instance-from-source) |
+| Run the Python API for development | [Set up Python and PostgreSQL](#2-run-the-native-python-api-directly) |
+| Back up a Compose installation | [Save the database, configuration and files](#3-back-up-a-compose-instance) |
+| Update an Ubuntu server that already runs the API under systemd | [Build the archive](#4-build-a-release-archive-for-a-native-service), then [upgrade the service](#5-upgrade-an-existing-native-ubuntu-installation) |
+| Check what the server is running | [Verify the files and database](#6-run-verification-separately), then [try the application](#7-check-the-running-application) |
 
-The host paths below are installation conventions, not production credentials. The instructions explain how to install and verify an instance; they do not certify an existing production deployment.
+For details about how the application stores records or calculates costs, see the [engineering reference](ENGINEERING_REFERENCE.md).
 
 ## 1. Start a new instance from source
 
-Install Git, Docker Engine, Docker Compose v2, Python 3 and curl on the host, and run the commands below in a POSIX shell. The first build downloads container images and Python dependencies. Generated browser files are already included in the repository, so deployment does not require Node.js. After editing browser business logic, rebuild `web/` using the steps in the README.
+On the host, install Git, Docker Engine with Compose v2, Python 3 and curl. Run the commands in a POSIX shell. Allow time for the first build to download the container images and Python dependencies.
 
-Business-script sources live in `build/web-exact-source/`. Maintain the shared decimal runtime `web/money.js` and HTML/CSS assets directly in `web/`; the compiler does not generate or duplicate them. Before starting Compose, check that the selected checkout contains the daily profit/loss build. Earlier builds also report v1.0.2.
+The repository ships the runnable website in `web/`, so you can start Compose without Node.js. If you changed business logic in `build/web-exact-source/`, first [rebuild the web scripts](../README.en.md#run-the-tests). Edit `web/money.js`, HTML and CSS directly. Check the build marker below before starting. The version number alone also matches older v1.0.2 builds.
 
 ```bash
 cd /path/to/restaurant-finance-and-inventory-management-system
 grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html || exit 1
 ```
 
-The root `.env.example` configures Compose; `backend/.env.example` configures a directly launched Python API. They serve different purposes. The following command creates a private configuration from the root template and generates separate values for the database password, JWT secret and initial administrator password:
+**Create the Compose configuration.** From the repository root, use `.env.example` to create a private `.env` and generate three independent secrets. The template in `backend/` is for running the API directly.
 
 ```bash
 python3 - <<'PY'
@@ -37,7 +43,7 @@ print('Created .env with three independent random values.')
 PY
 ```
 
-This command neither prints the generated values nor overwrites an existing `.env`. Use a local editor to retrieve the administrator password and change `ADMIN_USERNAME` if needed. Compose inserts the database password into `DATABASE_URL`; the generated hexadecimal characters avoid the need to escape reserved URL characters.
+Open `.env` locally to find the initial administrator password. You can also set `ADMIN_USERNAME` here before the first start. The script keeps the values out of terminal output and stops if `.env` exists. Its hexadecimal passwords can go straight into the database connection URL.
 
 ```bash
 docker compose config --quiet
@@ -46,9 +52,9 @@ docker compose ps
 curl --fail http://127.0.0.1:8080/api/v1/health
 ```
 
-The first build and API startup can take some time. If the health check initially fails, inspect `docker compose logs --tail=100 backend` and retry after the service starts. A successful response reports `status` as `ok` and `version` as `v1.0.2`.
+When the API is ready, the health check returns `status: ok` and `version: v1.0.2`. If it fails on the first attempt, read `docker compose logs --tail=100 backend` and retry once the service has started.
 
-Open <http://127.0.0.1:8080> and sign in with the administrator configured in `.env`. Create an independent book, then create other accounts and assign their book memberships. Startup creates the initial administrator only when that username does not already exist. Changing `ADMIN_PASSWORD` in `.env` does not reset an existing database account's password.
+**First sign-in.** Open <http://127.0.0.1:8080> on the host and sign in with the account in `.env`. Create a ledger for the store. When you add staff accounts, choose which ledgers each person can open. Startup creates the administrator only if the username is new. To change an existing account’s password, use account management.
 
 ### Services and persistent data
 
@@ -61,15 +67,15 @@ Open <http://127.0.0.1:8080> and sign in with the administrator configured in `.
 | `payment-secrets` volume | API path `/data/payment-secrets` | Stores merchant files received by the application |
 | `recovery-files` volume | API path `/opt/restaurant-cloud/backups` | Stores recovery material produced by the application |
 
-Compose does not publish the database or API port directly to the host. The web server binds to `127.0.0.1:8080` by default, suitable for local verification or as an upstream for the host's HTTPS reverse proxy. For public access, proxy your domain's HTTPS endpoint to that address. Changing `WEB_BIND` changes who can reach the service. This repository does not contain personal domain, certificate or DNS settings.
+By default, only the website is published on the host, at `127.0.0.1:8080`. PostgreSQL and the API are reachable inside the Compose network. To serve the site over your domain, point the host’s HTTPS reverse proxy at `127.0.0.1:8080`. Set `WEB_BIND` and `WEB_PORT` in `.env` if you need a different listening address or port.
 
-`TEST_LOGIN_ENABLED=false` disables the Test shortcut login by default. Keep this setting and use accounts you create. The current startup path does not enable the legacy WeChat bill scheduler; configuring merchant files does not start scheduled imports.
+The default `TEST_LOGIN_ENABLED=false` keeps the demo login shortcut off. Staff can sign in with their own accounts. Startup leaves the legacy WeChat bill scheduler off, including when merchant files are present.
 
-Use `docker compose stop` to stop the containers and `docker compose up -d` to restart them. A normal `docker compose down` preserves named volumes. Options that remove volumes also delete the persistent data listed above and are not part of a routine update.
+Use `docker compose stop` to pause the services and `docker compose up -d` to resume. `docker compose down` keeps the named volumes. Adding `-v` deletes those volumes, including the database.
 
 ### Why the API uses the same origin
 
-The browser requests `/api/v1`. The relevant part of `deploy/nginx.conf` is:
+The browser sends all API requests to `/api/v1` on the same host that served the page. Nginx forwards those requests to the backend using this block in `deploy/nginx.conf`.
 
 ```nginx
 location /api/ {
@@ -80,83 +86,86 @@ location /api/ {
 }
 ```
 
-There is no trailing `/` on `proxy_pass`, so `/api/v1/auth/login` reaches the API with its original path. Static files come from the mounted `web/` directory. A static HTTP server alone can display the page but cannot provide real login or data operations.
+Keep `proxy_pass` as shown, without a trailing slash. That preserves the full path, for example `/api/v1/auth/login`. Nginx serves everything else from the mounted `web/` directory. If the page opens but sign-in fails, check that requests under `/api/` reach the backend.
 
-The complete Compose Nginx configuration also sets a 26 MB upload limit and requires browser cache revalidation. `deploy/restaurant-cloud-upload.conf` is an upload/cache snippet for native installations, not the complete Compose `server` configuration.
+The Compose configuration also sets a 26 MB upload limit and tells browsers to revalidate cached files. On native installations `deploy/restaurant-cloud-upload.conf` supplies only those upload and cache settings. The host still needs its own Nginx `server` block.
 
 ## 2. Run the native Python API directly
 
-Use this approach for debugging or with your own process manager and Nginx configuration. It requires Python 3.12, a reachable PostgreSQL server, and an existing database and database role. Normal operation depends on PostgreSQL `JSONB`; the SQLite adaptation used in tests is not a production deployment option.
+Use this setup to debug the API or to run it with your own process manager and Nginx. Install Python 3.12 and give the application a role and database on a reachable PostgreSQL server. The application stores business records in PostgreSQL `JSONB`. SQLite support is limited to the test suite.
 
-For example, on a new Ubuntu PostgreSQL instance, create the role using an interactive password prompt so that the password is not placed in a shell command:
+On a newly installed Ubuntu PostgreSQL server, these commands prompt for a password and create a database owned by the new role.
 
 ```bash
 sudo -u postgres createuser --login --pwprompt restaurant
 sudo -u postgres createdb --owner=restaurant restaurant
 ```
 
-Create a Python environment at the repository root, then enter the backend directory:
+From the repository root, install the Python dependencies. Create `backend/.env` from the template on the first setup.
 
 ```bash
 python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r backend/requirements.txt
 cd backend
-cp .env.example .env
-chmod 600 .env
+(umask 077; set -C; cat .env.example > .env)
 ```
 
-Copy the template only when creating a new configuration. Edit `backend/.env` to supply the actual PostgreSQL connection string, a random `SECRET_KEY` and the initial administrator password. Keep `TEST_LOGIN_ENABLED=false`. Percent-encode reserved URL characters in the database password when constructing the connection string. Set `PAYMENT_SECRET_ROOT` to a directory the application process can write to, outside the public source directory.
+In `backend/.env`, set the PostgreSQL connection string, a random `SECRET_KEY` and the initial administrator password. Keep `TEST_LOGIN_ENABLED=false`. Percent-encode any reserved URL characters in the database password. Set `PAYMENT_SECRET_ROOT` to a directory outside the public source tree where the API can write merchant files.
 
 ```bash
 uvicorn app.main:app --env-file .env --host 127.0.0.1 --port 8000
 ```
 
-`uvicorn[standard]` includes `python-dotenv`, which loads the environment file. Check the API from another terminal:
+Uvicorn loads `.env` through the `python-dotenv` dependency included in `uvicorn[standard]`. Leave the process running and check both endpoints from a second terminal.
 
 ```bash
 curl --fail http://127.0.0.1:8000/api/v1/health
 curl --fail http://127.0.0.1:8000/openapi.json
 ```
 
-Configure the host's Nginx with this repository's `web/` directory as the static root and `proxy_pass http://127.0.0.1:8000;` to preserve the original `/api/` path. A production installation also needs a service account, writable directories and process supervision. The upgrade script described below expects those paths and a systemd service to exist; it does not create this environment.
+To serve the web interface alongside this API, point the host’s Nginx static root at `web/` and use `proxy_pass http://127.0.0.1:8000;` under `location /api/`. For a lasting installation, configure a service account, writable directories and a process manager. The Ubuntu upgrade script in section 5 expects that setup to exist already.
 
-At startup, the application uses SQLAlchemy `create_all` to create missing tables and adds specific legacy timing fields stored as JSONB. This is not a general database migration framework. Changes to existing column structures need a separate migration. Startup also handles the initial account, legacy account memberships and the 366-day audit retention policy, so a restart is not guaranteed to leave the database unchanged.
+At startup, SQLAlchemy’s `create_all` creates missing tables. The application adds compatibility fields for older JSONB timing records, prepares the first administrator and legacy account memberships, and removes audit entries older than 366 days. If you change an existing column’s structure, plan a database migration for that change.
 
 ## 3. Back up a Compose instance
 
-Excel exports do not contain the complete account, permission, audit or runtime configuration data. A complete recovery requires at least the database, private `.env`, merchant files and application recovery material. Keep the source commit or release archive used for the installation as well.
+An Excel export can recover ledger entries. To recover the installation as a whole, also keep the database, private `.env`, merchant files, application recovery files and the source commit or release archive you deployed. The database includes staff accounts, permissions and audit records.
 
-Run the following from the repository root to create a separate local backup. Pause business writes until the backup completes so that the database and associated files represent the same operational point in time.
+Pause writes while taking the backup so the database and its associated files cover the same period. Run the following in the repository root. It creates a separate directory for this backup.
 
 ```bash
-umask 077
-mkdir -p ../restaurant-finance-backups
-chmod 700 ../restaurant-finance-backups
-finance_backup_dir="$(mktemp -d ../restaurant-finance-backups/manual-XXXXXXXX)"
-docker compose exec -T database pg_dump -U restaurant -d restaurant -Fc > "$finance_backup_dir/database.dump"
-docker compose exec -T backend tar -C /data -czf - payment-secrets > "$finance_backup_dir/payment-secrets.tar.gz"
-docker compose exec -T backend tar -C /opt/restaurant-cloud -czf - backups > "$finance_backup_dir/recovery-files.tar.gz"
-cp .env "$finance_backup_dir/runtime.env"
-cp VERSION "$finance_backup_dir/VERSION"
-if [ -e .git ] && git rev-parse --verify HEAD >/dev/null 2>&1; then
-  git rev-parse HEAD > "$finance_backup_dir/source-commit.txt"
-fi
-if [ -f ../PACKAGE_MANIFEST.json ]; then
-  cp ../PACKAGE_MANIFEST.json "$finance_backup_dir/PACKAGE_MANIFEST.json"
-fi
-docker compose exec -T database pg_restore --list < "$finance_backup_dir/database.dump" > "$finance_backup_dir/database-contents.txt"
+(
+  set -e
+  umask 077
+  mkdir -p ../restaurant-finance-backups
+  chmod 700 ../restaurant-finance-backups
+  finance_backup_dir="$(mktemp -d ../restaurant-finance-backups/manual-XXXXXXXX)"
+  docker compose exec -T database pg_dump -U restaurant -d restaurant -Fc > "$finance_backup_dir/database.dump"
+  docker compose exec -T backend tar -C /data -czf - payment-secrets > "$finance_backup_dir/payment-secrets.tar.gz"
+  docker compose exec -T backend tar -C /opt/restaurant-cloud -czf - backups > "$finance_backup_dir/recovery-files.tar.gz"
+  cp .env "$finance_backup_dir/runtime.env"
+  cp VERSION "$finance_backup_dir/VERSION"
+  if [ -e .git ] && git rev-parse --verify HEAD >/dev/null 2>&1; then
+    git rev-parse HEAD > "$finance_backup_dir/source-commit.txt"
+  fi
+  if [ -f ../PACKAGE_MANIFEST.json ]; then
+    cp ../PACKAGE_MANIFEST.json "$finance_backup_dir/PACKAGE_MANIFEST.json"
+  fi
+  docker compose exec -T database pg_restore --list < "$finance_backup_dir/database.dump" > "$finance_backup_dir/database-contents.txt"
+  printf '%s\n' "$finance_backup_dir"
+)
 ```
 
-A ZIP source copy has no Git history, and `git init` plus `git add` does not create a commit. The commands above therefore save `VERSION` and the complete-package manifest when available; a source commit is recorded only when a local HEAD exists. Also retain the actual release ZIP (or your modified source snapshot) used by this instance.
+The last line prints the backup directory. It holds `VERSION`, the complete-package manifest if present, and the commit ID if the checkout has a HEAD. A source ZIP has no Git history, so keep the ZIP or the exact source snapshot you deployed as well.
 
-Confirm that each command succeeded before copying the backup to restricted, durable storage. Backups contain credentials and business data and must stay out of Git. `pg_restore --list` only checks that the archive can be read. To establish that recovery works, restore it into a separate database and check login, books and inventory.
+Copy the successful backup to private, durable storage outside the repository. The database and configuration contain business data and credentials. `pg_restore --list` confirms that PostgreSQL can read the archive. For a recovery test, restore it into a separate database, sign in, open a ledger and check its inventory.
 
-For a native installation, use your PostgreSQL backup procedure and also preserve the runtime environment and merchant directory. The upgrade script below backs up the API and browser programs; it does not automatically create a database dump.
+On a native installation, take a PostgreSQL backup and save the runtime environment and merchant directory separately. The upgrade script makes its own copies of the API and web files. You supply the database backup.
 
 ## 4. Build a release archive for a native service
 
-First complete the browser build, API regression tests and FIFO contract checks listed in the README. From the same checkout, check the intended revision and run the dashboard tests against the generated JavaScript before packaging it.
+On the build machine, run the [browser build, API regression tests and FIFO inventory checks](../README.en.md#run-the-tests) for the checkout you intend to release. Then run the dashboard tests against the generated JavaScript and build the server archive.
 
 ```bash
 grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html &&
@@ -164,9 +173,9 @@ grep -Fq 'data-build-revision="20261112-daily-pl"' web/index.html &&
   python3 build/make_release.py --output dist/restaurant-cloud-v1.0.2-deploy.tar.gz
 ```
 
-The path shown is also the default output path. The packager creates the archive exclusively and refuses to overwrite an existing file. Use a new output filename when rebuilding.
+The path above is the packager’s default. To keep a previous archive, choose a new filename for the next build. The packager stops if its output file already exists.
 
-The archive root is `restaurant-cloud-v1.0.2/`, containing:
+Inside the archive, `restaurant-cloud-v1.0.2/` contains these files.
 
 ```text
 api/app/                           Python API source
@@ -180,23 +189,23 @@ verify_deployment.py               PostgreSQL before/after evidence
 verify_release_files.py            File and HTTP verification
 ```
 
-All three scripts are at the release root. A matching `.sha256` checksum file is written beside the archive. The packager selects runtime files from the specified source paths; it excludes databases, `.env`, merchant keys, test modules and dependency caches. The manifest checks file contents and is not a digital signature of the release.
+The packager writes a `.sha256` file beside the archive. The archive contains the runtime files listed above and the three scripts at its root. It leaves out databases, private `.env` files, merchant keys, test modules and dependency caches. The SHA-256 manifest detects changes to contents. Verifying the publisher’s identity would require a separate signature.
 
-Upload the archive and its `.sha256` file to the target host, then verify and extract them from their containing directory:
+Copy the archive and its `.sha256` file to the target host. In the directory containing both files, verify the checksum, extract into a fresh directory and check the web build marker.
 
 ```bash
-sha256sum -c restaurant-cloud-v1.0.2-deploy.tar.gz.sha256
-mkdir restaurant-finance-release-check
-tar -xzf restaurant-cloud-v1.0.2-deploy.tar.gz -C restaurant-finance-release-check
+sha256sum -c restaurant-cloud-v1.0.2-deploy.tar.gz.sha256 &&
+mkdir restaurant-finance-release-check &&
+tar -xzf restaurant-cloud-v1.0.2-deploy.tar.gz -C restaurant-finance-release-check &&
 grep -Fq 'data-build-revision="20261112-daily-pl"' \
   restaurant-finance-release-check/restaurant-cloud-v1.0.2/web_frontend/index.html || exit 1
 ```
 
-On macOS, the equivalent checksum command is `shasum -a 256 -c ...`. Extract into a new, empty directory. The upgrade script accepts the extracted release root, not the Git checkout or the `.tar.gz` file.
+On macOS, use `shasum -a 256 -c restaurant-cloud-v1.0.2-deploy.tar.gz.sha256` for the checksum. Give the Ubuntu upgrade script the extracted `restaurant-cloud-v1.0.2/` directory.
 
 ## 5. Upgrade an existing native Ubuntu installation
 
-`deploy_from_home_ubuntu.sh` expects the following installation layout:
+Use `deploy_from_home_ubuntu.sh` on a host with the following existing services and directories. Compose installations have a different layout.
 
 | Component | Location |
 | --- | --- |
@@ -208,11 +217,11 @@ On macOS, the equivalent checksum command is `shasum -a 256 -c ...`. Extract int
 | Running systemd service | `restaurant-cloud.service` |
 | Program backup and default evidence directory | `/opt/restaurant-cloud/backups/v1.0.2-UTCSTAMP-UNIQUE/` |
 
-This script cannot update Compose containers. The API, browser, backup and staging directories must be on the same filesystem so that directory renames can switch the installation. The existing API and browser paths must be physical directories. The installed requirements file and Nginx snippet must match the release byte for byte. If they differ, the script stops; review dependency or Nginx changes separately first.
+The script switches versions by renaming directories. The API and web roots must be physical directories, and both must share a filesystem with the backup and staging directories. Compare the installed `requirements.txt` and Nginx snippet with the release. The script stops if either differs, so handle dependency or Nginx changes before running it.
 
-The script uses the existing Python environment, including `python-dotenv`, SQLAlchemy and the PostgreSQL driver. It also requires systemd, Nginx, `flock`, `curl` and the other host tools it checks. It neither installs Python dependencies nor changes Nginx configuration.
+The upgrade reuses the installed Python environment (`python-dotenv`, SQLAlchemy and the PostgreSQL driver), systemd, Nginx, `flock`, curl and the other utilities it checks at startup. Python dependency installation and Nginx configuration are separate steps.
 
-Confirm that a usable database backup exists, then pause writes from other clients, background tasks and external database connections. The post-upgrade checks require protected business records to match the pre-upgrade baseline. Normal business writes during deployment can therefore cause verification to fail.
+**Before the maintenance window:** verify the database backup and save the runtime configuration. Pause writes from staff, background jobs and other database clients. The upgrade compares protected records before and after the switch, so even a valid sale entered in between would change the result.
 
 ```bash
 sudo bash /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2/deploy_from_home_ubuntu.sh \
@@ -220,23 +229,23 @@ sudo bash /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2/
   --base-url http://127.0.0.1
 ```
 
-Replace `/home/ubuntu/...` with the actual upload location. By default, the script uses the two verifiers included in the release. Override them with `--release-verifier` and `--db-verifier` when needed. `--evidence-dir` accepts a new absolute directory path that must not already exist; the default is an `evidence/` directory inside the current backup directory.
+Use the upload path on your host in place of `/home/ubuntu/...`. The script uses both verifiers from the release by default. To supply your own paths, pass `--release-verifier` and `--db-verifier`. Results go in `evidence/` under this upgrade’s backup. To put them elsewhere, pass a new absolute path to `--evidence-dir`.
 
-The upgrade proceeds as follows:
+**What happens during the upgrade**
 
-1. Check the version, HTML asset references, dependencies, Nginx and directory conditions, then acquire the deployment lock.
-2. Copy and verify the existing programs, prepare the staged directories and check that Python source compiles. The staged API overlays release files onto a copy of the old API; the staged browser directory is created from the release.
-3. Stop the API and confirm it has stopped, capture the database baseline, then switch the API and browser directories.
-4. Start the service and verify the health version, installed file hashes, HTTP static assets, OpenAPI routes and database state against the baseline.
-5. After all checks pass, write `DEPLOYED_VERSION` into the evidence directory. Keep the program backups and evidence.
+1. Check dependencies, the Nginx configuration and the service, acquire the deployment lock, then validate the release and filesystem layout.
+2. Copy and verify the installed programs. Stage the API by overlaying the release on a copy of the existing API. Stage the web directory from the release and check that the staged Python sources compile.
+3. Stop the API, confirm it has stopped, record the database baseline, then switch the API and web directories.
+4. Start the service. Compare the reported version, installed files, HTTP assets, OpenAPI routes and protected database records with their expected values.
+5. Once all checks pass, write `DEPLOYED_VERSION` in the evidence directory. The program backups and check results remain available.
 
-If deployment fails, the script attempts to restore the original API and browser directories and check service health again. Automatic rollback does not restore the database. If rollback fails, the script reports the failure and retains the original directories for recovery. Reverting application files and restoring the database are separate operations.
+If the switch fails, the script attempts to put the old API and web directories back and checks service health. If that rollback also fails, it reports the failure and keeps the directories for recovery. The rollback covers program files. Restoring PostgreSQL requires your database backup.
 
-The script does not delete old backups. Clean up old versions separately after verification and recovery preparation. The current evidence directory and database recovery material must not be discarded as ordinary temporary files.
+The script retains old backups. When you clean them up, keep the files needed for your recovery plan and the evidence for the current deployment.
 
 ## 6. Run verification separately
 
-The upgrade script already runs these checks. You can also run them separately to investigate an existing installation or retain additional evidence. The commands below use the native installation paths from the previous section.
+The upgrade runs both checks below. Run them separately when investigating an existing instance or when you need another record of the result. The examples use the native Ubuntu paths from section 5.
 
 ### Release files and HTTP
 
@@ -252,25 +261,19 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
   --evidence-dir /opt/restaurant-cloud/backups/manual-release-check-001
 ```
 
-`--evidence-dir` is required. Choose a new private directory for each standalone check; results are written to `release-check.json`. The check covers the release's Python/browser file hashes, requirements, Nginx snippet, referenced browser assets, cache versions, health endpoint and ingredient-name correction API routes.
+Set `--evidence-dir` to a fresh, private directory for each check. Read `release-check.json` there for the installed API and web file hashes, requirements, Nginx snippet, browser asset URLs and cache versions, health response and ingredient-name correction routes.
 
-`--base-url` is the browser entry point. `--api-base-url` is an API address that exposes `/openapi.json` directly. The Compose Nginx configuration does not proxy `/openapi.json`, so its web address cannot be used for that argument. The native upgrade wrapper uses the default API address, `127.0.0.1:8000`.
+Set `--base-url` to the website. Set `--api-base-url` to the address where the API itself serves `/openapi.json`. The Ubuntu wrapper uses `http://127.0.0.1:8000` for the latter. Compose Nginx forwards `/api/` only, so its website address cannot serve the OpenAPI document.
 
 ### Same-version build revisions
 
-A v1.0.2 distribution can contain a newer build with the same API version. This final package declares HTML `data-build-revision="20261112-daily-pl"` and uses `v1.0.2-20261112-daily-pl` for local asset cache queries. The native deployment preflight and `verify_release_files.py` validate the declared revision and exact version-plus-revision query, in addition to per-file manifest hashes. Legacy releases without a revision retain their version-only query rule. Do not remove these checks to deploy a same-version update.
+The footer and health endpoint both say `v1.0.2` across several builds. Check that the served HTML declares `data-build-revision="20261112-daily-pl"` and that local asset URLs use `?v=v1.0.2-20261112-daily-pl`. The preflight and file verifier check this pairing as well as the files themselves. For older releases that declare no build revision, they expect the version alone.
 
-Before deploying, recheck the target instance and create database, program and runtime-configuration backups. Operators should retain actual server identities, configuration values, backup paths and per-deployment evidence privately. This repository provides reusable procedures and verification tools.
-
-After file verification, reload an existing browser tab. Open the dashboard in a fresh tab and check that both the daily trend and weekday chart show revenue. Change only the weekday selector to ingredients and check that the daily trend still shows revenue. For the same book and month, open **i** on both the dashboard card and the full monthly report. Compare the two months’ fixed costs, daily ingredient costs and daily other costs, then read the three totals at the end. Both views must show the same projected daily total cost, total cost and revenue. Check that a completed month labels the three values as actuals and that its net equals actual revenue less actual total cost. At phone width, open the cost breakdown for a day with several expenses. Check the ring and legend colors match and the amount and unit sit together in the center.
-
-Check the five cards in both languages. Card 4 reads **Estimated daily profit/loss this month** above **(Estimated month-end profit/loss ÷ days in the month)**, with an amount in CNY per day and a separate monthly comparison. Card 5 shows actual net profit with its margin. With the January/February 2024 example in the engineering reference, card 4 should show CNY 20.00/day, up 100.0% from January’s CNY 10.00/day. [Worked examples](ENGINEERING_REFERENCE.md#month-end-profitloss)
-
-To test saving, use a disposable book with previous-month costs and current revenue dated before today. Save a grocery purchase dated today large enough to make this month’s daily ingredient cost exceed last month’s. The two views should switch the ingredient source and show the revised projection. Save revenue dated today and confirm projected revenue still reflects entries through yesterday.
+Keep host details, credentials, backups and results for each actual deployment in private storage.
 
 ### PostgreSQL evidence before and after an upgrade
 
-Pause business writes before running `before`. Keep writes paused after the upgrade while running `after`. Use the same evidence directory for both:
+Run `before` with business writes paused. After the upgrade, run `after` in the same evidence directory before reopening writes.
 
 ```bash
 sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-release-check/restaurant-cloud-v1.0.2/verify_deployment.py before \
@@ -285,14 +288,21 @@ sudo /opt/restaurant-cloud/.venv/bin/python /home/ubuntu/restaurant-finance-rele
   --evidence-dir /opt/restaurant-cloud/backups/manual-db-check-001
 ```
 
-This tool requires PostgreSQL and reads current data in a `REPEATABLE READ`, `READ ONLY` transaction. It imports only the configuration and database modules; it does not run application startup. Business JSONB hashes use PostgreSQL's original text representation, avoiding reserialization through Python floating-point values. The output contains record counts, table hashes, the environment-file hash and check results. It does not print ledger payloads, password hashes or environment values.
+The verifier opens a PostgreSQL `REPEATABLE READ`, `READ ONLY` transaction. It loads the database configuration directly, leaving application startup out of the check. It hashes JSONB using PostgreSQL’s own text representation so a Python float conversion cannot change the digest. The output contains counts, table hashes, the runtime environment file’s hash and pass/fail results. Ledger contents, account password hashes and configuration values stay out of the report.
 
-`before` refuses to overwrite an existing baseline, and `after` fails if no baseline exists. The comparison covers specified business records, entry timing, name-correction receipts, accounts, books, memberships and temporary permissions. It also checks that the decrease in audit count falls within the number of entries older than 366 days in the baseline. This is not a byte-for-byte comparison of the entire database, and it does not prove the identity of each removed audit entry.
+`before` requires a new baseline. `after` needs that baseline to compare business records, timing fields, ingredient-name correction receipts, accounts, ledgers, memberships and temporary permissions. For audit cleanup it checks a narrower condition: the count may drop by at most the number of records already over 366 days old in the baseline. That count cannot identify which individual audit rows were deleted.
 
-The tool assumes that the target already has the table structure needed by its queries. It does not migrate old databases. Application startup may add compatibility fields or remove expired audit entries. If protected tables change, investigate the evidence and cause rather than ignoring differences to make the check pass.
+The target database must already have the tables and columns used by these queries. Handle schema migration separately. Startup may add compatibility fields or remove expired audit entries. If a protected table differs, inspect the results for that table before resuming writes.
 
 ## 7. Check the running application
 
-After file verification and database comparisons pass, use accounts with the appropriate permissions to check actual workflows: login and book switching, phone/tablet/desktop layouts, labour-expense filtering for a selected month, inventory batches and FIFO costs, Excel import/export, and permission restrictions. Use a dedicated test book or separate instance for checks that write data.
+After the server checks pass, reload an existing tab, then open the dashboard in a fresh tab. Use a dedicated test ledger or separate instance for checks that save or import records.
 
-The health endpoint shows that the API responds. File hashes show that installed content matches the release directory. Database summaries check preservation of specified business data. None of these replaces interactive acceptance testing or a database restore rehearsal.
+| What to check | What you should see |
+| --- | --- |
+| Dashboard in both languages | Five cards. Card 4 shows **Estimated daily profit/loss this month** with **(Estimated month-end profit/loss ÷ days in the month)** on the next line, an amount in CNY/day and a monthly comparison. Card 5 shows actual net profit and the net margin. In the [January/February 2024 example](ENGINEERING_REFERENCE.md#month-end-profitloss), card 4 rises from CNY 10.00/day to CNY 20.00/day, up 100.0%. |
+| Daily trend and weekday charts | Both open on revenue. Switch only the weekday chart to ingredient cost. The daily trend should still show revenue. |
+| Forecast details | For the same ledger and month, open **ⓘ** on the dashboard card and in the full monthly report. Both show the two months’ fixed costs, daily ingredient costs and daily other costs, and which amounts were used. The last three lines give projected daily total cost, total cost and revenue. A completed month shows actuals, with profit equal to actual revenue less actual total cost. |
+| Mobile cost breakdown | Choose a day with several expenses. The ring colors match the legend. The amount and unit sit together in the center. |
+| Save a purchase | In a test ledger with last month’s costs and revenue recorded before today in the current month, add a purchase dated today large enough to raise this month’s daily ingredient cost above last month’s. Both forecast panels should now use this month’s ingredient cost. Add revenue dated today. Projected revenue should still use income through yesterday. |
+| Everyday operations | Sign in, switch ledgers, check phone, tablet and desktop layouts, filter labour expenses by month, inspect an inventory batch and its FIFO cost, and try Excel import/export. Compare what each assigned role can view or change. |

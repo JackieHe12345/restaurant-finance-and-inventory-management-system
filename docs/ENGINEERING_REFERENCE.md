@@ -1,31 +1,40 @@
-# Engineering reference — v1.0.2
+# Engineering reference · v1.0.2
 
-This reference describes the architecture, data contracts, build tools and operational boundaries of the repository. Product changes are recorded in [CHANGELOG](../CHANGELOG.md); installation and deployment procedures are in [DEPLOYMENT](DEPLOYMENT.md). [中文版](ENGINEERING_REFERENCE.zh-CN.md).
+**[← Back to the English README](../README.en.md)** · [简体中文](ENGINEERING_REFERENCE.zh-CN.md) · [Changelog](../CHANGELOG.md) · [Deployment guide](DEPLOYMENT.md)
 
-## 1. Product and ownership boundaries
+Use this reference when changing the application or tracking down a figure on screen. Pick a starting point below. For installation commands, use the deployment guide linked above.
 
-The system combines restaurant revenue recording, purchases, daily expenses, monthly fixed expenditure, cash balance, dish usage, inventory, multiple independent books, accounts/permissions, audit history and Excel exchange. A book can contain A/B store income channels. Store labels and business names are user data; books remain separate authorization and persistence domains.
+| What are you working on? | Start here |
+| --- | --- |
+| Find the code for a page or trace a save | [Source map](#source-map) · [Database records](#database) · [Saving and permissions](#saving) |
+| Reconcile a number or change a chart | [Profit and inventory](#calculations) · [Month-end forecast](#month-end-profitloss) · [Charts and exports](#charts) |
+| Translate a form or an error message | [Interface languages](#languages) |
+| Run tests, build a release or restore an installation | [Settings](#settings) · [Tests and builds](#tests) · [Packaging and recovery](#recovery) |
+| Diagnose a fault or look up an endpoint | [Troubleshooting](#troubleshooting) · [HTTP routes](#api-routes) · [Privacy checks](#privacy) |
 
-There are three executable forms: a static browser client; a FastAPI service backed by PostgreSQL; and a PySide6 macOS desktop application that works with local Excel and cloud synchronization. The repository contains their sources, tests and build/deployment tools. Server archives and native applications are generated release artifacts, separate from the source tree.
+## How the application fits together
 
-Do not confuse these objects:
+A **book** holds a set of business records. The same book can track sales through channels for stores A and B. A store name identifies the income source on screen. The book ID tells the server which records to read and whose account may change them.
 
-| Object | Authority | Does not prove |
-| --- | --- | --- |
-| `VERSION` / API `v1.0.2` | Product compatibility/version label. | That two same-version builds have identical features or files. |
-| HTML build revision | Identifies a particular build within the product version. | That the currently running server has received it. |
-| Git commit and source tree | Identifies the exact versioned source. | That uncommitted edits or installed binaries match it. |
-| Server `MANIFEST.json` | SHA-256 of the runtime archive's files. | Preservation of real ledger records during deployment. |
-| `PACKAGE_MANIFEST.json` and outer `.sha256` | Full distribution files, modes/symlinks and ZIP bytes. | That a data backup can be restored without checking its dependencies. |
-| Deployment before/after evidence | Particular server state and comparison at a recorded time. | Current availability of old backups or success of later edits. |
+The browser loads static HTML, JavaScript and CSS. The FastAPI service authenticates users and stores the books in PostgreSQL. The macOS app uses PySide6 and can work with a local Excel workbook or synchronize with the service. All three have source and tests in this repository. Build the server archive and macOS app separately.
 
-The interface is a management-bookkeeping view. A displayed profit figure does not establish formal accounting classification, payment completion or an immutable month closing. Gross-profit and expense definitions are explicit application contracts described below.
+| What do you want to check? | Where to look |
+| --- | --- |
+| Product version | `VERSION` and the API health response report `v1.0.2`. Several builds can have that version. |
+| Code behind a build | A Git commit identifies the tracked source. The build revision in the HTML distinguishes frontend updates within the same product version. |
+| What the server serves | Compare the deployed files and HTTP responses with the SHA-256 hashes in the server archive’s `MANIFEST.json`. |
+| Contents of a complete ZIP | The outer `.sha256` covers the ZIP bytes. `PACKAGE_MANIFEST.json` records the files, permissions and symlinks inside. |
+| Whether an upgrade preserved a ledger | Compare the database checks taken before and after the upgrade. To test recovery, restore the backup and its matching configuration in an isolated installation. |
 
-## 2. Source topology and browser load order
+The financial reports use the store’s management-accounting definitions below. A month can change after a correction. Use payment records to verify settlement and the applicable accounting records for statutory reporting.
 
-The browser is plain JavaScript rather than a component framework. It has one HTML document with page panels, shared mutable `state`, feature modules and later wrappers/overrides. Keep the `<script>` order in `web/index.html` deliberate: exact arithmetic must be available before business modules, and the current workbench/chart/dashboard/analytics layers load after their older foundations. Locate the last active definition when debugging. A grep hit in `app.js` alone is not enough.
+<a id="source-map"></a>
 
-| Source location | Primary responsibility / edit caution |
+## Find the source for a feature
+
+Start with `web/index.html`. Each panel shares the same `state`, and some scripts wrap or replace a function defined earlier. For a dashboard bug, follow the script order through the workbench, charts, dashboard and analytics modules to find the function the browser actually calls. Keep the exact-arithmetic runtime ahead of the business code.
+
+| Source | What to edit here |
 | --- | --- |
 | `web/index.html` | Base DOM, IDs used by scripts, stylesheet/script order, build revision and cache queries. Do not rename IDs without checking all callers. |
 | `web/money.js` | BigInt-backed exact decimal runtime; maintained directly, not generated from a duplicate source. |
@@ -42,7 +51,7 @@ The browser is plain JavaScript rather than a component framework. It has one HT
 | `web/workbench.js`, `web/workbench.css` | Application shell, navigation, page headings and responsive workbench layout. Maintained directly. |
 | `build/web-exact-source/charts-oct30.js` | Shared SVG chart geometry, axes, hover/touch/focus/keyboard inspection and resize lifecycle. |
 | `build/web-exact-source/dashboard-oct30.js` | Five homepage KPIs, comparison wording and dashboard charts. |
-| `build/web-exact-source/analytics-oct30.js`, `web/analytics-oct30.css` | Analytics state, operating/expense/customer exploration, expense bases, source tables and professional workspace presentation. |
+| `build/web-exact-source/analytics-oct30.js`, `web/analytics-oct30.css` | Analytics filters, operating/expense/customer views, expense calculations, source tables and layout. |
 | `desktop/restaurant_cost_manager.py` | Native widgets and native data/financial/synchronization logic in a large single module. Use symbol/class context, not old line numbers. |
 | `backend/app/main.py` | Public API routes, record policy, authorization, cash aggregation, startup compatibility and audit maintenance. |
 | `backend/app/models.py`, `database.py`, `security.py` | SQLAlchemy schema, exact JSON persistence, sessions and JWT/password operations. |
@@ -53,11 +62,13 @@ The browser is plain JavaScript rather than a component framework. It has one HT
 
 Authoritative business JavaScript is under `build/web-exact-source/`. `node build/compile_exact_web.cjs` parses with Acorn and emits the corresponding `web/*.js`. Do not edit generated copies alone. HTML, CSS, `money.js`, `workbench.js`, the localization assets and licenses are direct static sources. Consult the compiler's own file list before classifying a new asset. Runtime browsers do not require Node, Acorn, a bundler or CDN.
 
-## 3. Persistence model and identity
+<a id="database"></a>
 
-PostgreSQL is the supported production store. SQLAlchemy JSONB is used for flexible business payloads; the SQLite adapter in tests is not a supported production storage option. Initialization is `create_all` plus narrowly implemented compatibility additions, not a general migration engine.
+## How a book is stored
 
-| Table | Identity and purpose | Maintenance invariant |
+Production uses PostgreSQL. Record contents with variable fields live in JSONB columns. Startup calls SQLAlchemy’s `create_all` and applies a short list of compatibility updates. A new schema change needs its own migration plan. Tests also run against a SQLite adapter.
+
+| Table | What it stores | What to preserve when changing it |
 | --- | --- | --- |
 | `app_users` | UUID, unique username, display name, bcrypt hash, role, active flag. | Existing administrator password is not reset merely by changing startup environment values. |
 | `datasets` | Stable book ID, name, schema version. | Renaming changes display name, not ID. IDs determine record and permission scope. |
@@ -76,23 +87,30 @@ IDs, dates, versions, record keys, custom metadata, names and notes are not mone
 
 The internal workbook has record-oriented sheets such as `__day_records`, `__month_records`, `__global_records`, `__meta` and `__audit_records`, with structured `payload_json`. It is an exchange artifact, not a complete server backup of users, memberships, clocks, merchant keys, environment and service configuration. A user workbook has business-facing sheets; merge and replace are different operations and must remain explicit.
 
-## 4. Request lifecycle, concurrency and permissions
+<a id="saving"></a>
 
-The web uses same-origin `/api/v1`; Nginx serves assets and proxies `/api/` without removing that prefix. A static file server alone can show the page but cannot authenticate or store a ledger. Login returns a bearer JWT; backend authorization reloads the account and active state. Roles are `viewer`, `entry`, `editor`, `admin`. Administrators have deliberate cross-book authority; other users need membership. Temporary grants can narrow the permitted business dates/time.
+## Follow a save from the editor to the database
 
-A typical save sequence is: capture book/login/context generation → preserve editor baseline and unrelated payload fields → register/reuse that book's device → normalize known monetary fields and checksum → send the write with expected version → enforce server access/timing/inventory rules under transaction → commit version/sequence/audit → apply response only if the active UI still represents the captured context. An A→B→A switch must still invalidate an old asynchronous operation. A successful newer local write increments a revision so an older refresh cannot overwrite its cache.
+The browser sends requests to `/api/v1` on the same origin that serves the page. Nginx forwards `/api/` with its prefix intact. Login returns a bearer JWT. Each authorized request reloads the account and checks that it is active. The roles are `viewer`, `entry`, `editor` and `admin`. Administrators can work across books. Other users need membership in the selected book.
 
-Cash has its own server result and revision. It can change without daily-record changes; an unchanged main-record snapshot is not permission to skip a new cash response. Every cash load must check book identity and revision before rendering. Keep shared cash state synchronized rather than adding another independent stale cache.
+1. The editor captures the active login, book and context generation. It keeps a baseline of the record and preserves fields outside the edit.
+2. The client registers or reuses a device for that book, normalizes known monetary fields, calculates the checksum and sends the expected record version.
+3. In one transaction, the server checks the user’s rights, applicable time limits, expected version and relevant inventory rules. It writes the new record version, sync sequence and audit entry.
+4. The client applies the response only while the original context is current. Switching A → B → A invalidates pending work from the first visit to A. A newer local save also advances the revision so an older refresh cannot overwrite it.
 
-Entry-only users have server-owned per-field/per-item policies. The existing principal windows are 30-minute corrections and a 12-hour detail-addition window, plus business-date/income cutoff rules. Use `_effective_record_role`, `_entry_timing_updates` and related tests as the implementation authority. Do not use the mutable record `updated_at` as the only clock; changing a note or saving equivalent numeric text must not reopen old entries.
+**Cash balances.** A cash adjustment can change the balance while the daily records stay the same. Check the book and cash revision on every cash response, even when the main record snapshot is unchanged. All cash views read the shared cache.
 
-Inventory writes lock the relevant book before replaying quantities and checking new shortages. Expected version checks reject stale inventory documents. Name correction first builds a preview/write-set, then checks current state and applies all linked changes in one transaction with a durable request receipt. Do not implement the same workflow as a loop of unrelated client PUT requests.
+**Entry permissions.** The server tracks when each field or line was first saved. The main correction window is 30 minutes and the window for adding detail lines is 12 hours. Business dates and income cutoffs also apply. A temporary grant can raise a user’s rights for day records during the grant’s active period and for the business dates it covers. Check `_effective_record_role` and `_entry_timing_updates` before changing these rules. Editing a note or resaving an equivalent amount must keep the original clock.
 
-The API's audit retention is 366 days with administrator maintenance routes. Startup can purge expired audit rows; deployment comparison therefore distinguishes allowed retention from business-data changes.
+**Inventory changes.** The server locks the book, replays stock movements and checks for new shortages. Stale document versions are rejected. A name correction previews the affected records, rechecks them and applies them in one transaction. A saved request receipt lets a retry identify work that already succeeded.
 
-## 5. Financial and inventory contracts
+**Audit history.** The server keeps 366 days and lets administrators maintain the log. Startup can delete expired entries. Account for expiry when comparing the database before and after an upgrade.
 
-Use `build/MONEY_CONTRACT.txt`, `build/FIFO_CONTRACT.md` and `backend/MONEY_BACKEND.txt` alongside this section. Amounts are decimal strings at new/changed API boundaries, Python `Decimal` and browser `Exact` during arithmetic, two decimal places for money and six for unit prices, `ROUND_HALF_UP`. Reject invalid text, boolean, NaN, Infinity and out-of-range single inputs. Known zero differs from unknown price. Single-input amount limits are ±999999999999.99; unit-price limit is ±999999999999.999999. Valid derived totals are treated separately from per-entry caps.
+<a id="calculations"></a>
+
+## How the ledger calculates profit and inventory
+
+For the exact formats and test cases, see [money in the clients](../build/MONEY_CONTRACT.txt), [FIFO](../build/FIFO_CONTRACT.md) and [money in the API](../backend/MONEY_BACKEND.txt). New or changed monetary fields cross the API as decimal strings. Python uses `Decimal` and the browser uses `Exact`. Amounts have two decimal places and unit prices have six, with `ROUND_HALF_UP`. The absolute limit is 999999999999.99 for a single amount and 999999999999.999999 for a unit price. Totals calculated from valid inputs have separate rules. Reject invalid text, booleans, NaN and infinity. A known price of zero counts as a price.
 
 Legacy numeric JSON is read without losing its original decimal spelling. OOXML numeric cells are inspected before conversion where necessary. Only known financial fields and their known structured detail paths are normalized; arbitrary metadata is not converted wholesale. Chart coordinates may become ordinary floats at the final drawing boundary, never for financial persistence. Formatting an Exact value must not silently invoke `Number` during calculation.
 
@@ -119,7 +137,16 @@ Let **D** be the number of calendar days in the selected current month. Last mon
 | Projected profit/loss | Projected revenue − projected fixed costs − projected ingredients − projected other costs. |
 | Estimated daily profit/loss this month | Unrounded month-end profit/loss ÷ D. A closed month uses actual net profit ÷ that month’s calendar days. A missing monthly result gives a dash. |
 
-For example, on November 11 the elapsed period is November 1–10 and **D** is 30. Suppose October’s fixed, ingredient and other costs were 6,000, 9,300 and 1,550. November has 6,500 in saved fixed costs, 2,600 in ingredients, 750 in other costs and 8,000 in revenue through the 10th. Ingredient rates are 300 and 260 per day. Other rates are 50 and 75. The estimate therefore uses 6,500 in fixed costs, 9,000 in ingredients and 2,250 in other costs. The final three help lines show **591.67** average daily total cost (17,750 ÷ 30), **17,750.00** total cost and **24,000.00** revenue. Projected net profit is **6,250**. Saving a further 600 in groceries dated November 11 takes November ingredients to 3,200, or 320 per day over the same ten days. The ingredient winner changes from October to November. Projected ingredient cost rises to 9,600 and projected net falls to **5,650**. Revenue entered on the 11th first affects the projection on the 12th.
+**Example: a purchase entered on November 11.** Ten days have elapsed, October has 31 days and November has 30. Suppose the book contains these amounts in CNY.
+
+| | October | November so far | November projection |
+| --- | ---: | ---: | ---: |
+| Fixed costs | 6,000 | 6,500 | 6,500 |
+| Ingredients and seasonings | 9,300 (300/day) | 2,600 (260/day) | 9,000 |
+| Other costs | 1,550 (50/day) | 750 (75/day) | 2,250 |
+| Revenue through yesterday | — | 8,000 (800/day) | 24,000 |
+
+The help shows average daily total cost of **591.67**, total cost of **17,750.00** and revenue of **24,000.00**. Projected profit is **6,250**. Now save a CNY 600 grocery purchase dated November 11. November’s ingredient rate becomes 3,200 ÷ 10 = 320/day, above October’s 300/day. Projected ingredient cost rises to 9,600 and profit falls to **5,650**. A sale recorded for November 11 first enters the revenue projection on November 12.
 
 To preserve half cents, put both daily rates over the same denominator. Let **e** be the elapsed days and **p** the previous month’s length. For each variable category the two numerators are `current total × p` and `previous total × e`, over the common denominator `e × p`. Choose the larger numerator for each category. For projected net, subtract the two winning numerators from `current revenue × p`, multiply the result by D, and subtract `projected fixed costs × e × p`. Divide this combined numerator by `e × p` once. Display the result rounded to cents. This also preserves an exact half cent when the individual daily rates repeat. The original ledger categories feed both months. In particular, the forecast’s “other costs” include fees and daily utilities in addition to entries categorized as “Other”. If the current month has no saved fixed-cost record, use the previous month’s fixed amount directly. A saved current amount of zero participates in the comparison. A recorded zero or a previous month containing only a saved fixed-cost record provides a valid cost basis. The current month needs a completed operating record. On day one, without that current record, or with the previous month entirely missing, the estimate is unavailable. Future months are unavailable.
 
@@ -131,9 +158,9 @@ To reproduce the month-on-month comparison in an empty test book, record CNY 310
 
 Compare the two unrounded daily rates over a common denominator. If November’s net is CNY 0.03 and October’s is CNY 2.00, the rates are 0.03 ÷ 30 and 2.00 ÷ 31. The decrease is exactly 98.45%, displayed as **98.5%**.
 
-In `build/web-exact-source/app.js`, `monthForecastV102` returns `net` and `dailyNet`, plus `netNumerator` and `dailyNetDenominator` for that comparison. In `build/web-exact-source/dashboard-oct30.js`, `summary` passes each month’s numerator and divisor to `monthChangeV102`. In `desktop/restaurant_cost_manager.py`, `calc_dashboard_month_kpis` returns `projected_daily_net` for each month and `DashboardTab._refresh_month_headlines` displays it. Run `node web/test_v1_0_2_dashboard.js` for the February fixture and rounding cases, `python build/test_v1_0_2_desktop.py` for the native calculation, and `QT_QPA_PLATFORM=offscreen python build/test_v1_0_2_desktop_qt.py` for native card order, amounts and margins.
+**Where to make a change.** In `build/web-exact-source/app.js`, `monthOverviewMetricsV102` gathers the ledger totals and `monthForecastV102` derives the forecast on each refresh. It returns `net`, `dailyNet`, `netNumerator` and `dailyNetDenominator`. The dashboard’s `summary` in `dashboard-oct30.js` passes each month’s numerator and divisor to `monthChangeV102`. The dashboard and monthly report both read that forecast. Their help compares the unrounded candidates, shows both amounts and identifies the month used or a tie. Fixed costs are monthly amounts. Ingredient and other costs are daily rates.
 
-The web calculation lives in `monthForecastV102` and `monthOverviewMetricsV102` in `build/web-exact-source/app.js`. The homepage and report consume the same result. Their help shows the previous and current candidate amounts, the source of the chosen value (including a tie) and its amount. Fixed expenses use whole-month amounts. Ingredients and other expenses use daily rates. Source selection uses the unrounded values before currency formatting. The forecast is derived from the ledger on refresh and is not persisted as a monthly balance. The native equivalent is `calc_dashboard_month_kpis` in `desktop/restaurant_cost_manager.py`. A useful regression fixture lets a different month supply each winning daily rate, includes a large entry today to exercise the cutoff, and includes a seasoning purchase to catch double counting.
+The desktop equivalent is `calc_dashboard_month_kpis` in `desktop/restaurant_cost_manager.py`. It returns `projected_daily_net` for `DashboardTab._refresh_month_headlines`. Run `node web/test_v1_0_2_dashboard.js` for the February example and rounding cases, `python build/test_v1_0_2_desktop.py` for the desktop calculation and `QT_QPA_PLATFORM=offscreen python build/test_v1_0_2_desktop_qt.py` for the actual card order, amounts and margins. A fixture that takes ingredients from one month and other costs from the other catches accidental coupling. Include today’s purchase and a seasoning item to exercise the cutoff and catch double counting.
 
 The local client calendar determines whether a month is complete, independently of the selected day. Browser and native date watchers re-evaluate about every five seconds even when data is unchanged; the browser also checks on becoming visible. Native refresh waits until modal dialogs close and retries after read failures. A completed month's forecast card shows actual net from the next month's first day, including December/January rollover. This neither changes the selected period nor writes/freezes a ledger value; a valid historical correction recalculates it.
 
@@ -164,25 +191,24 @@ Purchasing expense and FIFO consumption cost answer different questions. Monthly
 
 The cash balance sheet has one manual target-balance entry point: Add an item → Force balance adjustment. This adjusts balance as of a date without creating revenue/expense or replacing earlier transactions. Ordinary entries retain their deletion rules; historical `system_locked` entries remain protected. There is no separate balance-correction form.
 
-## 6. English display versus user data
+<a id="languages"></a>
 
-The browser English mode must cover fixed navigation, labels, placeholders, dialog controls, validation/status messages, report/graph legends, fixed categories, role labels and dynamic system text. It must not translate user input. User-origin book/store/product/dish/custom income names, notes, people, suppliers and arbitrary units remain byte-for-byte semantically unchanged. Stored Chinese schema keys and enum values remain compatibility keys even when their displayed labels are English. The native app remains Chinese; there is no native English mode in this version.
+## Translate the interface and preserve what people entered
 
-Rules for extending localization:
+The browser offers English and Chinese. The macOS app uses Chinese. In the browser, translate the words supplied by the application, including dialog buttons, validation messages, roles and chart legends. Keep the spelling of ledger, store, product, dish and custom income names, notes, people, suppliers and units exactly as entered. Stored keys and enum values keep their original meaning in either language.
 
-1. Add a fixed English label at the rendering boundary and a Chinese label in the existing language path/catalog. Keep storage keys independent of presentation.
-2. For a label such as `<store name> + payment channel`, preserve the store name and translate only the known channel suffix. Escape user strings before HTML insertion.
-3. For dynamic error text, translate the system sentence/template and separately preserve interpolated user content. Never replace all Chinese text in record JSON, field values or audit payloads.
-4. Language changes must re-render current panels and future dialogs without triggering a save, discarding an unsaved draft or changing selected book/date/amount.
-5. Check all pages, role-specific panels and modals, not just the visible sidebar. Check placeholders/title/aria text as well as normal text nodes.
-6. Include synthetic Chinese user names that exactly match dictionary entries, to catch accidental user-data translation; check outbound save payloads remain unchanged after language switching.
+When adding a translated field:
 
-Changing language never changes CNY into USD or exchanges a currency amount. A display unit may become `CNY`/English text; the underlying money remains the same currency and amount. In English mode, `input[type=month]` uses an ISO `YYYY-MM` display overlay supplied by `web/i18n-controls.js`, removing OS-localized year/month suffixes from the application field. The original native input retains its `.value`, validation, events and calendar-picker behavior. The picker popup itself and browser chrome remain controlled by the browser/operating system; the application does not claim to translate them.
+1. Add the fixed label to the rendering code or catalog. Keep the stored field key and value stable.
+2. For a store name followed by a payment channel, escape the store name for HTML and translate the channel suffix. For an error message, translate the sentence template and insert the user’s value as entered.
+3. Switch languages with an unsaved draft open. The current panel and any later dialog must use the selected language. Check the book, date, amount, draft and outbound save payload.
+4. Test a product whose name exactly matches a dictionary entry. Inspect role-specific screens, placeholders, titles and accessible labels as well as the visible text.
 
+English uses `CNY` for the same yuan amount. For `input[type=month]`, `web/i18n-controls.js` displays `YYYY-MM` over the native control so the field has the same format on different operating systems. The original control still handles its value, validation, events and picker. The browser and operating system supply the popup calendar.
 
-### Localization runtime architecture
+### Where translations are applied
 
-The four direct static catalogs load after `app.js`/`pro.js` and **before `v8.js`** builds its presentation map:
+`web/index.html` loads these four catalogs after `app.js` and `pro.js`, before `v8.js` builds its lookup table.
 
 | File | Scope |
 | --- | --- |
@@ -191,38 +217,39 @@ The four direct static catalogs load after `app.js`/`pro.js` and **before `v8.js
 | `web/i18n-backend-en.js` | Known API error/validation/status templates, canonical field display labels and structured audit summaries. |
 | `web/i18n-extra-en.js` | Remaining legacy ledger/report/cash, picker, account, grant and Excel labels/messages. |
 
-After these four catalogs, `web/i18n-controls.js` installs the month-input display adapter; it also loads before `v8.js`. This adapter changes the displayed month format, not its canonical `YYYY-MM` value or input behavior.
+These files extend `SYSTEM_EN` and `SYSTEM_EN_PATTERNS`. Load the month control adapter after all four catalogs and before `v8.js`. Edit the catalogs directly. They ship in the server manifest with the same cache revision as the other scripts. The Exact compiler processes a separate set of business scripts.
 
-Catalogs extend `SYSTEM_EN` / `SYSTEM_EN_PATTERNS`; adding a catalog after `v8.js` has built its map is not equivalent to loading it in the documented order. These assets are maintained directly, included in the server manifest, and carry the same current cache revision as other scripts. They are not part of the Exact arithmetic compiler's business-source input set.
+`v8.js` translates fixed text nodes and display attributes such as `placeholder`, `title`, `aria-*` and `data-label`. It remembers each original string and its translation. If an asynchronous render changes that string, the observer translates the new source. It batches updates and writes only changed values. `v28.js` uses compatible metadata to retain the store name while translating the fixed payment-channel label.
 
-`v8.js` translates fixed text nodes and display attributes such as placeholder/title/aria/data-label, preserving source/output pairs in metadata. When an asynchronous renderer changes a node, the new content becomes the translation source instead of reusing an obsolete remembered sentence. The queued observer coalesces updates and only writes different values. `v28.js` uses compatible source/output metadata for store-name substitution; fixed payment-channel wording is translated separately from the actual store name. Do not reintroduce an observer that rewrites identical values or repeatedly translates its own output.
+Mark names, notes and other user-entered text with `data-user-content`. Editable fields and designated book/account selectors also have explicit exclusions. `sep07.js` applies the marker to read-only copies of input values and updates them only when the value changes. Preserve this marker when recreating a node. Otherwise the translation observer and read-only view can overwrite each other repeatedly.
 
-User-origin cells, names, descriptions and other opaque renderings are marked `data-user-content`; editable fields and specific book/account selectors also have explicit exclusions. `sep07.js` marks read-only projections as opaque user content and changes them only when their underlying display value changes. Without this boundary, a read-only field mirror and a translation observer can repeatedly overwrite one another or translate a user's Chinese value. Preserve the marker when rebuilding these nodes.
+An HTML option without a `value` submits its displayed label. Set the option’s original value explicitly before translating the label. A cash type or fixed-cost category will then submit the same value in either language. Keep both the identifier and text of user-created options.
 
-An HTML option without an explicit `value` otherwise inherits its displayed text as the submitted value. Before translating such an option's label, the canonical original value is saved as its `value` attribute. This preserves fixed-cost categories, cash types and other saved enums across language changes. User-owned select choices retain original identifiers and text.
+`translateBackendMessage` matches known server messages against anchored patterns. It translates known field names, error locations and nested errors, and preserves usernames, notes, units and paths. Add a catalog entry when introducing a new API error template. The response payload and its stored keys stay intact.
 
-`translateBackendMessage` recognizes anchored, known server templates. Declared field/location/nested-error parameters receive system translations; usernames, notes, units, paths and arbitrary interpolated values remain opaque. The API's canonical storage keys and response data are unchanged. New API error templates require matching display catalog updates rather than a blanket Chinese-to-English replacement over any server string.
-
-`translateAuditSummary(summary, item)` uses the supplied structured `before_payload`, `after_payload` and reason to produce English Added/Removed/Changed/Cleared framing and known field labels while preserving original values. It does not parse arbitrary user notes by semicolons. The display summary is bounded (up to 20 changes, with a depth guard); it is not a substitute for full before/after records. For old responses without structured payloads, recognized fixed templates can be localized, but ambiguous unescaped user text is preserved rather than guessed. Nothing in this presentation step rewrites audit history.
+`translateAuditSummary(summary, item)` reads the structured `before_payload`, `after_payload` and reason. It names known fields, keeps their entered values and labels each change Added, Removed, Changed or Cleared. The summary shows up to 20 changes and limits recursion depth. For a full comparison, inspect the original payloads. Older responses may lack these fields. Translate recognized fixed wording in those summaries and preserve ambiguous text, including a note containing semicolons.
 
 Regression entry points include `build/qa_english_ui.cjs`, `build/qa_inventory_english.cjs`, `build/test_i18n_backend.cjs`, `build/qa_enhanced_analytics.cjs` and the retained business/money tests. Verify English and Chinese round-trips, dynamic dialogs, error paths, unchanged option values, arbitrary user names matching catalog words, read-only mirrors and absence of observer loops.
 
-## 7. Analytics interpretation and chart contracts
+<a id="charts"></a>
 
-Analytics has operating, expense and customer perspectives with a selected year/month/metric and date/filter context. Existing source details connect aggregate figures to underlying records. Expense views distinguish monthly saved totals from itemized fixed payments. CSV exports must correspond to the displayed/filter scope; user values are exported unchanged and fixed headings follow interface language. Product changes are recorded in [CHANGELOG](../CHANGELOG.md).
+## Read the charts and reconcile a CSV export
 
-Charts show every data point while choosing only as many axis labels as fit. The renderer measures text, abbreviates dates/months with period context, reserves edge/final labels, wraps category labels and recalculates on container resize. Missing observations are gaps, not fabricated zero-income days. A negative net amount must remain below zero with its correct sign. Pointer, touch, focus, arrow and Home/End inspection must expose full date/category and exact amounts. Data table totals and chart series must share the same calculation source; styling must not create a parallel financial engine.
+The **Analytics** page has three views: operations, expenses and customers. Start with the selected period, metric and comparison month above the chart. The source table shows the records behind the total. In the expense view, compare monthly fixed-cost entries with dated payments. They are two ways of looking at the same expense.
 
-Professional presentation here means explicit period/basis, coherent selection, comparable metric summaries, useful trend/category/source views, and readable tables/empty states. Do not add pseudo-AI forecasts, invented data, misleading performance labels or probability claims that are not backed by recorded values. A more polished visualization does not change the financial basis.
+| On screen | How to check it |
+| --- | --- |
+| Summary cards | Every view shows the number of recorded days. Operations adds the largest expense category and the number of profitable days. Expenses shows the largest category and the difference between monthly fixed costs and itemized payments. Customers shows the busiest day and how many recorded days have a positive customer count. |
+| Trend | Line and bar views use the same observations. The statistics show their count, mean, minimum and maximum. An unrecorded date leaves a gap and a loss plots below zero. |
+| Detail table and CSV | Sorting and filtering apply to the export. The total covers all filtered rows across pages. CSV headings follow the selected language and user-entered values keep their spelling. |
+| Axis labels | The SVG renderer measures the available width, shortens dates when the period supplies context, reserves space at the ends and wraps category labels. Resizing changes the labels’ spacing. All observations stay available. |
+| Exact chart values | Hover, tap or focus a point to read the complete date or category and amount. Use the arrow keys or Home/End to move through the observations. The figures come from the same calculation as the table. |
 
+The desktop **更多统计** view shows the selected range and source count. Filters wrap on narrow windows and charts switch between one and two columns. The purchases, consumption and method sections can be collapsed. A notice appears when a selection mixes currency, counts and rates. Export still uses the filtered records when the table is hidden. It is disabled when there are no rows.
 
-### Analytics workflow
+<a id="settings"></a>
 
-The calculation-basis/comparison strip names the selected scope and prior-month relationship. Three observation cards summarize recorded-day coverage and the largest expense, plus a perspective-specific measure: profitable recorded days, saved-month-minus-itemized fixed-cost gap, or busiest customer day/customer coverage. The metric trend supports line/bar selection and displays exact mean/minimum/maximum with observation count. Details sort by column, show signed amounts and total all filtered rows across pages; CSV follows filter/sort. These are transparent observations, not new predictions or financial classifications.
-
-The native Chinese More statistics view provides a selected-scope/source-count banner, wrapping filters, collapsible purchase/consumption/method sections and one or two chart columns according to available width. Mixed amount/count/rate selections have a notice. Export uses current filtered records even if the table is hidden; no-data export is disabled. Its financial and storage contracts remain unchanged.
-
-## 8. Configuration and operational behavior
+## Settings and startup behavior
 
 | Setting | Meaning / important boundary |
 | --- | --- |
@@ -239,13 +266,15 @@ The native Chinese More statistics view provides a selected-scope/source-count b
 | `WECHAT_*` settings | Retained bill integration configuration; current startup deliberately does not start legacy synchronization. |
 | Desktop local connection settings | The native monitor reads `~/.restaurant_finance_sync/config.json`; ports default to 47650/47651 via `RESTAURANT_MAIN_STATUS_PORT` / `RESTAURANT_ASSISTANT_STATUS_PORT`. Do not package a user's file as a public default. |
 
-Templates are `.env.example` for Compose and `backend/.env.example` for native API execution. They have different purposes. Never copy private `runtime.env` into one of these example files. Compose uses PostgreSQL 16 and Nginx 1.28 image tags from its YAML, mounts distinct database/payment-secret/recovery volumes and binds the demonstration web port to loopback by default. Do not run `docker compose down -v` during an ordinary upgrade because volumes hold persistent data.
+Compose reads the settings described by `.env.example`. To run the API directly, use `backend/.env.example`. Keep actual credentials in the installation’s private configuration. Compose specifies PostgreSQL 16 and Nginx 1.28, binds the default web port to loopback, and mounts separate volumes for the database, payment secrets and recovery files. An ordinary upgrade must preserve those volumes. The `-v` flag in `docker compose down -v` deletes them.
 
-Backend startup creates missing tables, performs narrow entry-timing compatibility additions, purges expired audit, ensures initial admin and handles legacy/test memberships. It does not run an arbitrary migration, rescan/repair all old amounts, or start the retained old WeChat scheduler. The system has no payment initiation/refund/settlement gateway, bank feed, high-availability architecture or central monitoring service.
+On startup, the API creates missing tables, adds the supported entry-timing columns, purges expired audit records, provisions the first administrator and handles legacy and test memberships. Other schema migrations and historical amount corrections need explicit work. The legacy WeChat synchronization thread stays off. Payment initiation, refunds, settlement, bank feeds, high availability and centralized monitoring require separate services.
 
-## 9. Development, tests and release builds
+<a id="tests"></a>
 
-Run commands below from the repository root unless noted. Use Python 3.12, the dependency files and Acorn lockfile. A reused native runtime can contain different library patch versions from a new source environment; inspect the actual app instead of inferring its dependencies from local pip packages. Keep generated logs, QA screenshots, JSON reports, exports and QA binaries in ignored `work/` or `dist/`, or in external CI/release artifacts. They are outputs, not source inputs.
+## Test a change and build a release
+
+Run the commands below from the repository root with Python 3.12. Install the versions in the repository’s dependency files and Acorn lockfile. The packaged macOS app carries its own Python/Qt runtime, so test that app as well as the source environment. Keep generated reports, screenshots, exports and QA applications under ignored `work/`, `dist/` or external CI storage.
 
 ### Source environment and regression tests
 
@@ -341,9 +370,11 @@ Run the same QA executable with `/usr/bin/arch -x86_64` and a separate `V101_QA_
 
 Record the tested source commit, revision, environment and actual results. Distinguish rerun checks from inherited evidence. SQLite fixtures do not prove PostgreSQL concurrency under production load; Rosetta execution does not mean physical Intel hardware was tested; a readable database dump is not a full restore rehearsal.
 
-## 10. Distribution assembly and operational recovery
+<a id="recovery"></a>
 
-`build/make_complete_package.py` is an optional distribution assembler, separate from the server tar builder. It operates on an explicit staging tree outside the source checkout. Assemble the desired source/documentation, verified server archive and optional native app there. The staging root must contain `VERSION` and a generated `RELEASE_INFO.json` with a `build_revision` field; record source commit and artifact hashes there as release provenance. These generated metadata files belong to the artifact, not to the repository root.
+## Assemble a ZIP or recover an installation
+
+To distribute the source, documentation, checked server archive and optional macOS app together, assemble them in a staging directory outside the checkout. Put `VERSION` and a generated `RELEASE_INFO.json` in its root. The builder requires `build_revision`. Include the source commit and artifact hashes as well so the recipient can trace each file. The server tar uses its own builder. For a complete ZIP, run the following commands.
 
 ```bash
 python -B build/make_complete_package.py \
@@ -358,7 +389,9 @@ A recoverable operational backup needs the database dump, matching application/c
 
 Program rollback and database restoration are different operations. Do not automatically overwrite a newer database with a pre-upgrade snapshot. Retain a current backup while validating a deployment and review exact targets before any later backup cleanup. The shipped deployment script retains backups and does not perform database restoration. Pause business writes through before/after database verification; inspect concurrent writes and allowed audit retention before interpreting a changed digest as corruption.
 
-## 11. Troubleshooting map
+<a id="troubleshooting"></a>
+
+## Troubleshoot a running installation
 
 | Symptom | First checks | Avoid |
 | --- | --- | --- |
@@ -376,9 +409,11 @@ Program rollback and database restoration are different operations. Do not autom
 | Deployment verifier reports changed DB | Check authorized concurrent writes and audit retention against before/after evidence. | Deleting backups or automatic DB restore before investigating. |
 | Newly built macOS app behaves old | Candidate app's main bytecode hash vs final source, actual executable launched, signature and architecture. | Updating only version text or nearby `.py` file. |
 
-## 12. Public HTTP route inventory
+<a id="api-routes"></a>
 
-The following table is derived from route decorators in the source. `record_key:path` can contain path-like characters and must be URL-encoded by clients. Some legacy aliases are intentionally retained. Read request/response models and the route's dependencies for exact body/authorization requirements; a route's presence is not permission to call it. `/openapi.json` on a running API is useful for that exact build, but may not match a stale local document.
+## HTTP routes by operation
+
+Use the function name in the last column to find the route’s request model, response and permission checks. The running instance also publishes its own `/openapi.json`. A `record_key:path` can contain path-like characters and needs correct URL encoding. The two spellings of the cash route are supported aliases.
 
 | Method | Route | Source function |
 | --- | --- | --- |
@@ -428,12 +463,13 @@ The following table is derived from route decorators in the source. `record_key:
 | POST | `/api/v1/datasets/{dataset_id}/inventory/name-corrections/preview` | `name_corrections.py:preview_correction` |
 | POST | `/api/v1/datasets/{dataset_id}/inventory/name-corrections/apply` | `name_corrections.py:apply_correction` |
 
+<a id="privacy"></a>
 
-## 13. Read-only artifact privacy audit
+## Check a package before sharing it
 
-`build/audit_distribution_privacy.py` audits an extracted tree, ZIP, tar or macOS app without executing contained code. Supply actual private identifiers in a separate file **outside the distribution and repository** (JSON string array or one UTF-8 identifier per line). The implementation has no installation-specific identifier list and does not print secret excerpts. It checks UTF-8/UTF-16 bytes, complete private-key armor, archive entries and link boundaries, including decompressed PyInstaller CArchive/PYZ data within universal Mach-O slices. `build/test_distribution_privacy.py` provides synthetic scanner regressions.
+Run `build/audit_distribution_privacy.py` on an extracted directory, ZIP, tar or macOS app. Give it a file containing the identifiers you need to check, either a JSON array of strings or one UTF-8 value per line. Keep this file outside both the repository and the distribution. The tool reads the package without executing its code. It searches UTF-8 and UTF-16 data, detects complete private-key blocks, validates archive paths and links, and inspects the PyInstaller CArchive/PYZ contents of both Mach-O architectures. Its findings omit secret excerpts. Run `build/test_distribution_privacy.py` to check the scanner against synthetic fixtures.
 
-Run from the repository root, using the built archive as input and an ignored report directory:
+From the repository root, scan the built archive and write the report to the ignored QA directory.
 
 ```bash
 python -B build/audit_distribution_privacy.py \
@@ -442,4 +478,4 @@ python -B build/audit_distribution_privacy.py \
   --report work/qa/privacy-report.json
 ```
 
-Apply the same check to complete software ZIPs or extracted staging trees. Keep credentials, databases, real workbooks and operational backups outside public software artifacts. The scanner counts images but does not OCR or classify their contents. Workbook/database/configuration candidates require manual review; signatures cannot establish absence of every unknown secret. Use synthetic fixtures for reproducible tests and review screenshots/logs before sharing them. Store generated acceptance results with their release or CI run, rather than committing them as application source.
+Repeat the scan on the complete ZIP or extracted staging directory. Review flagged workbooks, databases and configs, and inspect screenshots and logs before sharing them. The scanner counts images but does no OCR. It can match known identifiers and key signatures. Credentials, live data and recovery backups belong in private storage. Store acceptance results with the release or CI run so their source and build can be identified.
