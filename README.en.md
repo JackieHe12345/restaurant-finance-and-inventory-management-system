@@ -6,19 +6,43 @@
 
 This system records restaurant sales, expenses, and inventory. Each ledger brings together daily sales by store and payment channel, ingredient purchases and usage, and monthly costs such as rent and wages. Managers can see actual net profit for the month to date, review the entries behind an expense, and estimate profit or loss at month-end.
 
-Staff can enter and review records in a desktop or mobile browser. The web interface supports English and Chinese and preserves store names, dish names, and notes as entered. The Chinese-language macOS app can also work with a local Excel workbook and sync it with the server.
+The web app runs in desktop, tablet, and phone browsers. Each uses the same address and the ledgers assigned to the signed-in account. The interface supports English and Chinese. Store names, dish names, and notes keep their original wording in either language. The Chinese-language macOS app also supports local Excel workbooks and can sync them with the server.
+
+## Phone and tablet views
+
+The screenshots throughout this README show the English web interface with sample ledgers.
+
+**Phone.** The ledger selector stays at the top of the screen. **Menu** opens the navigation drawer, and daily entry fields stack vertically to fit the display. On the dashboard, tap a chart point to read its date and value, or tap **ⓘ** beside the month-end forecast to see how it was calculated.
+
+<img src="docs/images/web-phone-en.png" alt="Phone browser in English showing the restaurant dashboard and ledger selector" width="340">
+
+**Tablet.** In portrait orientation, the web app keeps the compact navigation and uses the additional width for reports and forms. In **Analytics**, select a reporting month and open the operating, expense, or customer view. Charts can be explored by touch. On a wide desktop display, the same pages have a persistent sidebar.
+
+<img src="docs/images/web-tablet-en.png" alt="Analytics in a portrait tablet browser with touch navigation" width="680">
 
 ## Bookkeeping and inventory
 
 **Stores and ledgers.** Two counters that share a kitchen can use one ledger. Enter each counter’s name in Store Settings to record its cash, WeChat Pay, Alipay, and delivery revenue separately. Shared purchases, rent, and wages are recorded once for the ledger. If the counters need separate inventories, expenses, and financial reports, create a ledger for each.
 
-**Daily entries and monthly costs.** Select a business date to record sales, payment fees, purchases of ingredients and seasonings, other expenses, and customer counts. Enter monthly fixed costs such as wages and rent for the month they belong to. The cash balance sheet records shareholder loans and adjustments to the balance counted on a given date. These entries affect the cash balance and are excluded from sales.
+**Daily ledger.** Select a business date to record cash, online, and delivery takings for each counter. The form totals the channels and keeps payment fees separate. The same entry holds customer counts, notes, and purchases of ingredients and seasonings. Each purchase line has fields for quantity, unit, and price. Staff can check the day’s total against those entries. Wages, rent, and other monthly fixed costs are saved for their reporting month.
 
-**Stock and kitchen usage.** With no opening stock, a delivery of 10 kg of rice for CNY 80 records a purchase expense of CNY 80. Issuing 2 kg to the kitchen leaves 8 kg in stock and assigns CNY 16 to that issue. If deliveries have different prices, issues draw from the oldest remaining lot first (FIFO). Stock records also show losses, stocktake adjustments, and quantities with an unknown price. Monthly profit includes the purchase expense. Kitchen issues and dish costs can be reviewed separately without counting the purchase twice.
+![Desktop Daily ledger in English with the business date, revenue totals, and sales channels](docs/images/web-ledger-en.png)
+
+**Cash reconciliation.** The cash balance sheet is available to accounts with the Administrator or Editor role. Recorded operating receipts and expenses feed the balance. Shareholder loans are recorded separately. If a count differs from the book balance, enter the amount counted for that date using **Add cash entry → Balance override**. The adjustment appears in the transaction history and is excluded from operating profit. In English mode, some automatic descriptions still appear in Chinese, including the description for daily revenue.
+
+![English cash balance sheet showing the available balance and dated transactions](docs/images/web-cash-en.png)
+
+**Stock and kitchen usage.** Suppose there is no rice in stock. Recording a 10 kg purchase for CNY 80 in the daily ledger books the expense and creates a stock receipt automatically. Issuing 2 kg to the kitchen leaves 8 kg in stock and assigns CNY 16 to that issue. If deliveries have different prices, issues draw from the oldest remaining lot first (FIFO). Stock records also show losses, stocktake adjustments, and quantities with an unknown price. Monthly profit includes the purchase expense. Kitchen issues and dish costs can be reviewed separately without counting the purchase twice.
+
+The on-hand view lets staff check the balance of an item and follow its receipts and issues. When a physical count differs from the recorded quantity, a stocktake records the difference as an adjustment. Low-stock thresholds can be set per item. Missing prices are identified separately so that unpriced stock is distinguishable from stock recorded at zero cost.
+
+![English Inventory workspace showing on-hand quantities and stock controls](docs/images/web-inventory-en.png)
 
 **User roles and temporary permissions.** Administrators assign ledgers to staff accounts. Viewers can read their assigned ledgers. Entry users can record daily figures and correct them within the permitted time. Editors can amend existing records. If an error is found after the correction window closes, an administrator can grant temporary access for a particular ledger and range of business dates. For example, an administrator can allow a staff member to correct yesterday’s records in one ledger until 3 p.m. today. The permission expires at that time.
 
-**Reports and Excel workbooks.** Analytics compares operating results, expenses, and customer counts with the previous month. Select an expense category to see its dated entries, then filter or sort the details and export the result as CSV. Staff can also download an annual Excel workbook for an assigned ledger. Administrators can import a workbook to merge its entries with the selected ledger or replace the ledger’s data.
+**Operating reports and source records.** The operations view shows how many recorded days were profitable. The expense view shows which categories account for the most spending. Compare monthly fixed costs with the dated payments recorded against them to find differences without adding the two figures together. The customer view identifies the busiest recorded day. Filter or sort the detail table to review specific entries. Totals and CSV exports cover the full filtered selection across pages.
+
+**Excel workbooks.** Staff can download an annual business workbook for an assigned ledger. An administrator can merge an incoming workbook with the selected ledger or replace that ledger’s data. A separate internal workbook preserves the structured records used by the application. For a full server backup, the database and runtime configuration are covered in the [Deployment Guide](docs/DEPLOYMENT.md).
 
 ## Dashboard
 
@@ -39,6 +63,9 @@ Select **ⓘ** beside the forecast to see both months’ amounts and the value u
 
 </details>
 
+<details>
+<summary>Daily trends, weekday averages, and the cost breakdown</summary>
+
 **Daily and weekday trends.** The daily chart shows each date separately. The weekday chart averages the recorded dates for each weekday in the selected month. Both initially show revenue. Each chart can also display gross profit, net profit, or ingredient costs including seasonings.
 
 ![October daily revenue with one date selected](docs/images/daily-revenue-en.png)
@@ -48,6 +75,8 @@ Select **ⓘ** beside the forecast to see both months’ amounts and the value u
 **Daily cost breakdown.** Select a date to see its total cost in the center of the ring. The legend lists the amount and share for each category.
 
 <img src="docs/images/cost-ring-en.png" alt="Daily cost breakdown on a phone, with the total in the center" width="390">
+
+</details>
 
 ## Local installation
 
